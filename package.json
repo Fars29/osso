@@ -1,0 +1,32 @@
+{
+  "name": "osso",
+  "version": "0.1.0",
+  "description": "Just the bones. Every page arrives with its filler faded and its substance left in the author's own words. Powered by Jev, with your own key.",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "calibrate": "node --env-file=.env scripts/calibrate.ts",
+    "icons": "node scripts/icons.mjs",
+    "e2e": "node --env-file=.env e2e/run.mjs",
+    "zip": "node scripts/zip.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.0",
+    "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.63.0",
+    "sharp": "^0.35.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}
