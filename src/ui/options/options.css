@@ -1,0 +1,392 @@
+/* The options page: a narrow column, headings in the wordmark's serif, air between sections. */
+
+body {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 24px 96px;
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 32px 16px 64px;
+  }
+}
+
+/* ---- masthead --------------------------------------------------------- */
+
+.masthead {
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+}
+
+.masthead .wordmark {
+  font-size: 34px;
+}
+
+.tagline {
+  margin-top: 10px;
+  max-width: 46ch;
+}
+
+.notice {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+/* ---- sections --------------------------------------------------------- */
+
+.block {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 24px;
+  padding: 36px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.block:last-child {
+  border-bottom: 0;
+}
+
+.block h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.block h2 .saved {
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .block {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 28px 0;
+  }
+}
+
+/* ---- rows ------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row-label small,
+.field-label small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.row-slider {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider .end {
+  font-size: 12px;
+}
+
+.slider .value {
+  min-width: 3.2ch;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: -8px;
+}
+
+/* ---- inputs ----------------------------------------------------------- */
+
+input[type="text"],
+input[type="password"],
+select,
+textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--ink);
+  transition: border-color var(--t), background var(--t);
+}
+
+input[type="text"]:hover,
+input[type="password"]:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--ink-3);
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--ink);
+  outline: none;
+}
+
+textarea {
+  resize: vertical;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+select {
+  width: auto;
+  min-width: 120px;
+  padding-right: 28px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 15px, calc(100% - 9px) 15px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* ---- key -------------------------------------------------------------- */
+
+.keyrow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.keyfield {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.keyfield input {
+  padding-right: 56px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.keyfield input[type="text"] {
+  letter-spacing: 0;
+}
+
+.eye {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom-color: transparent;
+}
+
+.eye:hover {
+  color: var(--ink);
+}
+
+.key-result {
+  font-size: 13px;
+  color: var(--muted);
+  transition: color var(--t);
+}
+
+/* No line is reserved for a result that has not happened; the flex gap closes over it. */
+.key-result:empty {
+  display: none;
+}
+
+.key-result.ok {
+  color: var(--ink);
+}
+
+.key-result.bad {
+  color: var(--accent);
+}
+
+.hint {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.privacy {
+  font-size: 13px;
+  max-width: 56ch;
+}
+
+@media (max-width: 480px) {
+  .keyrow {
+    flex-wrap: wrap;
+  }
+
+  .keyfield {
+    flex-basis: 100%;
+  }
+}
+
+/* ---- sites ------------------------------------------------------------ */
+
+.defaults summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.defaults summary::-webkit-details-marker {
+  display: none;
+}
+
+.defaults summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--muted);
+  border-bottom: 1px solid var(--muted);
+  transform: rotate(-45deg) translateY(-1px);
+  transition: transform var(--t);
+}
+
+.defaults[open] summary::before {
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.hosts {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 16px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- usage ------------------------------------------------------------ */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px 16px;
+  margin: 0;
+}
+
+.stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+
+.stats dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stats dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  transition: color 320ms ease-out;
+}
+
+.stats dd.changed {
+  color: var(--accent);
+  transition: color 60ms ease-out;
+}
+
+@media (max-width: 480px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---- about ------------------------------------------------------------ */
+
+.about {
+  gap: 6px;
+  font-size: 13px;
+}
+
+.about em {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* Enter: sections settle in order, like sentences on the page. */
+.block,
+.masthead {
+  animation: settle 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.block:nth-child(2) { animation-delay: 40ms; }
+.block:nth-child(3) { animation-delay: 80ms; }
+.block:nth-child(4) { animation-delay: 120ms; }
+.block:nth-child(5) { animation-delay: 160ms; }
+.block:nth-child(6) { animation-delay: 200ms; }
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block,
+  .masthead {
+    animation: none;
+  }
+}

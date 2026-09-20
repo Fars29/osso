@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Osso · Settings</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="masthead">
+        <h1 class="wordmark">osso</h1>
+        <p class="tagline muted">Solo l'osso. Every page arrives with its filler faded and its substance left in the author's own ink.</p>
+        <p class="notice muted" id="notice" hidden></p>
+      </header>
+
+      <!-- Key -->
+      <section class="block" id="s-key">
+        <h2>Key</h2>
+        <div class="body">
+          <label class="field-label" for="key">TypeSafe API key</label>
+          <div class="keyrow">
+            <div class="keyfield">
+              <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="ts-…" />
+              <button class="eye text-btn" id="key-eye" type="button" aria-label="Show key">Show</button>
+            </div>
+            <button class="btn" id="key-test" type="button">Test</button>
+            <button class="btn btn-primary" id="key-save" type="button">Save</button>
+          </div>
+          <p class="key-result" id="key-result" aria-live="polite"></p>
+          <p class="hint">
+            <a href="https://typesafe.ai" target="_blank" rel="noopener">Get a key at typesafe.ai</a>
+            <span class="saved" id="key-saved">Saved</span>
+          </p>
+          <p class="privacy muted">
+            What leaves this machine: the page title, its language and the main text, sent to
+            api.typesafe.ai only, over your own key. Never the URL. The key is stored in this browser
+            and used by the background worker alone; pages never see it. Nothing is logged anywhere.
+          </p>
+        </div>
+      </section>
+
+      <!-- Behaviour -->
+      <section class="block" id="s-behaviour">
+        <h2>Behaviour <span class="saved" id="behaviour-saved">Saved</span></h2>
+        <div class="body">
+          <label class="row">
+            <span class="row-label">Enabled<small class="muted">Off here and Osso leaves every page alone.</small></span>
+            <span class="switch"><input type="checkbox" id="enabled" role="switch" /><i></i></span>
+          </label>
+
+          <div class="row row-slider">
+            <label class="row-label" for="threshold">
+              Default strictness<small class="muted">Sentences below this chance of mattering fade. The popup adjusts it per page.</small>
+            </label>
+            <div class="slider">
+              <span class="end muted">gentle</span>
+              <input type="range" id="threshold" />
+              <span class="end muted">bare</span>
+              <output class="value" id="threshold-value" for="threshold">0.50</output>
+            </div>
+          </div>
+
+          <label class="row">
+            <span class="row-label">Reveal key<small class="muted">Hold it to read everything; release to fade again.</small></span>
+            <select id="reveal-key">
+              <option value="Shift">Shift</option>
+              <option value="Alt">Alt</option>
+              <option value="Control">Control</option>
+            </select>
+          </label>
+
+          <label class="row">
+            <span class="row-label">Animations<small class="muted">The settle when a page is judged and the return on reveal.</small></span>
+            <span class="switch"><input type="checkbox" id="animations" role="switch" /><i></i></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Sites -->
+      <section class="block" id="s-sites">
+        <h2>Sites <span class="saved" id="sites-saved">Saved</span></h2>
+        <div class="body">
+          <label class="field-label" for="denied">Never on these sites<small class="muted">One host per line. Subdomains follow.</small></label>
+          <textarea id="denied" rows="4" spellcheck="false" placeholder="example.com"></textarea>
+
+          <label class="field-label" for="allowed">Always on these sites<small class="muted">Re-enables a host Osso skips by default.</small></label>
+          <textarea id="allowed" rows="3" spellcheck="false" placeholder="github.com"></textarea>
+
+          <details class="defaults">
+            <summary>Sites Osso skips by default <span class="muted" id="defaults-count"></span></summary>
+            <ul class="hosts" id="defaults"></ul>
+          </details>
+        </div>
+      </section>
+
+      <!-- Usage -->
+      <section class="block" id="s-usage">
+        <h2>Usage <span class="saved" id="usage-saved">Done</span></h2>
+        <div class="body">
+          <dl class="stats">
+            <div><dt>Pages judged</dt><dd id="st-pages">0</dd></div>
+            <div><dt>Sentences judged</dt><dd id="st-sentences">0</dd></div>
+            <div><dt>Input tokens</dt><dd id="st-tokens">0</dd></div>
+            <div><dt>Estimated cost</dt><dd id="st-cost">$0</dd></div>
+            <div><dt>Average time per page</dt><dd id="st-avg">—</dd></div>
+            <div><dt>Cache hits</dt><dd id="st-cache">0</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn" id="clear-cache" type="button">Clear cache</button>
+            <button class="btn" id="reset-usage" type="button">Reset usage</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- About -->
+      <section class="block" id="s-about">
+        <h2>About</h2>
+        <div class="body about muted">
+          <p>Osso 0.1.0 · GPL-3.0 · <em>Solo l'osso.</em></p>
+          <p><a href="https://github.com/osso-extension/osso" target="_blank" rel="noopener">GitHub</a></p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

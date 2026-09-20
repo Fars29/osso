@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Migrating the upload pipeline: what we learned</title>
+  <meta property="og:type" content="article">
+  <script type="application/ld+json">{ "@type": "TechArticle", "headline": "Migrating the upload pipeline" }</script>
+  <script type="application/ld+json">{ this is not json at all</script>
+</head>
+<body>
+  <header>
+    <nav><a href="/">Blog</a> <a href="/engineering">Engineering</a> <a href="/careers">Careers at the company</a></nav>
+    <h1>Migrating the upload pipeline: what we learned</h1>
+  </header>
+
+  <article>
+    <p>Last month we moved every upload from the old queue to the new one. The disruption on September 12 was caused by a failed database migration that deleted approximately 0.3% of user uploads between 14:02 and 16:40 UTC. Files uploaded during that window cannot be recovered.</p>
+
+    <p id="abbr">Dr. Rossi arrived at 9.30 a.m. in St. Louis, Mo. and met J. K. Rowling. They talked for 2.5 hours about Prof. Bianchi's paper, i.e. the one on e.g. examples, which costs 9,99 € in print.</p>
+
+    <h2>The migration script</h2>
+    <p id="inline-code">Run <code>npm run migrate --dry</code> first and read the plan it prints. Only then run the real thing, because the script cannot be stopped once it starts writing.</p>
+    <pre><code>const plan = await migrate({ dry: true });
+console.log(plan.summary);
+if (plan.deletes > 0) throw new Error("refusing to delete");</code></pre>
+
+    <figure>
+      <img src="/img/queue.png" alt="Queue depth over time">
+      <figcaption>Queue depth during the migration window, sampled every 30 seconds.</figcaption>
+    </figure>
+
+    <h2>Numbers</h2>
+    <table>
+      <thead><tr><th>Stage</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><td>Upload p95</td><td>2.4 s</td><td>0.9 s</td></tr>
+        <tr><td>Failure rate</td><td>1.2%</td><td>0.1%</td></tr>
+      </tbody>
+    </table>
+
+    <blockquote>
+      <p>We have since added a mandatory second review step to every database migration. Nobody merges a migration alone any more.</p>
+    </blockquote>
+
+    <div class="note">This note lives in a div with direct text and no block children, and it should still be judged like a paragraph.</div>
+
+    <p>Thank you for being part of this journey. As always, our support team is here for you, and we are committed to learning from this and to becoming stronger as a company.</p>
+  </article>
+
+  <footer>
+    <p>Written by the platform team. Questions go to platform@example.com or the #uploads channel.</p>
+  </footer>
+</body>
+</html>

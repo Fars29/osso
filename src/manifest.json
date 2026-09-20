@@ -34,8 +34,8 @@
       "all_frames": false
     }
   ],
-  "permissions": ["storage"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": ["storage", "activeTab", "unlimitedStorage"],
+  "host_permissions": ["https://api.typesafe.ai/*"],
   "commands": {
     "toggle-site": {
       "suggested_key": { "default": "Alt+Shift+O" },

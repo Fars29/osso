@@ -1,0 +1,250 @@
+/* The popup: one number, three controls, nothing that competes with the number. */
+
+body {
+  width: 320px;
+  min-height: auto;
+  overflow: hidden;
+}
+
+.popup {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px 14px;
+  gap: 14px;
+}
+
+/* ---- header ----------------------------------------------------------- */
+
+.top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--shadow-chip);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  white-space: nowrap;
+  animation: chip-in 240ms ease-out;
+}
+
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* ---- hero ------------------------------------------------------------- */
+
+.hero {
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.big {
+  font-family: var(--font-display);
+  font-size: 44px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  transition: color 320ms ease-out;
+}
+
+/* Marrow, briefly, when the number moves: the only time the hero uses the accent. */
+.big.changed {
+  color: var(--accent);
+  transition: color 60ms ease-out;
+}
+
+.big.pulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.big.quiet {
+  color: var(--muted);
+  font-size: 22px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.of {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.caption {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* A hairline of the page itself: ink for what stays, grey for what fades. */
+.bone {
+  height: 2px;
+  margin: 10px 0 8px;
+  border-radius: 1px;
+  background: var(--grey);
+  overflow: hidden;
+  transition: opacity var(--t);
+}
+
+.bone i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ink);
+  transition: width var(--t-count) cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.popup[data-state="judging"] .bone,
+.popup[data-state="idle"] .bone {
+  opacity: 0.35;
+}
+
+.status {
+  font-size: 12px;
+  min-height: 1.45em;
+}
+
+.note-title {
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--ink);
+}
+
+.note-title.soft {
+  color: var(--muted);
+}
+
+.note-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-sub.wrap {
+  white-space: normal;
+}
+
+.note .btn {
+  margin-top: 12px;
+}
+
+/* ---- controls --------------------------------------------------------- */
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  transition: opacity var(--t);
+}
+
+.controls.dim {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Nothing judged on this page: the slider and the reveal have nothing to move, and look it. */
+.row-slider:has(input:disabled),
+.text-btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 20px;
+}
+
+.row-slider {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.end {
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+
+/* ---- footer ----------------------------------------------------------- */
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.foot a {
+  margin-left: auto;
+}
+
+.foot kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+/* Enter: the whole card settles, like a sentence on the page. */
+.popup {
+  animation: settle 260ms ease-out;
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup,
+  .chip,
+  .big.pulse {
+    animation: none;
+  }
+}

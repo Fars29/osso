@@ -41,6 +41,8 @@ export function installChromeMock() {
     runtime: {
       sendMessage: vi.fn(async () => undefined),
       onMessage: { addListener: (l: Listener) => messageListeners.push(l), removeListener: vi.fn() },
+      onInstalled: { addListener: vi.fn() },
+      openOptionsPage: vi.fn(async () => undefined),
       lastError: undefined as undefined | { message: string },
       getURL: (p: string) => `chrome-extension://osso/${p}`,
       id: "osso",
@@ -54,6 +56,7 @@ export function installChromeMock() {
     action: {
       setBadgeText: vi.fn(async () => undefined),
       setBadgeBackgroundColor: vi.fn(async () => undefined),
+      setBadgeTextColor: vi.fn(async () => undefined),
       setTitle: vi.fn(async () => undefined),
     },
     commands: { onCommand: { addListener: vi.fn() } },

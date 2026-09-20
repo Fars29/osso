@@ -1,0 +1,322 @@
+/*
+ * Osso's design tokens and the handful of primitives both pages share.
+ * Paper, ink, one grey (the same grey the page fade uses) and marrow, used sparingly:
+ * the slider thumb, a number when it changes, the one call to action that matters.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --paper: #fbfaf7;
+  --ink: #161616;
+  --muted: #7a7772;
+  --line: #e7e4dd;
+  --grey: #b9b9b9;
+  --accent: #d95d39;
+  /* Tints derived from the palette for hover states and fills; never a second hue. */
+  --ink-2: rgba(22, 22, 22, 0.06);
+  --ink-3: rgba(22, 22, 22, 0.1);
+  --accent-2: rgba(217, 93, 57, 0.12);
+
+  --font-ui: -apple-system, "Segoe UI", Inter, Roboto, system-ui, sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --shadow-chip: 0 1px 2px rgba(22, 22, 22, 0.06), 0 4px 14px rgba(22, 22, 22, 0.06);
+
+  --t: 160ms ease-out;
+  --t-count: 400ms;
+  --t-settle: 550ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #141414;
+    --ink: #f2f0ea;
+    --muted: #8f8c86;
+    --line: #262626;
+    --grey: #5c5c5c;
+    --accent: #e8724f;
+    --ink-2: rgba(242, 240, 234, 0.07);
+    --ink-3: rgba(242, 240, 234, 0.12);
+    --accent-2: rgba(232, 114, 79, 0.16);
+    --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t: 0ms linear;
+    --t-count: 0ms;
+    --t-settle: 0ms linear;
+  }
+}
+
+/* ---- base ------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+  transition: border-color var(--t), color var(--t);
+}
+
+a:hover {
+  border-bottom-color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  color: var(--ink);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ---- buttons ---------------------------------------------------------- */
+
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--t), border-color var(--t), color var(--t), transform var(--t);
+}
+
+.btn:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-3);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.btn-primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.text-btn {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: border-color var(--t), color var(--t);
+}
+
+.text-btn:hover {
+  border-bottom-color: var(--ink);
+}
+
+/* ---- switch ----------------------------------------------------------- */
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 20px;
+  flex: none;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.switch i {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--grey);
+  transition: background var(--t);
+}
+
+.switch i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--paper);
+  transition: transform var(--t);
+}
+
+.switch input:checked + i {
+  background: var(--ink);
+}
+
+.switch input:checked + i::after {
+  transform: translateX(14px);
+}
+
+.switch input:disabled + i {
+  opacity: 0.45;
+}
+
+.switch input:focus-visible + i {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- range: a filled track with a marrow thumb ------------------------ */
+
+input[type="range"] {
+  --fill: 50%;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, var(--ink) var(--fill), var(--line) var(--fill));
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--accent);
+  transition: transform var(--t);
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--line);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 2px;
+  background: var(--ink);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+input[type="range"]:focus-visible {
+  outline: none;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- "Saved" ---------------------------------------------------------- */
+
+.saved {
+  display: inline-block;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity var(--t), transform var(--t);
+}
+
+.saved.on {
+  opacity: 1;
+  transform: none;
+}

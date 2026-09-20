@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Osso</title>
+  <g fill="none" stroke="#fbfaf7" stroke-width="16" stroke-linejoin="round">
+    <rect x="28" y="51" width="72" height="26" rx="13"/>
+    <circle cx="28" cy="47" r="16"/>
+    <circle cx="28" cy="81" r="16"/>
+    <circle cx="100" cy="47" r="16"/>
+    <circle cx="100" cy="81" r="16"/>
+  </g>
+  <g fill="#161616">
+    <rect x="28" y="51" width="72" height="26" rx="13"/>
+    <circle cx="28" cy="47" r="16"/>
+    <circle cx="28" cy="81" r="16"/>
+    <circle cx="100" cy="47" r="16"/>
+    <circle cx="100" cy="81" r="16"/>
+  </g>
+</svg>

@@ -33,7 +33,7 @@ No summaries or generated text of any kind. No `display: none`. No server of our
 ┌─ page ───────────────────────────────────────────────────────┐
 │ content script                                                │
 │   segment  → find main content, collect blocks, split         │
-│              sentences, wrap each in <span class="osso-s">    │
+│              sentences, wrap each in <osso-s class="osso-s">  │
 │   index    → orchestrate, messaging, MutationObserver, state  │
 │   render   → fade / reveal / chip / threshold / unwrap        │
 └──────────────┬────────────────────────────────────────────────┘
@@ -55,7 +55,7 @@ No summaries or generated text of any kind. No `display: none`. No server of our
 ### Data flow for one page
 
 1. `content/index` at `document_idle`: ask background for settings + site state. Stop (and report `skipped`/`no-key`) if disabled, host denied, no key.
-2. `segment.findMainContainer` → `collectBlocks` → `splitSentences` → `wrapSentences`: each sentence becomes one or more `<span class="osso-s" data-osso="<id>">` around the original text nodes (split with `Text.splitText`, so inline markup survives). If fewer than `MIN_SENTENCES` (8) → `skipped`.
+2. `segment.findMainContainer` → `collectBlocks` → `splitSentences` → `wrapSentences`: each sentence becomes one or more `<osso-s class="osso-s" data-osso="<id>">` around the original text nodes (split with `Text.splitText`, so inline markup survives; a custom element, so no site stylesheet matches it). Unwrapping gives every split node its characters back, so the page's own text nodes keep their identity. If fewer than `MIN_SENTENCES` (8) → `skipped`.
 3. `packs.route(pageMeta)` picks a pack from JSON-LD `@type`, URL, `og:type`, title and a text sample. Unsure → `generic`.
 4. Send `judge` with `{url, title, lang, packId, contentHash, sentences}`. Background: cache hit → return. Miss → chunk (≤ 60 sentences), one request per chunk in parallel (≤ 4 in flight), state `{title, language, page_kind_hint, text}` (the chunk's own text), questions `keep_<i>` (Noul) + `kind_<i>` (Choice) per sentence, and `page_kind` (Choice) on the first chunk. Parse → `PageJudgment`. Store.
 5. `render.apply(judgment, threshold)`: sentences with `p(keep) < threshold` get `osso-fade`; settle animation staggered by document order. Kept sentences are untouched.
@@ -95,7 +95,7 @@ Run only when all hold: `settings.enabled`; host not in `deniedHosts` (defaults 
 
 ### Privacy and permissions
 
-The key lives only in `chrome.storage.local` and is used only by the background worker; the content script never sees it. What leaves the machine: the page title, language, page-kind hint and the main text of the page, to `api.typesafe.ai` only. No URLs are sent. Permissions: `storage` and host permissions for `http(s)://*/*` (content script). No remote code.
+The key lives only in `chrome.storage.local` and is used only by the background worker; the content script never sees it, and the popup sees only a presence marker. What leaves the machine: the page title, language, page-kind hint and the main text of the page, to `api.typesafe.ai` only. No URLs are sent. Nothing is logged, not even a rejected request's body. Permissions: `storage`, `unlimitedStorage` (the cache), `activeTab` (the popup's tab URL) and a host permission for `https://api.typesafe.ai/*` only; the content script is injected by `content_scripts.matches`, which needs no host permission. No remote code.
 
 ### Modules and owners
 

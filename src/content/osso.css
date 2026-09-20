@@ -1,0 +1,100 @@
+/*
+ * Osso — loaded on every page by the manifest, so every rule is scoped to .osso-* or html.osso-on
+ * and none of them touches layout. The fade is a colour transition on inline spans; nothing else.
+ */
+
+.osso-s {
+  transition-property: color;
+  transition-duration: var(--osso-dur, 550ms);
+  transition-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--osso-delay, 0ms);
+}
+
+/* The fade: a grey chosen per block for its background (--osso-grey is set on the block by the renderer). */
+html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin) {
+  color: var(--osso-grey, #b9b9b9) !important;
+}
+
+/* Links inside faded text take the grey too; text-decoration is left alone so a link still reads as a
+   link, and the author's hover colour comes back for as long as the pointer is on it. */
+html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin) a:not(:hover) {
+  color: inherit !important;
+}
+
+/* After the entrance wave, every later change (reveal release, pin, unpin) moves together and faster. */
+html.osso-settled .osso-s {
+  transition-duration: 300ms;
+}
+
+/* A kept sentence has nothing of ours to animate: the author's own colour changes (a card hover, a
+   theme switch) land as fast as they do on any other page. The popup slider lifts this for its
+   200 ms so a sentence coming back to ink still eases. */
+html.osso-settled:not(.osso-instant) .osso-s:not(.osso-fade):not(.osso-pin) {
+  transition-duration: 0ms;
+}
+
+/* The popup slider: re-render with no stagger and a short settle. */
+html.osso-instant .osso-s {
+  transition-delay: 0ms !important;
+  transition-duration: 200ms;
+}
+
+/* Holding the reveal key: ink comes back at once, everywhere. */
+html.osso-reveal .osso-s {
+  transition-duration: 180ms;
+  transition-delay: 0ms !important;
+}
+
+/* Animations off in settings: a plain switch. */
+html.osso-still .osso-s {
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* Hover chip: one element, reused, positioned by the renderer above the sentence's first line box. */
+.osso-chip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2147483647;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: #161616;
+  color: #f2f0ea;
+  font: 11px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(2px) scale(0.98);
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+  pointer-events: none;
+  user-select: none;
+}
+
+.osso-chip.osso-chip-show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* On a dark block the chip flips so it still reads as a small card sitting on the page. */
+.osso-chip.osso-chip-light {
+  background: #f2f0ea;
+  color: #161616;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .osso-s {
+    transition-duration: 120ms !important;
+    transition-delay: 0ms !important;
+  }
+  .osso-chip {
+    transition: none;
+  }
+}

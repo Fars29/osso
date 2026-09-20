@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Osso</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup" id="popup" data-state="loading">
+      <header class="top">
+        <h1 class="wordmark">osso</h1>
+        <span class="chip" id="chip" hidden></span>
+      </header>
+
+      <section class="hero" aria-live="polite">
+        <div class="count" id="v-count">
+          <p class="figure">
+            <span class="big" id="kept">—</span><span class="of" id="total"></span>
+          </p>
+          <p class="caption" id="caption">sentences kept</p>
+          <div class="bone" aria-hidden="true"><i id="bone"></i></div>
+          <p class="status muted" id="status"></p>
+        </div>
+
+        <div class="note" id="v-note" hidden>
+          <p class="note-title" id="note-title"></p>
+          <p class="note-sub muted" id="note-sub"></p>
+          <button class="btn" id="note-action" type="button" hidden></button>
+        </div>
+      </section>
+
+      <section class="controls dim" id="controls">
+        <label class="row">
+          <span>On this site</span>
+          <span class="switch">
+            <input type="checkbox" id="site" role="switch" />
+            <i></i>
+          </span>
+        </label>
+
+        <div class="row row-slider">
+          <label for="threshold">Strictness</label>
+          <div class="slider">
+            <span class="end muted">gentle</span>
+            <input type="range" id="threshold" />
+            <span class="end muted">bare</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <button class="text-btn" id="reveal" type="button">Reveal all</button>
+        </div>
+      </section>
+
+      <footer class="foot muted">
+        <span id="hint">Hold Shift to peek</span>
+        <a href="#" id="settings">Settings</a>
+      </footer>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

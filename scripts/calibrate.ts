@@ -7,7 +7,8 @@
  */
 const KEY = process.env.TYPESAFE_API_KEY;
 if (!KEY) throw new Error("TYPESAFE_API_KEY missing");
-const URL = "https://api.typesafe.ai/v1/systemone";
+// Not named URL: that would shadow the global the fetch signature is typed against.
+const API = "https://api.typesafe.ai/v1/systemone";
 
 type Sent = { t: string; k: 0 | 1 };
 type Page = { id: string; kind: string; title: string; lang: string; s: Sent[] };
@@ -158,7 +159,7 @@ function stateFor(page: Page) {
 
 async function ask(state: unknown, questions: Record<string, unknown>) {
   const t0 = performance.now();
-  const r = await fetch(URL, {
+  const r = await fetch(API, {
     method: "POST",
     headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ state, model: "jev-latest", questions }),
@@ -223,7 +224,11 @@ for (const p of PAGES) if (p.id !== "H") p.s.forEach((s, i) => (s.k ? bpos : bne
 console.log(`\n=== ONE REQUEST, ${nq} questions over all pages: ${big.ms.toFixed(0)} ms, ${big.usage.input_tokens} in-tokens ≈ $${(big.usage.input_tokens / 1e6 * 0.042).toFixed(5)}, AUC(q)=${auc(bpos, bneg).toFixed(3)}`);
 
 // Determinism: repeat page B.
-const rep = await ask(stateFor(PAGES[1]), questionsFor(PAGES[1]));
+const pageB = PAGES[1]!;
+const rep = await ask(stateFor(pageB), questionsFor(pageB));
 let maxDiff = 0;
-PAGES[1].s.forEach((s, i) => { maxDiff = Math.max(maxDiff, Math.abs(rep.answers[`keepq_${i}`].noul - rows.find((r) => r.page === "B" && r.t === s.t)!.q)); });
+pageB.s.forEach((s, i) => { maxDiff = Math.max(maxDiff, Math.abs(rep.answers[`keepq_${i}`].noul - rows.find((r) => r.page === "B" && r.t === s.t)!.q)); });
 console.log(`determinism on page B repeat: max |Δp| = ${maxDiff.toFixed(3)}  (${rep.ms.toFixed(0)} ms)`);
+
+// Top-level await needs a module; the probe exports nothing.
+export {};
