@@ -91,6 +91,8 @@ const host = location.hostname;
 let settings: Settings | null = null;
 let state: TabState = blank();
 let mounted: Mounted | null = null;
+/** The whole-page request the model is answering right now; its chunks are painted as they arrive. */
+let inflight: { contentHash: string; gen: number; packId: PageKind } | null = null;
 let observer: MutationObserver | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 /** Bumped whenever a page view is torn down: a judge reply carrying an older number belongs to spans that no longer exist. */
@@ -232,15 +234,21 @@ async function start(): Promise<void> {
     const packId = route(seg.meta);
     report({ status: "judging", packId, pageKind: null, total: seg.sentences.length, kept: 0, faded: 0, ruleHits: {} });
     const req: JudgeRequest = { meta: seg.meta, packId, contentHash: seg.contentHash, sentences: seg.sentences };
+    // Chunks of this request are painted as they land (see onChunk); anything else is ignored.
+    inflight = { contentHash: req.contentHash, gen, packId };
     // Rules go out beside the keep question, not after it, so they never hold the settle up; the
     // background remembers the request before it awaits anything, so the order they land in is free.
     const judging = ask({ type: "judge", req });
     const rules = settings.rules;
     const ruling = rules.length > 0 ? ask({ type: "judgeRules", contentHash: req.contentHash, rules }) : null;
     const reply = await judging;
+    inflight = null;
     if (!live()) return;
     if (reply?.type !== "judgment") {
-      wrapped(() => unwrapAll(document));
+      wrapped(() => {
+        clearRender(document);
+        unwrapAll(document);
+      });
       report({ status: "error", packId: null, total: 0 }, reasonOf(reply));
       return;
     }
@@ -625,6 +633,28 @@ async function onSettingsChanged(next: Settings): Promise<void> {
   if (state.status === "disabled" || state.status === "no-key") void start();
 }
 
+/**
+ * A chunk of the request in flight: painted now, with its own wave, so the grey is seen running
+ * down the page as the model answers. The counts go to the popup as they grow. The full judgment
+ * that follows merges over this and animates nothing twice.
+ */
+function onChunk(msg: Extract<ToContent, { type: "judgmentChunk" }>): void {
+  const s = settings;
+  if (!inflight || !s || msg.contentHash !== inflight.contentHash || inflight.gen !== generation) return;
+  const partial: PageJudgment = {
+    packId: inflight.packId,
+    pageKind: inflight.packId,
+    pageKindConfidence: 0,
+    sentences: msg.sentences,
+    inputTokens: 0,
+    ms: 0,
+    cached: false,
+    failedIds: msg.failedIds,
+  };
+  const c = wrapped(() => applyJudgment(document, partial, renderOptions(s)));
+  report({ status: "judging", kept: c.kept, faded: c.faded });
+}
+
 function onMessage(msg: ToContent): FromContent {
   switch (msg.type) {
     case "getTabState":
@@ -652,6 +682,9 @@ function onMessage(msg: ToContent): FromContent {
     case "rulesChanged":
       if (settings) settings = { ...settings, rules: msg.rules };
       queueRules(syncRules);
+      return { type: "tabState", state };
+    case "judgmentChunk":
+      onChunk(msg);
       return { type: "tabState", state };
     case "settingsChanged":
       void onSettingsChanged(msg.settings);

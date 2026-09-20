@@ -249,8 +249,17 @@ function render() {
     case "judging":
     case "idle":
       show(s.status);
-      // The number that will become the kept count is already there, pulsing; the caption carries
-      // the verb. When the judgment lands it counts down from here to what stayed.
+      if (s.status === "judging" && s.kept + s.faded > 0) {
+        // Chunks are landing: the kept count climbs and the bar fills with what has been judged so far.
+        ui.total.textContent = `/ ${s.total}`;
+        ui.caption.textContent = "sentences kept · judging…";
+        ui.status.textContent = "";
+        ui.bone.style.width = s.total > 0 ? `${(100 * (s.kept + s.faded)) / s.total}%` : "0%";
+        countTo(s.kept);
+        return;
+      }
+      // Nothing back yet: the number that will become the kept count is already there, pulsing;
+      // the caption carries the verb.
       ui.kept.textContent = s.total > 0 ? String(s.total) : "—";
       ui.total.textContent = "";
       ui.caption.textContent = s.status === "judging" ? "sentences, judging…" : "waiting for the page";

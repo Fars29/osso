@@ -102,11 +102,34 @@ try {
   context = launched.context;
   await saveKey(context, launched.id, key);
 
-  // Recipe: story faded, ingredients kept, chrome untouched.
+  // Recipe: story faded, ingredients kept, chrome untouched. Judged in chunks of ten here, so the
+  // progressive paint is observable: the popup's counts climb while the status is still "judging",
+  // and the first grey arrives with the sweep on it.
+  const probe = await context.newPage();
+  await probe.goto(`chrome-extension://${launched.id}/options.html`);
+  await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 10 } }));
   const page = await context.newPage();
+  await page.bringToFront();
   let t0 = performance.now();
+  const partials = [];
+  const sampling = (async () => {
+    for (let i = 0; i < 600; i++) {
+      const s = await fixtureTabState(probe);
+      if (s?.status === "judging" && s.faded + s.kept > 0) partials.push(s.kept + s.faded);
+      if (s?.status === "done" || s?.status === "error") break;
+      await sleep(40);
+    }
+  })();
   await page.goto(`${server.url}/recipe.html`);
+  await page.waitForSelector(".osso-fade", { state: "attached", timeout: JUDGE_TIMEOUT_MS });
+  const sweeping = await page.evaluate(() => document.querySelectorAll(".osso-sweep").length);
   await waitJudged(page);
+  await sampling;
+  assert(sweeping > 0, "recipe: the first grey arrived without the sweep");
+  assert(partials.length >= 1, "recipe: no partial counts were seen while judging (chunks are not painted as they land)");
+  console.log(`[osso e2e] progressive paint: ${partials.length} partial states seen (${partials.join(" → ")} judged), ${sweeping} sentences sweeping at first grey`);
+  await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 60 } }));
+  await probe.close();
   const recipe = await page.evaluate(countSentences);
   rows.push({ page: "recipe.html", ...recipe, ms: Math.round(performance.now() - t0) });
   assert(recipe.faded >= 5, `recipe: expected ≥ 5 faded sentences, got ${recipe.faded}`);

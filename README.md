@@ -48,9 +48,9 @@ Click the icon. The popup shows how many sentences were kept, the page kind, and
 ## How it decides
 
 1. The main text of the page is split into sentences; headings, tables, code, navigation and forms are never touched.
-2. Sentences go to the model in batches of about 60, in parallel, with the page's own text as context.
+2. Sentences go to the model in batches of about 30, in parallel, with their own text as context.
 3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
-4. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
+4. Each batch is painted the moment it comes back, sentence by sentence, so you see the grey run down the page as the model answers. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
 5. Probabilities are cached per page, so the slider and rule removal re-render instantly with no request.
 6. Pages that change under you (infinite scroll, client-side navigation) are watched; only new sentences are judged.
 

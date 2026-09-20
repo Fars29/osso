@@ -9,10 +9,14 @@ export const USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
 export const MIN_SENTENCES = 8;
 /** A sentence shorter than this (in words) is folded into its neighbour. */
 export const MIN_WORDS = 3;
-/** Upper bound on sentences per API request; the probe showed 258 questions in 1.3 s, this keeps it well under. */
-export const MAX_SENTENCES_PER_REQUEST = 60;
+/**
+ * Upper bound on sentences per API request. Smaller chunks land sooner and more often, and each
+ * one is painted the moment it lands, so the page is seen being judged rather than judged; the
+ * probe showed 258 questions in 1.3 s, so 30 is far from the limit either way.
+ */
+export const MAX_SENTENCES_PER_REQUEST = 30;
 /** Requests in flight at once for one page. */
-export const MAX_CONCURRENT_REQUESTS = 4;
+export const MAX_CONCURRENT_REQUESTS = 6;
 export const REQUEST_TIMEOUT_MS = 20_000;
 export const MAX_RETRIES = 3;
 /** Pages kept in the judgment cache before the oldest is evicted. */

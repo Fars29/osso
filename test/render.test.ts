@@ -78,7 +78,8 @@ afterEach(() => {
 });
 
 describe("applyJudgment", () => {
-  it("fades below the threshold, leaves kept sentences untouched and failed ones alone", () => {
+  it("fades below the threshold, leaves kept sentences untouched once settled, and failed ones alone", () => {
+    vi.useFakeTimers();
     const c = applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
     expect(c).toEqual({ total: 5, kept: 3, faded: 2 });
     expect(fadedIds()).toEqual([1, 3]);
@@ -86,13 +87,19 @@ describe("applyJudgment", () => {
     // Every span of a multi-span sentence fades together.
     expect(spans(3)).toHaveLength(3);
     for (const s of spans(3)) expect(s.classList.contains("osso-fade")).toBe(true);
-    // Kept: the author's ink, no class beyond osso-s, no inline style.
+    // During the wave every judged sentence, kept or not, wears the sweep on its own delay.
+    for (const id of [0, 1, 2, 3, 4]) for (const s of spans(id)) {
+      expect(s.classList.contains("osso-sweep")).toBe(true);
+      expect(s.style.getPropertyValue("--osso-delay")).toMatch(/ms$/);
+    }
+    // Failed chunk: untouched and not counted, not even swept.
+    for (const s of spans(5)) expect(s.className).toBe("osso-s");
+    // Settled: kept is the author's ink, no class beyond osso-s, no inline style.
+    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
     for (const id of [0, 2, 4]) for (const s of spans(id)) {
       expect(s.className).toBe("osso-s");
-      expect(s.getAttribute("style")).toBeNull();
+      expect(s.getAttribute("style") || "").toBe("");
     }
-    // Failed chunk: untouched and not counted.
-    for (const s of spans(5)) expect(s.className).toBe("osso-s");
     expect(counts(document)).toEqual(c);
   });
 
@@ -113,11 +120,34 @@ describe("applyJudgment", () => {
     expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
     expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${2 * WAVE_STEP_MS}ms`);
     for (const s of spans(3)) expect(s.style.getPropertyValue("--osso-delay")).toBe(`${3 * WAVE_STEP_MS}ms`);
-    expect(spans(4)[0]!.style.getPropertyValue("--osso-delay")).toBe("");
+    // The kept sentence takes the next step too: the sweep passes over it on its turn.
+    expect(spans(4)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${4 * WAVE_STEP_MS}ms`);
     expect(root().classList.contains("osso-settled")).toBe(false);
-    vi.advanceTimersByTime(3 * WAVE_STEP_MS + SETTLE_MS + 50);
+    vi.advanceTimersByTime(4 * WAVE_STEP_MS + SETTLE_MS + 50);
     expect(root().classList.contains("osso-settled")).toBe(true);
-    for (const id of [0, 1, 2, 3]) for (const s of spans(id)) expect(s.style.getPropertyValue("--osso-delay")).toBe("");
+    for (const id of [0, 1, 2, 3, 4]) for (const s of spans(id)) expect(s.style.getPropertyValue("--osso-delay")).toBe("");
+  });
+
+  it("paints chunks as they land: each gets its own wave, and nothing is swept twice", () => {
+    vi.useFakeTimers();
+    const all = judgment();
+    const first = { ...all, sentences: all.sentences.filter((s) => s.id <= 1), failedIds: [] };
+    const rest = { ...all, sentences: all.sentences.filter((s) => s.id >= 2) };
+    applyJudgment(document, first, { threshold: 0.95, animations: true });
+    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
+    expect(spans(2)[0]!.classList.contains("osso-sweep")).toBe(false);
+    vi.advanceTimersByTime(100);
+    applyJudgment(document, rest, { threshold: 0.95, animations: true });
+    // The second chunk starts its own wave at zero; the first chunk's spans are left as they were.
+    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
+    expect(spans(2)[0]!.classList.contains("osso-sweep")).toBe(true);
+    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
+    // The whole judgment that follows the chunks re-sweeps nothing and re-delays nothing.
+    applyJudgment(document, all, { threshold: 0.95, animations: true });
+    expect(spans(0)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
+    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
+    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
+    for (const id of [0, 1, 2, 3, 4]) for (const s of spans(id)) expect(s.classList.contains("osso-sweep")).toBe(false);
   });
 
   it("caps the wave so a long page still settles", () => {

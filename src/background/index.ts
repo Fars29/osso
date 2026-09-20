@@ -19,9 +19,9 @@ import type {
   ToBackground,
   ToContent,
 } from "../shared/types.ts";
-import { RECENT_REQUESTS } from "../shared/constants.ts";
+import { MAX_SENTENCES_PER_REQUEST, RECENT_REQUESTS } from "../shared/constants.ts";
 import { getPack } from "../packs/index.ts";
-import { ApiError, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeResult } from "./api.ts";
+import { ApiError, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeOptions, type JudgeResult } from "./api.ts";
 import { clearCache, getCached, mergeRules, putCached } from "./cache.ts";
 import {
   addStats,
@@ -157,7 +157,7 @@ async function setBadge(tabId: number, state: TabState | null): Promise<void> {
  * The request is remembered before anything is awaited, so a `judgeRules` the page sends in the
  * same breath (it does, on load) finds it whatever the order the two settle in.
  */
-async function judge(req: JudgeRequest): Promise<FromBackground> {
+async function judge(req: JudgeRequest, tabId?: number): Promise<FromBackground> {
   const entry = remember(req);
   const settings = await getSettings();
   if (!settings.apiKey) return { type: "error", code: "no-key", error: "No API key" };
@@ -172,10 +172,18 @@ async function judge(req: JudgeRequest): Promise<FromBackground> {
   }
   let result: JudgeResult;
   try {
-    result = await judgePage(req, getPack(req.packId), {
+    const opts: JudgeOptions = {
       apiKey: settings.apiKey,
-      maxSentencesPerRequest: settings.maxSentencesPerRequest,
-    });
+      maxSentencesPerRequest: Math.min(settings.maxSentencesPerRequest, MAX_SENTENCES_PER_REQUEST),
+    };
+    // Every chunk goes to the page the moment it lands, so the fade is seen travelling down the
+    // page as the model answers; the whole judgment still follows as the reply, for the cache.
+    if (tabId !== undefined) {
+      opts.onChunk = (p) => {
+        void chrome.tabs.sendMessage(tabId, { type: "judgmentChunk", contentHash: req.contentHash, sentences: p.sentences, failedIds: p.failedIds }).catch(() => undefined);
+      };
+    }
+    result = await judgePage(req, getPack(req.packId), opts);
   } catch (err) {
     const e = err instanceof ApiError ? err : new ApiError("server", err instanceof Error ? err.message : String(err));
     if (e.code === "invalid-key") await setSettings({ apiKeyInvalid: true });
@@ -287,7 +295,7 @@ async function handle(msg: Inbound, sender: chrome.runtime.MessageSender): Promi
       return { type: "hostEnabled", enabled: isHostEnabled(msg.host, settings) };
     }
     case "judge":
-      return judge(msg.req);
+      return judge(msg.req, sender.tab?.id);
     case "judgeRules":
       return judgeRulesFor(msg.contentHash, Array.isArray(msg.rules) ? msg.rules : []);
     case "tabState": {

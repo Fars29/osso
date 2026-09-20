@@ -161,6 +161,8 @@ export type ToContent =
   | { type: "setEnabledHere"; enabled: boolean }
   /** The rules changed (added, removed, or both); the page judges the new ones and drops the rest at once. */
   | { type: "rulesChanged"; rules: string[] }
+  /** One chunk of a judge request the page is waiting on, as soon as the model answers it: the page paints it at once. */
+  | { type: "judgmentChunk"; contentHash: string; sentences: SentenceJudgment[]; failedIds: number[] }
   | { type: "getTabState" };
 
 export type FromContent = { type: "tabState"; state: TabState } | { type: "ok" };

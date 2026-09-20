@@ -25,13 +25,17 @@ const SPAN = ".osso-s";
 const BLOCK = "[data-osso-block]";
 
 /**
- * Settle: a wave down the page, one sentence after another, capped so a long page still settles in
- * about a second and a half. Each sentence takes SETTLE_MS to go grey (osso.css matches). Shorter
- * and the page snaps; the reader should see it settle, top to bottom, like ink drying.
+ * Settle: a wave down the page, one sentence after another, capped so a long chunk still settles in
+ * about a second. Each sentence takes SETTLE_MS to go grey (osso.css matches), and each one judged
+ * in a pass, kept or not, gets the sweep on the same delay: a faint band of marrow that runs across
+ * it and out, the judge passing over the text. Chunks land one after another and each brings its own
+ * wave, so the page is seen being read from the top down at the speed the model answers.
  */
-export const WAVE_STEP_MS = 18;
-export const WAVE_MAX_MS = 600;
-export const SETTLE_MS = 900;
+export const WAVE_STEP_MS = 14;
+export const WAVE_MAX_MS = 500;
+export const SETTLE_MS = 650;
+/** The sweep's length (osso.css matches); shorter than SETTLE_MS, so the settle timer covers it. */
+export const SWEEP_MS = 360;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
 /** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
@@ -67,6 +71,10 @@ interface DocState {
   pinned: Set<number>;
   /** Spans that carry an entrance delay; cleared once the wave has settled so later transitions are uniform. */
   waved: HTMLElement[];
+  /** Spans wearing the sweep; the class comes off with the delays. */
+  swept: HTMLElement[];
+  /** Ids rendered at least once: only a sentence's first rendering gets the sweep. */
+  painted: Set<number>;
   settleTimer: ReturnType<typeof setTimeout> | null;
   instantTimer: ReturnType<typeof setTimeout> | null;
   chip: HTMLElement | null;
@@ -93,6 +101,8 @@ function stateOf(doc: Document): DocState {
       animations: true,
       pinned: new Set(),
       waved: [],
+      swept: [],
+      painted: new Set(),
       settleTimer: null,
       instantTimer: null,
       chip: null,
@@ -175,13 +185,21 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
       s.classList.toggle("osso-pin", pinned);
     }
     if (fade && !pinned) faded++;
-    if (wave && fade && !wasFaded) {
+    // The wave runs over every sentence judged in this pass, kept or not: the sweep shows the
+    // judge passing over the text, and the grey follows it where it falls.
+    const fresh = !state.painted.has(id);
+    if (fresh) state.painted.add(id);
+    if (wave && (fresh || (fade && !wasFaded))) {
       const delay = Math.min(rank * WAVE_STEP_MS, WAVE_MAX_MS);
       rank++;
       maxDelay = Math.max(maxDelay, delay);
       for (const s of spans) {
         s.style.setProperty("--osso-delay", `${delay}ms`);
         state.waved.push(s);
+        if (fresh) {
+          s.classList.add("osso-sweep");
+          state.swept.push(s);
+        }
       }
     }
   }
@@ -202,6 +220,8 @@ function scheduleSettle(doc: Document, state: DocState, maxDelay: number) {
     state.settleTimer = null;
     for (const s of state.waved) dropProperty(s, "--osso-delay");
     state.waved = [];
+    for (const s of state.swept) s.classList.remove("osso-sweep");
+    state.swept = [];
     root.classList.add("osso-settled");
   }, maxDelay + SETTLE_MS + 50);
 }
@@ -798,7 +818,7 @@ export function clearRender(doc: Document): void {
   }
   doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
-    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit");
+    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep");
     dropProperty(s, "--osso-delay");
   }
   for (const b of doc.querySelectorAll<HTMLElement>(BLOCK)) {
