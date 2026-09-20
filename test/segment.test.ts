@@ -522,3 +522,24 @@ describe("table-based layout", () => {
     expect(sentences.length).toBe(9);
   });
 });
+
+describe("isAppLikePage on pages that only look busy", () => {
+  const prose = Array.from({ length: 40 }, (_, i) => `<p>Paragraph ${i} of the article, with enough words in it to read as prose and not as a label on a form. It goes on for a second sentence as well.</p>`).join("");
+
+  it("a recipe with a tick box per ingredient, rating stars and a comment form is a page to read", () => {
+    const ticks = Array.from({ length: 30 }, (_, i) => `<li><input type="checkbox" id="i${i}"><label for="i${i}">Ingredient ${i}, 100 g</label></li>`).join("");
+    const stars = Array.from({ length: 10 }, (_, i) => `<input type="radio" name="rating" value="${i}">`).join("");
+    const doc = page(`<article>${prose}<ul>${ticks}</ul></article><form>${stars}<textarea></textarea><input type="text"><input type="email"><input type="submit"></form>`);
+    expect(isAppLikePage(doc)).toBe(false);
+  });
+
+  it("many entry fields do not make an app when the text far outweighs them", () => {
+    const fields = Array.from({ length: 35 }, () => `<input type="text">`).join("");
+    expect(isAppLikePage(page(`<article>${prose}${prose}</article><form>${fields}</form>`))).toBe(false);
+  });
+
+  it("many entry fields with little text around them do", () => {
+    const fields = Array.from({ length: 35 }, (_, i) => `<label>Field ${i}<input type="text"></label>`).join("");
+    expect(isAppLikePage(page(`<h1>New invoice</h1><form>${fields}</form>`))).toBe(true);
+  });
+});

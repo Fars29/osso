@@ -853,8 +853,21 @@ export function collectPageMeta(doc: Document, sample: string, sentenceCount: nu
 
 const APP_EDITABLE_CHARS = 200;
 const APP_INPUT_COUNT = 30;
+/** Below this many characters of page text per entry control, the controls are the page. */
+const APP_CHARS_PER_CONTROL = 150;
+/**
+ * Controls a person types or picks a value into. Checkboxes and radios are left out: a recipe card
+ * puts a tick box beside every ingredient and five radio stars under the title, and a page with
+ * forty of those is still a page to read (therecipecritic.com was skipped as "an app" for them).
+ */
+const APP_ENTRY_CONTROLS =
+  "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), textarea, select";
 
-/** An editor or a data-entry form is an application, not a page to read; Osso stays out. */
+/**
+ * An editor or a data-entry form is an application, not a page to read; Osso stays out. Many entry
+ * controls alone do not make one: they must also outweigh the text, so an article with a long
+ * comment form, a newsletter box and a search field is still an article.
+ */
 export function isAppLikePage(doc: Document): boolean {
   if (doc.designMode === "on") return true;
   for (const region of Array.from(doc.querySelectorAll("[contenteditable]"))) {
@@ -862,5 +875,8 @@ export function isAppLikePage(doc: Document): boolean {
     if (value !== null && value.toLowerCase() === "false") continue;
     if ((region.textContent ?? "").length > APP_EDITABLE_CHARS) return true;
   }
-  return doc.querySelectorAll("input:not([type=hidden]), textarea, select").length > APP_INPUT_COUNT;
+  const controls = doc.querySelectorAll(APP_ENTRY_CONTROLS).length;
+  if (controls <= APP_INPUT_COUNT) return false;
+  const chars = doc.body ? textLength(doc.body) : 0;
+  return chars / controls < APP_CHARS_PER_CONTROL;
 }
