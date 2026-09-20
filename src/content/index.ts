@@ -33,6 +33,7 @@ import {
   ruleHits,
   setReveal,
   setThreshold,
+  showProgress,
   type Counts,
 } from "./render.ts";
 import { isAppLikePage, segmentNewBlocks, segmentPage, textLength, unwrapAll, unwrapBlock } from "./segment.ts";
@@ -236,6 +237,7 @@ async function start(): Promise<void> {
     const req: JudgeRequest = { meta: seg.meta, packId, contentHash: seg.contentHash, sentences: seg.sentences };
     // Chunks of this request are painted as they land (see onChunk); anything else is ignored.
     inflight = { contentHash: req.contentHash, gen, packId };
+    wrapped(() => showProgress(document, { judged: 0, total: seg.sentences.length }, settings?.animations ?? true));
     // Rules go out beside the keep question, not after it, so they never hold the settle up; the
     // background remembers the request before it awaits anything, so the order they land in is free.
     const judging = ask({ type: "judge", req });
@@ -266,10 +268,15 @@ function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeR
   const s = settings;
   if (!s) throw new Error("settings missing at mount");
   const ruleResults: RuleResults = { ...judgment.rules };
-  let c = applyJudgment(document, judgment, renderOptions(s));
-  // A cached page carries its rules: they apply in the same breath as the fade, so a sentence a
-  // rule keeps never goes grey at all.
-  if (s.rules.length > 0) c = applyRules(document, ruleResults, s.rules);
+  const c = wrapped(() => {
+    let counts = applyJudgment(document, judgment, renderOptions(s));
+    // A cached page carries its rules: they apply in the same breath as the fade, so a sentence a
+    // rule keeps never goes grey at all.
+    if (s.rules.length > 0) counts = applyRules(document, ruleResults, s.rules);
+    // The read-out closes with the total and the time the model took; a cached page never opened one.
+    if (!judgment.cached) showProgress(document, { judged: counts.total, total: counts.total, ms: judgment.ms }, s.animations);
+    return counts;
+  });
   mounted = {
     container,
     meta,
@@ -402,8 +409,10 @@ async function syncRules(): Promise<void> {
  * are the hover chip and its text. Our wrappers appearing or disappearing anywhere else is the
  * page's doing: a framework re-rendering a paragraph, a router bringing a cached view back.
  */
+/** Ours, not the page's: the hover chip and the read-out, and anything inside them (the counter's text changes every frame). */
 function isChip(n: Node): boolean {
-  return n.nodeType === 1 && (n as Element).matches(".osso-chip");
+  const el = n.nodeType === 1 ? (n as Element) : n.parentElement;
+  return !!el && el.closest(".osso-chip, .osso-hud") !== null;
 }
 
 function foreign(r: MutationRecord): boolean {
@@ -470,8 +479,23 @@ function outgrown(m: Mounted): boolean {
 /** How much text the page had when segmentation last ran while skipped, so attribute noise alone does not spend the retries. */
 let lastBodyChars = -1;
 
-function onMutations(records: MutationRecord[]): void {
+/**
+ * A record of something Osso did itself, after the fact and outside `wrapped`: the read-out's
+ * number ticking, the chip, a class or a delay coming off a wrapper when a wave has settled. The
+ * page knows nothing of these elements, so an attribute changing on one is always ours. Left in,
+ * they re-armed the debounce on every frame and a pending restart never came.
+ */
+function ours(r: MutationRecord): boolean {
+  const el = r.target.nodeType === 1 ? (r.target as Element) : r.target.parentElement;
+  if (!el) return false;
+  if (el.closest(".osso-chip, .osso-hud")) return true;
+  return r.type === "attributes" && el.matches(".osso-s");
+}
+
+function onMutations(all: MutationRecord[]): void {
   if (wrapping) return;
+  const records = all.filter((r) => !ours(r));
+  if (records.length === 0) return;
   if (mounted) {
     const container = mounted.container;
     if (!container.isConnected || navigated()) {
@@ -651,7 +675,11 @@ function onChunk(msg: Extract<ToContent, { type: "judgmentChunk" }>): void {
     cached: false,
     failedIds: msg.failedIds,
   };
-  const c = wrapped(() => applyJudgment(document, partial, renderOptions(s)));
+  const c = wrapped(() => {
+    const counts = applyJudgment(document, partial, renderOptions(s));
+    showProgress(document, { judged: counts.total, total: state.total }, s.animations);
+    return counts;
+  });
   report({ status: "judging", kept: c.kept, faded: c.faded });
 }
 

@@ -26,16 +26,21 @@ const BLOCK = "[data-osso-block]";
 
 /**
  * Settle: a wave down the page, one sentence after another, capped so a long chunk still settles in
- * about a second. Each sentence takes SETTLE_MS to go grey (osso.css matches), and each one judged
- * in a pass, kept or not, gets the sweep on the same delay: a faint band of marrow that runs across
- * it and out, the judge passing over the text. Chunks land one after another and each brings its own
- * wave, so the page is seen being read from the top down at the speed the model answers.
+ * about a second. Each sentence judged in a pass, kept or not, gets the sweep on its delay: a comet
+ * of marrow, a thin bright head with a tail thinning out behind it, the judge passing over the
+ * text. Where the grey falls it is drawn in behind the comet's head (the wipe) rather than faded in
+ * all at once; inside a link, or without the block's ink, it falls back to the SETTLE_MS colour
+ * transition. Chunks land one after another and each brings its own wave, so the page is seen
+ * being read from the top down at the speed the model answers.
  */
-export const WAVE_STEP_MS = 14;
+export const WAVE_STEP_MS = 16;
 export const WAVE_MAX_MS = 500;
 export const SETTLE_MS = 650;
 /** The sweep's length (osso.css matches); shorter than SETTLE_MS, so the settle timer covers it. */
-export const SWEEP_MS = 360;
+export const SWEEP_MS = 480;
+/** How long the page's read-out stays once the judgment is complete. */
+const HUD_LINGER_MS = 2200;
+const HUD_COUNT_MS = 320;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
 /** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
@@ -43,7 +48,6 @@ export const RULE_HIT_MS = 240 + 1200;
 const CHIP_DELAY_MS = 250;
 /** Hover chip keeps this far from the text it describes and from a viewport edge; one and a half of it from the block's edge. */
 const CHIP_GAP_PX = 8;
-/** The chip's meter: p(keep) in this many dots. A bare probability meant nothing to most readers; five dots read at a glance. */
 
 /**
  * Contrast targets for the fade grey. The spec names `#b9b9b9` on white and `#5c5c5c` on near-black;
@@ -75,6 +79,11 @@ interface DocState {
   swept: HTMLElement[];
   /** Ids rendered at least once: only a sentence's first rendering gets the sweep. */
   painted: Set<number>;
+  /** The page's read-out while it is judged, the number it shows, and the timers that move and remove it. */
+  hud: HTMLElement | null;
+  hudShown: number;
+  hudRaf: number;
+  hudTimer: ReturnType<typeof setTimeout> | null;
   settleTimer: ReturnType<typeof setTimeout> | null;
   instantTimer: ReturnType<typeof setTimeout> | null;
   chip: HTMLElement | null;
@@ -103,6 +112,10 @@ function stateOf(doc: Document): DocState {
       waved: [],
       swept: [],
       painted: new Set(),
+      hud: null,
+      hudShown: 0,
+      hudRaf: 0,
+      hudTimer: null,
       settleTimer: null,
       instantTimer: null,
       chip: null,
@@ -198,6 +211,10 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
         state.waved.push(s);
         if (fresh) {
           s.classList.add("osso-sweep");
+          // Where the grey falls, it is drawn in behind the comet's head rather than faded in all
+          // at once. Not inside a link (its ink is the link's, not the block's), and not without
+          // the block's ink to draw the unswept part in.
+          if (fade && !pinned && !s.closest("a") && hasInk(s)) s.classList.add("osso-wipe");
           state.swept.push(s);
         }
       }
@@ -220,10 +237,16 @@ function scheduleSettle(doc: Document, state: DocState, maxDelay: number) {
     state.settleTimer = null;
     for (const s of state.waved) dropProperty(s, "--osso-delay");
     state.waved = [];
-    for (const s of state.swept) s.classList.remove("osso-sweep");
+    for (const s of state.swept) s.classList.remove("osso-sweep", "osso-wipe");
     state.swept = [];
     root.classList.add("osso-settled");
   }, maxDelay + SETTLE_MS + 50);
+}
+
+/** Whether the span's block knows the author's ink (paintBlocks wrote it): the wipe needs it for the part not yet swept. */
+function hasInk(span: HTMLElement): boolean {
+  const block = span.closest<HTMLElement>(BLOCK);
+  return !!block && block.style.getPropertyValue("--osso-ink") !== "";
 }
 
 function luminance(c: RGB): number {
@@ -365,6 +388,7 @@ function paintBlocks(doc: Document) {
     const bg = bgs[i]!;
     const ink = inks[i];
     b.style.setProperty("--osso-grey", ink ? pickGrey(bg, ink) : pickGrey(bg));
+    if (ink) b.style.setProperty("--osso-ink", `rgb(${ink.r}, ${ink.g}, ${ink.b})`);
     b.classList.toggle("osso-dark", luminance(bg) < LIGHT_LUMINANCE);
   });
 }
@@ -400,6 +424,75 @@ export function applyJudgment(
   const counts = render(doc, state, wave);
   if (!wave && !state.settleTimer) root.classList.add("osso-settled");
   return counts;
+}
+
+/**
+ * The page's own read-out while it is being judged: how many sentences the model has answered
+ * for, climbing as the chunks land, then the total and the time it took. It is how the speed is
+ * said out loud. Only with animations on; gone a moment after the judgment is complete.
+ */
+export function showProgress(doc: Document, p: { judged: number; total: number; ms?: number }, animations: boolean): void {
+  if (!animations || prefersReducedMotion(doc) || !doc.body) return;
+  const state = stateOf(doc);
+  let hud = state.hud;
+  if (!hud || !hud.isConnected) {
+    hud = doc.createElement("div");
+    hud.className = "osso-hud";
+    // Hidden from assistive tech and from our own segmenter, which skips aria-hidden subtrees.
+    hud.setAttribute("aria-hidden", "true");
+    const dot = doc.createElement("i");
+    dot.className = "osso-hud-dot";
+    const n = doc.createElement("span");
+    n.className = "osso-hud-n";
+    n.textContent = "0";
+    const t = doc.createElement("span");
+    t.className = "osso-hud-t";
+    hud.append(dot, n, t);
+    doc.body.appendChild(hud);
+    state.hud = hud;
+    state.hudShown = 0;
+    void hud.offsetWidth;
+    hud.classList.add("osso-hud-show");
+  }
+  const done = p.ms !== undefined;
+  const n = hud.querySelector<HTMLElement>(".osso-hud-n");
+  const t = hud.querySelector<HTMLElement>(".osso-hud-t");
+  if (t) t.textContent = done ? `sentences · ${(Math.max(p.ms ?? 0, 50) / 1000).toFixed(1)} s` : `/ ${p.total} sentences`;
+  hud.classList.toggle("osso-hud-done", done);
+  if (n) countUp(doc, state, n, done ? p.total : p.judged);
+  if (state.hudTimer) clearTimeout(state.hudTimer);
+  state.hudTimer = done ? setTimeout(() => hideProgress(state), HUD_LINGER_MS) : null;
+}
+
+function countUp(doc: Document, state: DocState, el: HTMLElement, target: number) {
+  const win = doc.defaultView;
+  const raf = win && typeof win.requestAnimationFrame === "function" ? win.requestAnimationFrame.bind(win) : null;
+  if (state.hudRaf && win && typeof win.cancelAnimationFrame === "function") win.cancelAnimationFrame(state.hudRaf);
+  state.hudRaf = 0;
+  const from = state.hudShown;
+  if (!raf || from === target) {
+    state.hudShown = target;
+    el.textContent = String(target);
+    return;
+  }
+  const t0 = performance.now();
+  const step = (now: number) => {
+    const k = Math.min(1, (now - t0) / HUD_COUNT_MS);
+    const v = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
+    state.hudShown = v;
+    el.textContent = String(v);
+    state.hudRaf = k < 1 ? raf(step) : 0;
+  };
+  state.hudRaf = raf(step);
+}
+
+function hideProgress(state: DocState) {
+  state.hudTimer = null;
+  const hud = state.hud;
+  if (!hud) return;
+  state.hud = null;
+  hud.classList.remove("osso-hud-show");
+  setTimeout(() => hud.remove(), 320);
 }
 
 /** A re-render with no stagger and a short settle: the slider, and a rule coming or going. */
@@ -813,17 +906,19 @@ export function clearRender(doc: Document): void {
     if (state.settleTimer) clearTimeout(state.settleTimer);
     if (state.instantTimer) clearTimeout(state.instantTimer);
     if (state.hitTimer) clearTimeout(state.hitTimer);
+    if (state.hudTimer) clearTimeout(state.hudTimer);
     state.chip?.remove();
     states.delete(doc);
   }
   doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
-    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep");
+    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe");
     dropProperty(s, "--osso-delay");
   }
   for (const b of doc.querySelectorAll<HTMLElement>(BLOCK)) {
     dropProperty(b, "--osso-grey");
+    dropProperty(b, "--osso-ink");
     b.classList.remove("osso-dark");
   }
-  for (const chip of doc.querySelectorAll(".osso-chip")) chip.remove();
+  for (const ours of doc.querySelectorAll(".osso-chip, .osso-hud")) ours.remove();
 }

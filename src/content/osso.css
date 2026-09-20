@@ -12,41 +12,149 @@
   transition-delay: var(--osso-delay, 0ms);
 }
 
-/* The sweep: the judge passing over a sentence. A faint band of marrow runs in from the left, fills
-   the sentence and runs out to the right in 360 ms on the sentence's own delay; the grey, where it
-   falls, follows on the same delay. Kept sentences get the pass and nothing else, so the whole text
-   is seen being read at the speed the model answers. Declared before the rule-hit underline, which
-   also paints a background, so a hit landing mid-sweep wins. */
-@keyframes osso-sweep {
-  0% {
-    background-size: 0% 100%;
-    background-position: 0 0;
+/* The sweep: the judge passing over a sentence, on the sentence's own delay. Kept sentences get the
+   pass and nothing else, so the whole text is seen being read at the speed the model answers.
+   Declared before the rule-hit underline, which also paints a background, so a hit landing
+   mid-sweep wins. */
+/* The comet. --osso-x is where its head is along the sentence; it starts just off the left end and
+   finishes a tail's length past the right end, so nothing of it is left on the text when it is done.
+   Registered, so it animates; a length-percentage, so the head and tail are the same size on a
+   three-word item and on a paragraph-long sentence. */
+@property --osso-x {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: -4px;
+}
+
+@keyframes osso-scan {
+  from {
+    --osso-x: -4px;
   }
-  45% {
-    background-size: 100% 100%;
-    background-position: 0 0;
-  }
-  100% {
-    background-size: 0% 100%;
-    background-position: 100% 0;
+  to {
+    --osso-x: calc(100% + 130px);
   }
 }
 
+/* A thin bright head, a tail that thins out behind it over 120 px: motion, read at a glance. */
 html.osso-on .osso-sweep {
-  --osso-sweep-rgb: 217 93 57;
-  background-image: linear-gradient(rgb(var(--osso-sweep-rgb) / 0.16), rgb(var(--osso-sweep-rgb) / 0.16));
+  --osso-a: 217 93 57;
+  --osso-comet: linear-gradient(
+    90deg,
+    rgb(var(--osso-a) / 0) calc(var(--osso-x) - 120px),
+    rgb(var(--osso-a) / 0.12) calc(var(--osso-x) - 44px),
+    rgb(var(--osso-a) / 0.3) calc(var(--osso-x) - 3px),
+    rgb(var(--osso-a) / 0.95) calc(var(--osso-x) - 2px),
+    rgb(var(--osso-a) / 0.95) var(--osso-x),
+    rgb(var(--osso-a) / 0) calc(var(--osso-x) + 0.5px)
+  );
+  background-image: var(--osso-comet);
   background-repeat: no-repeat;
-  background-size: 0% 100%;
-  animation: osso-sweep 360ms cubic-bezier(0.2, 0.7, 0.2, 1) var(--osso-delay, 0ms) both;
+  animation: osso-scan 480ms cubic-bezier(0.3, 0.6, 0.2, 1) var(--osso-delay, 0ms) both;
+}
+
+/* Where the grey falls, the comet draws it in: behind the head the glyphs are grey, ahead of it
+   still the author's ink. The glyphs are painted by a text-clipped layer while the wipe runs
+   (text-fill-color, so `color` itself is already the grey underneath and nothing jumps when the
+   class comes off); the comet is the layer beneath. */
+html.osso-on .osso-sweep.osso-wipe {
+  -webkit-text-fill-color: transparent;
+  transition: none;
+  background-image: linear-gradient(90deg, var(--osso-grey, #b9b9b9) var(--osso-x), var(--osso-ink, #161616) calc(var(--osso-x) + 0.5px)), var(--osso-comet);
+  -webkit-background-clip: text, border-box;
+  background-clip: text, border-box;
 }
 
 html.osso-on .osso-dark .osso-sweep {
-  --osso-sweep-rgb: 232 114 79;
+  --osso-a: 232 114 79;
 }
 
 html.osso-still .osso-sweep {
   animation: none;
   background-image: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+/* The page's read-out while it is judged: the count climbing, then the total and the time. Paper
+   and ink like the chip, the one marrow dot pulsing while the model is still answering. */
+.osso-hud {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 13px 8px 11px;
+  border: 1px solid rgba(22, 22, 22, 0.14);
+  border-radius: 999px;
+  background: #fbfaf7;
+  color: #161616;
+  font: 500 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.06), 0 6px 20px rgba(22, 22, 22, 0.12);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease-out, transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
+  user-select: none;
+}
+
+.osso-hud.osso-hud-show {
+  opacity: 1;
+  transform: none;
+}
+
+.osso-hud-dot {
+  display: block;
+  width: 7px;
+  height: 7px;
+  margin: 0;
+  border-radius: 50%;
+  background: rgb(217 93 57);
+  animation: osso-hud-pulse 700ms ease-in-out infinite;
+}
+
+.osso-hud-done .osso-hud-dot {
+  animation: none;
+  background: #161616;
+}
+
+.osso-hud-n {
+  display: inline-block;
+  min-width: 2ch;
+  font: inherit;
+  font-weight: 650;
+  color: inherit;
+  text-align: right;
+}
+
+.osso-hud-t {
+  font: inherit;
+  color: inherit;
+  opacity: 0.6;
+}
+
+@keyframes osso-hud-pulse {
+  50% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .osso-hud {
+    border-color: rgba(242, 240, 234, 0.16);
+    background: #1e1e1e;
+    color: #f2f0ea;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.45);
+  }
+  .osso-hud-done .osso-hud-dot {
+    background: #f2f0ea;
+  }
 }
 
 /* The fade: a grey chosen per block for its background (--osso-grey is set on the block by the renderer). */
@@ -228,5 +336,9 @@ html.osso-still .osso-rule-hit {
   }
   html.osso-on .osso-sweep {
     background-image: none;
+    -webkit-text-fill-color: currentColor;
+  }
+  .osso-hud {
+    display: none;
   }
 }

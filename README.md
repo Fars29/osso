@@ -47,7 +47,7 @@ Click the icon. The popup shows how many sentences were kept, the page kind, and
 
 ## How it decides
 
-1. The main text of the page is split into sentences; headings, tables, code, navigation and forms are never touched.
+1. The main text of the page is split into sentences; headings, tables, code, navigation and forms are never touched, and neither is the bold label that opens a list item ("**Milk:** …"), which is structure, not prose.
 2. Sentences go to the model in batches of about 30, in parallel, with their own text as context.
 3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
 4. Each batch is painted the moment it comes back, sentence by sentence, so you see the grey run down the page as the model answers. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.

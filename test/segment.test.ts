@@ -543,3 +543,48 @@ describe("isAppLikePage on pages that only look busy", () => {
     expect(isAppLikePage(page(`<h1>New invoice</h1><form>${fields}</form>`))).toBe(true);
   });
 });
+
+describe("run-in labels", () => {
+  const filler = "No pancake recipe would be complete without a generous pour of milk.";
+  const rest = "This ingredient provides the liquid base for the batter, and the fat content helps to keep the pancakes moist and tender. I always go for whole milk when I make pancakes, but you can use your favorite kind here. Dairy-free milk and nut milk works, too!";
+  const items = `
+    <li><strong>One Egg:</strong> Egg not only adds a boost of protein, but it also helps to bind the ingredients together, resulting in a fluffy and delicious stack of homemade pancakes! It is the one ingredient you cannot leave out of this batter at all.</li>
+    <li id="milk"><strong>Milk:</strong> ${filler} ${rest}</li>
+    <li id="dash"><b>Flour</b> – The backbone of any good pancake recipe, flour gives the pancakes their structure and texture. Make sure to measure your flour accurately to keep your pancakes from turning out dry and dense, which happens more often than you would think.</li>
+    <li id="plain">Salt: a pinch is all you need, it helps to boost the flavors of the other ingredients.</li>`;
+
+  it("never wraps the bold label that opens an item, so it can never fade; the model still reads it", () => {
+    const doc = page(`<article><p>Intro one here for the page. Intro two here for the page. Intro three here.</p><ul>${items}</ul></article>`);
+    const before = doc.body.textContent;
+    const { sentences } = segmentPage(doc);
+    expect(doc.body.textContent).toBe(before);
+    expect(spans(doc, "strong")).toHaveLength(0);
+    expect(spans(doc, "b")).toHaveLength(0);
+    const milk = sentences.find((s) => s.text.includes("No pancake recipe"))!;
+    // Context for the model: label and sentence together. On the page: the sentence alone.
+    expect(milk.text).toBe(`Milk: ${filler}`);
+    expect(textOf(doc, milk.id)).toBe(filler);
+    const flour = sentences.find((s) => s.text.includes("backbone"))!;
+    expect(flour.text.startsWith("Flour – The backbone")).toBe(true);
+    expect(textOf(doc, flour.id).startsWith("The backbone")).toBe(true);
+  });
+
+  it("takes a plain 'Label:' off the front of a list item too", () => {
+    const doc = page(`<article><p>Intro one here for the page. Intro two here for the page. Intro three here.</p><ul>${items}</ul></article>`);
+    const { sentences } = segmentPage(doc);
+    const salt = sentences.find((s) => s.text.startsWith("Salt:"))!;
+    expect(textOf(doc, salt.id)).toBe("a pinch is all you need, it helps to boost the flavors of the other ingredients.");
+  });
+
+  it("does not take a bold paragraph, a long bold lead or a colon in a paragraph for a label", () => {
+    const doc = page(`<article>
+      <p id="allbold"><strong>This whole paragraph is set in bold by its author.</strong></p>
+      <p id="longlead"><strong>A very long bold lead that runs on for many more words than any label would</strong> and then the sentence carries on for a while after it.</p>
+      <p id="colon">The result: a disaster that nobody in the kitchen saw coming at all. Another sentence follows it here. And a third one to be sure.</p>
+      <p>Filler paragraph one for the count. Filler paragraph two for the count. Filler three for the count.</p></article>`);
+    segmentPage(doc);
+    expect(spans(doc, "#allbold strong").length).toBeGreaterThan(0);
+    expect(spans(doc, "#longlead strong").length).toBeGreaterThan(0);
+    expect(spans(doc, "#colon")[0]!.textContent!.startsWith("The result:")).toBe(true);
+  });
+});

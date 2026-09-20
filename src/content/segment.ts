@@ -611,6 +611,69 @@ function visit(el: Element, block: Block | null, inLink: boolean, out: Block[], 
   }
 }
 
+const BOLD_TAGS = new Set(["strong", "b"]);
+const LABEL_MAX_WORDS = 8;
+const LABEL_MIN_REST_WORDS = 3;
+/** What may close a bold label from outside the bold: a colon, a dash. */
+const LABEL_PUNCT = /^\s*[:–—-]/;
+/** A plain "Label: text" at the head of a list item, the label short and with no sentence in it. */
+const PLAIN_LABEL = /^\s*([^\n.!?:]{1,48}):(?=\s)/;
+const PLAIN_LABEL_MAX_WORDS = 5;
+
+function isBold(node: Node, root: Element): boolean {
+  for (let el = node.parentElement; el && el !== root; el = el.parentElement) {
+    if (BOLD_TAGS.has(el.localName)) return true;
+  }
+  return false;
+}
+
+/**
+ * Where a block's run-in label ends, in the block's text, or 0 when it has none. "**Milk:** No
+ * pancake recipe would be complete without…" opens with a label: it names what the item is about,
+ * the way a heading names a section, and like a heading it is structure, not prose. It is never
+ * wrapped, so it can never fade: a recipe once lost "Milk:" from its ingredient notes because the
+ * sentence after it was, rightly, judged filler. The label still goes to the model with its
+ * sentence, as context.
+ */
+function labelEnd(block: Block, text: string): number {
+  let end = 0;
+  let sawBold = false;
+  for (const seg of block.segments) {
+    if (isBold(seg.node, block.el)) {
+      sawBold = true;
+      end = seg.end;
+      continue;
+    }
+    // Whitespace before the bold run is skipped; anything else ends it.
+    if (!sawBold && text.slice(seg.start, seg.end).trim() === "") continue;
+    break;
+  }
+  if (sawBold) {
+    const closing = LABEL_PUNCT.exec(text.slice(end));
+    if (closing) end += closing[0].length;
+  } else if (block.unit) {
+    const plain = PLAIN_LABEL.exec(text);
+    if (plain && countWords(plain[1]!) <= PLAIN_LABEL_MAX_WORDS) end = plain[0].length;
+  }
+  if (end === 0) return 0;
+  const words = countWords(text.slice(0, end));
+  if (words < 1 || words > LABEL_MAX_WORDS) return 0;
+  // A block that is all label (a bold paragraph, a bare term) has no run-in label: it is just bold.
+  if (countWords(text.slice(end)) < LABEL_MIN_REST_WORDS) return 0;
+  return end;
+}
+
+/** The ranges as they are wrapped: the same sentences, with the label cut off the front of whichever one holds it. */
+function withoutLabel(ranges: SentenceRange[], label: number, text: string): SentenceRange[] {
+  if (label <= 0) return ranges;
+  return ranges.map((r) => {
+    if (r.start >= label) return r;
+    let start = Math.min(label, r.end);
+    while (start < r.end && isWhitespace(text[start]!)) start++;
+    return { start, end: r.end };
+  });
+}
+
 /** The sentence ranges to wrap in a block, or null when the block is not judged at all. */
 function rangesFor(block: Block, text: string): SentenceRange[] | null {
   if (block.layout && block.hasBlockChild) return null;
@@ -703,7 +766,8 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
       const range = ranges[i]!;
       sentences.push({ id: id + i, text: cleanText(text.slice(range.start, range.end)) });
     }
-    wrapRanges(reg, block, ranges, id);
+    // The model reads the label with its sentence; the page never has it wrapped.
+    wrapRanges(reg, block, withoutLabel(ranges, labelEnd(block, text), text), id);
     block.el.setAttribute(BLOCK_ATTR, "");
     reg.blocks.add(block.el);
     id += ranges.length;
