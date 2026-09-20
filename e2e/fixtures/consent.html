@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Slow-roast tomatoes – Crumblewick</title>
+  <style>
+    body { font: 18px/1.55 Georgia, serif; margin: 0; color: #111; background: #fff; }
+    main { max-width: 720px; margin: 48px auto; padding: 0 24px; }
+    #consent { position: fixed; inset: 0; background: #fff; padding: 48px; font: 15px/1.5 system-ui, sans-serif; z-index: 10; }
+    #consent button { font: inherit; padding: 8px 16px; }
+  </style>
+</head>
+<body>
+  <div id="consent" class="consent-wall" role="dialog" aria-modal="true">
+    <p>We and our 412 partners store and access information on your device, such as cookies and unique identifiers, to personalise content and ads, measure performance, and develop and improve products.</p>
+    <p>With your permission we may use precise geolocation data and identification through device scanning. You may click to consent to our processing as described above.</p>
+    <p>Alternatively you may access more detailed information and change your preferences before consenting or to refuse consenting. Please note that some processing of your personal data may not require your consent.</p>
+    <p>You have the right to object to such processing. Your preferences will apply to this website only. You can change your preferences at any time by returning to this site or by visiting our privacy policy.</p>
+    <p>Our partners process data to provide: use precise geolocation data, actively scan device characteristics for identification, store and access information on a device, personalised advertising and content, advertising and content measurement, audience research and services development.</p>
+    <p>Some partners do not ask for your consent to process your data and rely on their legitimate business interest. You can object to those partners individually from the settings page.</p>
+    <p>We use cookies to remember your choice for 13 months. After that period you will be asked again. You can withdraw your consent at any time from the link in the footer of every page.</p>
+    <p>By continuing without changing your settings you agree to the storage of cookies on your device. This banner will not be shown again on this device unless you clear your cookies.</p>
+    <button id="accept" type="button">Accept all</button>
+  </div>
+  <main hidden>
+    <article>
+      <h1>Slow-roast tomatoes</h1>
+      <p>I first made these in a rented kitchen in Sicily with a landlady who did not believe in measuring anything, and I have been chasing that afternoon ever since. She would laugh at the idea of a recipe.</p>
+      <p>You need 1 kg of ripe plum tomatoes, 4 tablespoons of olive oil, 2 cloves of garlic, a teaspoon of sugar and a teaspoon of flaky salt. Heat the oven to 140 °C.</p>
+      <p>Halve the tomatoes and lay them cut side up on a tray; do not crowd them, or they will steam instead of roasting. Slice the garlic thinly and tuck a slice under each half.</p>
+      <p>Roast for 2 hours and 30 minutes, until the edges have darkened and the centres have collapsed. They keep in the fridge under oil for a week.</p>
+      <p>If you make them, tell me how they went in the comments, and do subscribe for a new recipe every Thursday. I read every message, even the ones about the length of my introductions.</p>
+    </article>
+  </main>
+  <script>
+    // A consent wall: five sentences of policy cover a hidden page; accepting hides the wall and shows the page.
+    const accept = () => {
+      document.getElementById("consent").style.display = "none";
+      document.querySelector("main").hidden = false;
+    };
+    document.getElementById("accept").addEventListener("click", accept);
+    setTimeout(accept, 2500);
+  </script>
+</body>
+</html>

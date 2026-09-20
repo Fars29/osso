@@ -121,26 +121,23 @@ try {
   assert(chromeSpans === 0, `recipe: ${chromeSpans} judged spans inside nav/footer`);
   await page.screenshot({ path: join(shots, "recipe-faded.png"), fullPage: true });
 
-  // Hover a faded sentence: the chip names its kind and lights the meter, no number in sight.
+  // Hover a faded sentence: the chip gives the reason in one word, no kind-plus-number, no digits.
   await page.locator(".osso-fade").first().scrollIntoViewIfNeeded();
   await page.locator(".osso-fade").first().hover();
   await page.waitForSelector(".osso-chip.osso-chip-show", { state: "visible", timeout: 5000 });
   const chip = await page.evaluate(() => {
     const c = document.querySelector(".osso-chip.osso-chip-show");
-    const dots = [...(c?.querySelectorAll(".osso-chip-meter i") ?? [])];
-    return {
-      label: c?.querySelector(".osso-chip-label")?.textContent ?? "",
-      dots: dots.length,
-      lit: dots.filter((d) => d.classList.contains("osso-lit")).length,
-      meter: c?.querySelector(".osso-chip-meter")?.getAttribute("aria-label") ?? "",
-      text: c?.textContent ?? "",
-    };
+    return { label: c?.querySelector(".osso-chip-label")?.textContent ?? "", text: c?.textContent ?? "", parts: c?.children.length ?? 0 };
   });
-  assert(["fact", "figure", "step", "condition", "opinion", "story", "filler", "promo"].includes(chip.label), `recipe: chip label "${chip.label}" is not a kind`);
-  assert(chip.dots === 5 && chip.lit >= 0 && chip.lit <= 5, `recipe: chip meter has ${chip.dots} dots, ${chip.lit} lit`);
-  assert(/^\d{1,3}% worth keeping$/.test(chip.meter), `recipe: chip meter label "${chip.meter}"`);
-  assert(!/\d/.test(chip.text), `recipe: chip shows a number ("${chip.text}")`);
-  console.log(`[osso e2e] chip on the first faded sentence: ${chip.label}, ${chip.lit}/5 (${chip.meter})`);
+  assert(["opinion", "story", "filler", "promo", "aside"].includes(chip.label), `recipe: chip label "${chip.label}" is not a reason`);
+  assert(chip.parts === 1 && !/\d/.test(chip.text), `recipe: chip should be one word ("${chip.text}")`);
+  console.log(`[osso e2e] chip on the first faded sentence: ${chip.label}`);
+  // Ink gets no chip: hovering a kept sentence shows nothing.
+  await page.mouse.move(0, 0);
+  await sleep(300);
+  await page.locator(".osso-s:not(.osso-fade)").first().hover();
+  await sleep(500);
+  assert(!(await page.evaluate(() => document.querySelector(".osso-chip.osso-chip-show"))), "recipe: a kept sentence showed a chip");
   await page.screenshot({ path: join(shots, "recipe-chip.png") });
   await page.mouse.move(0, 0);
 
@@ -227,6 +224,29 @@ try {
   assert(renewal !== null, "tos: the auto-renewal sentence was not judged at all");
   assert(renewal === false, "tos: the auto-renewal sentence was faded");
   await page.screenshot({ path: join(shots, "tos.png"), fullPage: true });
+
+  // A single-page app: the shell has nothing to judge, the article arrives 2.5 s later and must be judged then.
+  t0 = performance.now();
+  await page.goto(`${server.url}/spa.html`);
+  await sleep(1200);
+  assert((await page.evaluate(() => document.querySelectorAll(".osso-s").length)) === 0, "spa: the empty shell was wrapped");
+  await waitJudged(page);
+  const spa = await page.evaluate(countSentences);
+  rows.push({ page: "spa.html (late content)", ...spa, ms: Math.round(performance.now() - t0) });
+  assert(spa.total >= 8 && spa.faded >= 2, `spa: expected the late article judged, got ${JSON.stringify(spa)}`);
+
+  // A consent wall: nine sentences of policy get judged first; when the wall is dismissed and the
+  // page appears behind it, Osso must start over on the page, not stay on the wall.
+  t0 = performance.now();
+  await page.goto(`${server.url}/consent.html`);
+  await page.waitForFunction(() => document.querySelectorAll("#consent .osso-s").length > 0, null, { timeout: JUDGE_TIMEOUT_MS });
+  await page.waitForFunction(() => document.querySelectorAll("article .osso-s").length > 0 && document.querySelectorAll("#consent .osso-s").length === 0, null, { timeout: JUDGE_TIMEOUT_MS }).catch(() => {
+    throw new AssertionFailed("consent: after the wall was dismissed the article was not judged (or the wall stayed judged)");
+  });
+  await waitJudged(page);
+  const consent = await page.evaluate(countSentences);
+  rows.push({ page: "consent.html (wall gone)", ...consent, ms: Math.round(performance.now() - t0) });
+  assert(consent.total >= 8 && consent.faded >= 2, `consent: expected the article judged, got ${JSON.stringify(consent)}`);
 
   // Blank: three sentences, below MIN_SENTENCES; nothing should be wrapped, let alone judged.
   await page.goto(`${server.url}/blank.html`);

@@ -83,6 +83,7 @@ Node 20 or newer. TypeScript strict, no frameworks, no runtime dependencies: van
 | `npm run calibrate` | the probe behind `docs/calibration.md`; live API, about a quarter of a cent |
 | `npm run e2e` | Playwright loads `dist/` into Chromium against the live API; screenshots in `e2e/screenshots/` |
 | `node --env-file=.env e2e/screens.mjs --docs` | every screen as a picture; `--docs` refreshes `docs/screenshots/` |
+| `node --env-file=.env e2e/sites.mjs [url…]` | Osso on real pages: what it did on each and why (the tool for "it does nothing on site X") |
 | `npm run icons` | `icons/icon.svg` → the PNG sizes |
 | `npm run zip` | `dist/` → `release/osso-<version>.zip` |
 

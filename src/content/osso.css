@@ -150,47 +150,13 @@ html.osso-on .osso-dark .osso-rule-hit {
   --osso-chip-dy: 3px;
 }
 
-/* The chip's children are set explicitly, so a site's own rules for span and i never reach them. */
-.osso-chip-label,
-.osso-chip-rule,
-.osso-chip-pin {
+/* The chip's one child is set explicitly, so a site's own rules for span never reach it. */
+.osso-chip-label {
   display: inline;
   margin: 0;
   padding: 0;
   font: inherit;
   color: inherit;
-}
-
-.osso-chip-rule,
-.osso-chip-pin {
-  font-weight: 400;
-  opacity: 0.7;
-}
-
-/* p(keep) as five dots lit from the left: what "worth keeping" looks like without a number. */
-.osso-chip-meter {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin: 0;
-  padding: 0;
-}
-
-.osso-chip-meter i {
-  display: block;
-  width: 4px;
-  height: 4px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.22;
-  font-style: normal;
-}
-
-.osso-chip-meter i.osso-lit {
-  opacity: 1;
 }
 
 .osso-chip.osso-chip-show {

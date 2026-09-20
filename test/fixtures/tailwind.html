@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en" class="platform-win">
+<head><meta charset="utf-8"><title>Quick Start – Docs</title></head>
+<body class="font-text font-medium antialiased text-lg">
+  <div id="__next">
+    <div class="grid grid-cols-only-content lg:grid-cols-sidebar-content 2xl:grid-cols-sidebar-content">
+      <nav class="sticky top-0 lg:block hidden-on-mobile">
+        <ul>
+          <li><a href="/learn">Quick Start</a></li>
+          <li><a href="/learn/installation">Installation</a></li>
+          <li><a href="/learn/describing-the-ui">Describing the UI</a></li>
+          <li><a href="/learn/adding-interactivity">Adding Interactivity</a></li>
+          <li><a href="/reference">API Reference</a></li>
+        </ul>
+      </nav>
+      <main class="min-w-0 isolate">
+        <article class="font-normal break-words text-primary">
+          <div class="ps-0">
+            <div class="px-5 sm:px-12">
+              <div class="max-w-7xl mx-auto">
+                <div class="max-w-4xl ms-0 2xl:mx-auto">
+                  <h1 class="mdx-heading">Quick Start</h1>
+                  <p class="whitespace-pre-wrap my-4">Welcome to the documentation! This page will give you an introduction to the 80% of the concepts that you will use on a daily basis.</p>
+                  <p class="whitespace-pre-wrap my-4">Apps are made out of components. A component is a piece of the UI that has its own logic and appearance. A component can be as small as a button, or as large as an entire page.</p>
+                  <p class="whitespace-pre-wrap my-4">Components are functions that return markup. The markup syntax is stricter than HTML: you have to close tags like <code>&lt;br /&gt;</code>, and a component cannot return multiple tags.</p>
+                  <p class="whitespace-pre-wrap my-4">To display data from the code, use curly braces. This lets you escape back into the language so that you can embed a variable and display it to the user.</p>
+                  <p class="whitespace-pre-wrap my-4">You can respond to events by declaring event handler functions inside your components. Notice how the handler is passed without calling it: the framework calls it for you when the button is clicked.</p>
+                  <p class="whitespace-pre-wrap my-4">Often you will want your component to remember some information and display it. To do this, add state to your component. Each instance of a component gets its own state.</p>
+                  <p class="whitespace-pre-wrap my-4">Functions starting with <em>use</em> are called hooks. You can only call hooks at the top of your components. If you want to use one in a condition or a loop, extract a new component and put it there.</p>
+                  <p class="whitespace-pre-wrap my-4">To share data between components, move the state up to the closest common parent and pass it down. This is called lifting state up, and it is the most common change you will make.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </main>
+    </div>
+    <footer class="py-12 px-5">
+      <p>Copyright. Built with care. <a href="/privacy">Privacy</a> <a href="/terms">Terms</a></p>
+    </footer>
+  </div>
+</body>
+</html>

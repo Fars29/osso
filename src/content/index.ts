@@ -35,7 +35,7 @@ import {
   setThreshold,
   type Counts,
 } from "./render.ts";
-import { isAppLikePage, segmentNewBlocks, segmentPage, unwrapAll, unwrapBlock } from "./segment.ts";
+import { isAppLikePage, segmentNewBlocks, segmentPage, textLength, unwrapAll, unwrapBlock } from "./segment.ts";
 
 /** What the popup says for each failure the background can report. */
 const REASONS: Record<string, string> = {
@@ -48,11 +48,18 @@ const REASONS: Record<string, string> = {
 
 const TOO_LITTLE_TEXT = "too little text";
 /**
- * A page that arrives with too little text is often still rendering its content; each time it
- * grows, segmentation runs again, up to this many times so a page that never settles stops
- * costing anything.
+ * A page that arrives with too little text is often still rendering its content; each time its
+ * text grows or something is shown or hidden, segmentation runs again, up to this many times so a
+ * page that never settles stops costing anything.
  */
-const MAX_GROWTH_RETRIES = 5;
+const MAX_GROWTH_RETRIES = 8;
+/**
+ * A judged page whose world changes outside the container is started over: the container was
+ * hidden (a consent wall dismissed, a modal closed) or at least this much new text, and more than
+ * the container itself holds, appeared elsewhere (the page the wall was covering). Otherwise the
+ * first thing a page showed would be the only thing ever judged.
+ */
+const OUTGROWN_MIN_CHARS = 2000;
 /**
  * Judging what a page adds after the first paint is budgeted per page view: a live blog, a comment
  * stream or a chat widget inside the container must not become an unbounded stream of requests.
@@ -75,6 +82,8 @@ interface Mounted {
   ruleResults: RuleResults;
   /** The rules last painted, so a settings change that left them alone repaints nothing. */
   applied: string[];
+  /** Characters of text outside the container at mount, the baseline for `outgrown`. */
+  outsideChars: number;
   uninstall: () => void;
 }
 
@@ -262,6 +271,7 @@ function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeR
     nextId: req.sentences.length,
     ruleResults,
     applied: [...s.rules],
+    outsideChars: Math.max(0, textLength(document.body) - textLength(container)),
     uninstall: interactions(s),
   };
   report({
@@ -430,6 +440,28 @@ function schedule(fn: () => void | Promise<void>, delay = MUTATION_DEBOUNCE_MS):
  * that swaps the container or its contents out; skipped for too little text, it waits for the
  * page to grow.
  */
+/** Whether the container, or anything above it, is hidden now: attribute, or computed style (one read per ancestor, on a settle only). */
+function concealed(el: Element): boolean {
+  const win = document.defaultView;
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    if (e.hasAttribute("hidden") || e.getAttribute("aria-hidden") === "true") return true;
+    if (win) {
+      const cs = win.getComputedStyle(e);
+      if (cs.display === "none" || cs.visibility === "hidden") return true;
+    }
+  }
+  return false;
+}
+
+function outgrown(m: Mounted): boolean {
+  const own = textLength(m.container);
+  const outside = Math.max(0, textLength(document.body) - own);
+  return outside - m.outsideChars > Math.max(OUTGROWN_MIN_CHARS, own);
+}
+
+/** How much text the page had when segmentation last ran while skipped, so attribute noise alone does not spend the retries. */
+let lastBodyChars = -1;
+
 function onMutations(records: MutationRecord[]): void {
   if (wrapping) return;
   if (mounted) {
@@ -440,7 +472,15 @@ function onMutations(records: MutationRecord[]): void {
     }
     let changed = false;
     for (const r of records) {
-      if (!container.contains(r.target)) continue;
+      // Something shown or hidden, or added elsewhere: the settle checks whether the world moved.
+      if (r.type === "attributes") {
+        changed = true;
+        continue;
+      }
+      if (!container.contains(r.target)) {
+        if (foreign(r)) changed = true;
+        continue;
+      }
       if (r.type === "characterData") {
         const block = staleBlockOf(r.target);
         if (block) {
@@ -457,7 +497,7 @@ function onMutations(records: MutationRecord[]): void {
     if (changed) schedule(onSettled);
     return;
   }
-  if (state.status === "skipped" && state.reason === TOO_LITTLE_TEXT && growthRetries < MAX_GROWTH_RETRIES && records.some(foreign)) {
+  if (state.status === "skipped" && state.reason === TOO_LITTLE_TEXT && growthRetries < MAX_GROWTH_RETRIES && records.some((r) => r.type === "attributes" || foreign(r))) {
     schedule(regrow);
   }
 }
@@ -468,7 +508,13 @@ function restart(): void {
   void start();
 }
 
+/** Only a page that changed since the last attempt is segmented again; a class flickering on a spinner is not a change. */
 function regrow(): void {
+  const chars = document.body ? textLength(document.body) : 0;
+  const shown = document.body ? document.body.querySelectorAll("[hidden], [aria-hidden='true']").length : 0;
+  const signature = chars * 31 + shown;
+  if (signature === lastBodyChars) return;
+  lastBodyChars = signature;
   growthRetries++;
   void start();
 }
@@ -483,7 +529,7 @@ function regrow(): void {
 async function onSettled(): Promise<void> {
   const m = mounted;
   if (!m) return;
-  if (navigated()) {
+  if (navigated() || concealed(m.container) || outgrown(m)) {
     restart();
     return;
   }
@@ -628,7 +674,14 @@ function main(): void {
     return false;
   });
   observer = new MutationObserver(onMutations);
-  observer.observe(document.body ?? document.documentElement, { childList: true, subtree: true, characterData: true });
+  observer.observe(document.body ?? document.documentElement, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    // Shown and hidden: a consent wall going away, a page coming out from behind it.
+    attributes: true,
+    attributeFilter: ["hidden", "aria-hidden", "style", "class"],
+  });
   // A router that changes the URL before it touches the view is caught here; one that rebuilds
   // the view first is caught by the observer. Either way the new page gets its own judgment.
   window.addEventListener("popstate", () => {

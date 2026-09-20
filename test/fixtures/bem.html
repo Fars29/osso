@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MutationObserver - Web APIs | Docs</title></head>
+<body class="page-layout">
+  <header class="top-navigation">
+    <nav><a href="/">Home</a> <a href="/docs">References</a> <a href="/guides">Guides</a></nav>
+  </header>
+  <div class="page-layout__main">
+    <div class="layout__2-sidebars-inline reference-layout">
+      <aside class="sidebar" id="sidebar-quicklinks">
+        <ul>
+          <li><a href="/docs/Web/API/Node">Node</a></li>
+          <li><a href="/docs/Web/API/Element">Element</a></li>
+          <li><a href="/docs/Web/API/Document">Document</a></li>
+          <li><a href="/docs/Web/API/MutationRecord">MutationRecord</a></li>
+        </ul>
+      </aside>
+      <main id="content" class="layout__content">
+        <div class="layout__header reference-layout__header">
+          <article class="main-page-content">
+            <h1>MutationObserver</h1>
+            <p>The <a href="/docs/Web/API/MutationObserver">MutationObserver</a> interface provides the ability to watch for changes being made to the <a href="/docs/Glossary/DOM">DOM</a> tree. It is designed as a replacement for the older Mutation Events feature, which was part of the DOM3 Events specification.</p>
+            <p>Observers are cheap to create and are only charged for the mutations they observe. An observer that watches a subtree it does not need will be handed records it must then discard.</p>
+            <section class="content-section">
+              <h2>Constructor</h2>
+              <p>Creates and returns a new observer which invokes a specified callback when DOM events occur. The callback is passed the list of records and the observer itself.</p>
+            </section>
+            <section class="content-section">
+              <h2>Instance methods</h2>
+              <dl>
+                <dt><a href="/docs/Web/API/MutationObserver/disconnect">disconnect()</a></dt>
+                <dd>Stops the instance from receiving further notifications until and unless observe is called again.</dd>
+                <dt><a href="/docs/Web/API/MutationObserver/observe">observe()</a></dt>
+                <dd>Configures the observer to begin receiving notifications through its callback function when DOM changes matching the given options occur.</dd>
+                <dt><a href="/docs/Web/API/MutationObserver/takeRecords">takeRecords()</a></dt>
+                <dd>Removes all pending notifications from the observer's notification queue and returns them in a new array of records.</dd>
+              </dl>
+            </section>
+            <section class="content-section">
+              <h2>Notes</h2>
+              <p>The callback runs after the current task, not synchronously with each change, so a burst of mutations arrives as one list. Records are delivered in the order the changes happened.</p>
+              <p>Disconnecting inside the callback is allowed and stops further delivery at once. Reconnecting later starts a fresh queue; earlier records are not replayed.</p>
+              <p>An observer holds no strong reference to the nodes it watches, so watched nodes can still be garbage collected when nothing else keeps them alive.</p>
+            </section>
+          </article>
+        </div>
+      </main>
+      <aside class="sidebar" id="sidebar-related">
+        <p>Related pages for <a href="/docs/Web/API">Web APIs</a>: <a href="/docs/Web/API/ResizeObserver">ResizeObserver</a>, <a href="/docs/Web/API/IntersectionObserver">IntersectionObserver</a>.</p>
+      </aside>
+    </div>
+  </div>
+  <footer class="page-footer"><p>Except where otherwise noted, content is available under a Creative Commons licence.</p></footer>
+</body>
+</html>

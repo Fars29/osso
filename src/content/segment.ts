@@ -61,12 +61,12 @@ const SKIP_TAGS = new Set([
 
 const SKIP_ROLES = new Set(["navigation", "banner", "contentinfo", "complementary", "search", "menu", "menubar", "toolbar"]);
 
-/** Elements whose sentences are judged. */
-const JUDGED_TAGS = new Set(["p", "li", "dd", "dt", "blockquote", "figcaption", "summary", "div", "section", "article"]);
+/** Elements whose sentences are judged. A td only ever gets here inside a layout table (see isLayoutTable). */
+const JUDGED_TAGS = new Set(["p", "li", "dd", "dt", "blockquote", "figcaption", "summary", "div", "section", "article", "td"]);
 /** One unit each (an ingredient, a definition term) unless long enough to be prose. */
 const UNIT_TAGS = new Set(["li", "dd", "dt", "figcaption", "summary"]);
 /** Only a block when they hold their own text and no block-level child; otherwise they are layout. */
-const LAYOUT_TAGS = new Set(["div", "section", "article"]);
+const LAYOUT_TAGS = new Set(["div", "section", "article", "td"]);
 
 /** Block-level elements: a boundary in the flow of text, whichever block they belong to. */
 const BLOCK_LEVEL = new Set([
@@ -81,7 +81,7 @@ const BLOCK_LEVEL = new Set([
  * divs count too: forums, older CMSs and feeds put their prose in divs, and without them every such
  * page fell through to the body.
  */
-const PARAGRAPH_TAGS = new Set(["p", "li", "blockquote", "dd", "dt", "figcaption", "div", "section", "article"]);
+const PARAGRAPH_TAGS = new Set(["p", "li", "blockquote", "dd", "dt", "figcaption", "div", "section", "article", "td"]);
 const CHROME_TAGS = new Set(["nav", "header", "footer", "aside"]);
 /** Class or id tokens that mark page chrome on sites that do not use the semantic elements. */
 const CHROME_HINT =
@@ -117,8 +117,43 @@ function isHidden(el: Element): boolean {
   return false;
 }
 
+/**
+ * A table is data (never touched) unless it is plainly the page's layout: no header cells, no
+ * caption, and either a handful of cells or one cell holding most of its text. Hand-written sites
+ * of the older web — essays, manifestos, university pages — put the whole article in one td, and
+ * "never touch a table" left every one of them untouched. Memoised: the walk asks many times.
+ */
+const LAYOUT_TABLE_MAX_CELLS = 4;
+const LAYOUT_TABLE_MAIN_CELL_SHARE = 0.6;
+const layoutTables = new WeakMap<Element, boolean>();
+
+function isLayoutTable(table: Element): boolean {
+  const memo = layoutTables.get(table);
+  if (memo !== undefined) return memo;
+  let value = false;
+  const rows = (table as HTMLTableElement).rows;
+  if (rows && !table.querySelector("th, caption")) {
+    const cells: Element[] = [];
+    for (const row of Array.from(rows)) cells.push(...Array.from(row.cells));
+    if (cells.length <= LAYOUT_TABLE_MAX_CELLS) value = true;
+    else {
+      let total = 0;
+      let largest = 0;
+      for (const cell of cells) {
+        const n = textLength(cell);
+        total += n;
+        if (n > largest) largest = n;
+      }
+      value = total > 0 && largest >= LAYOUT_TABLE_MAIN_CELL_SHARE * total;
+    }
+  }
+  layoutTables.set(table, value);
+  return value;
+}
+
 function isSkipped(el: Element): boolean {
   const tag = el.localName;
+  if (tag === "table") return !isLayoutTable(el);
   if (SKIP_TAGS.has(tag)) return true;
   if (tag === "form" && formIsChrome(el)) return true;
   if (isHidden(el)) return true;
@@ -134,6 +169,7 @@ function hasChromeHint(el: Element): boolean {
   return !!cls && CHROME_HINT.test(cls);
 }
 
+/** Chrome by structure: the semantic elements, roles, widget forms and editors. Names are judged separately. */
 function isChrome(el: Element): boolean {
   const tag = el.localName;
   if (CHROME_TAGS.has(tag)) return true;
@@ -141,8 +177,20 @@ function isChrome(el: Element): boolean {
   const role = el.getAttribute("role");
   if (role !== null && SKIP_ROLES.has(role.toLowerCase())) return true;
   const editable = el.getAttribute("contenteditable");
-  if (editable !== null && editable.toLowerCase() !== "false") return true;
-  return hasChromeHint(el);
+  return editable !== null && editable.toLowerCase() !== "false";
+}
+
+/**
+ * A name hint ("sidebar", "header", "ad") only counts against an element that holds a minority of
+ * the page's prose. Real pages put the article inside `div.layout__header` (BEM) or under
+ * `div.lg:grid-cols-sidebar-content` (Tailwind), and a hint honoured there swallowed the whole
+ * page: react.dev and MDN came back with nothing at all. Chrome is, by definition, not where the
+ * prose is.
+ */
+const HINT_MAX_PROSE_SHARE = 0.3;
+
+export function textLength(el: Element): number {
+  return (el.textContent ?? "").replace(/\s+/g, "").length;
 }
 
 function isSemanticMain(el: Element | null): boolean {
@@ -153,7 +201,7 @@ function isSemanticMain(el: Element | null): boolean {
 
 function isCandidate(el: Element): boolean {
   const tag = el.localName;
-  return tag === "div" || tag === "section" || isSemanticMain(el);
+  return tag === "div" || tag === "section" || tag === "td" || isSemanticMain(el);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -173,17 +221,9 @@ export function findMainContainer(doc: Document): Element | null {
   if (!root) return null;
 
   const candidates = new Map<Element, { score: number; paragraphs: number }>();
-  const chromeMemo = new Map<Element, boolean>();
-  const seenParagraphs = new Set<Element>();
-
-  const underChrome = (el: Element): boolean => {
-    const memo = chromeMemo.get(el);
-    if (memo !== undefined) return memo;
-    const parent = el.parentElement;
-    const value = isChrome(el) || (parent !== null && parent !== root && underChrome(parent));
-    chromeMemo.set(el, value);
-    return value;
-  };
+  const proseUnder = new Map<Element, number>();
+  const texts: Array<{ block: Element; inLink: boolean; length: number }> = [];
+  let total = 0;
 
   const walker = doc.createTreeWalker(root, 1 | 4 /* SHOW_ELEMENT | SHOW_TEXT */, {
     acceptNode: (node) => {
@@ -191,6 +231,7 @@ export function findMainContainer(doc: Document): Element | null {
         const el = node as Element;
         const tag = el.localName;
         // Chrome stays in the walk so that its text can count against its ancestors.
+        if (tag === "table") return isLayoutTable(el) ? 1 /* ACCEPT */ : 2 /* REJECT */;
         if (SKIP_TAGS.has(tag) && !CHROME_TAGS.has(tag)) return 2 /* REJECT */;
         return isHidden(el) ? 2 /* REJECT */ : 1 /* ACCEPT */;
       }
@@ -198,6 +239,8 @@ export function findMainContainer(doc: Document): Element | null {
     },
   });
 
+  // Pass one: where the prose is. Every character is credited to each of its ancestors, so a
+  // name hint can be weighed against how much of the page the element actually holds.
   let node: Node | null;
   while ((node = walker.nextNode())) {
     if (node.nodeType === ELEMENT_NODE) {
@@ -215,7 +258,39 @@ export function findMainContainer(doc: Document): Element | null {
     if (!block || block === root || !PARAGRAPH_TAGS.has(block.localName)) continue;
 
     const length = text.data.trim().length;
-    const contribution = underChrome(block) ? -length / 2 : inLink ? -length : length;
+    let structuralChrome = false;
+    for (let ancestor: Element | null = block; ancestor && ancestor !== root; ancestor = ancestor.parentElement) {
+      proseUnder.set(ancestor, (proseUnder.get(ancestor) ?? 0) + length);
+      if (isChrome(ancestor)) structuralChrome = true;
+    }
+    // The share a name hint is weighed against is the page's prose outside nav, header, footer and
+    // aside: a documentation site's menu can hold more text than its article.
+    if (!structuralChrome) total += length;
+    texts.push({ block, inLink, length });
+  }
+
+  const hintIsChrome = (el: Element): boolean => hasChromeHint(el) && (proseUnder.get(el) ?? 0) < HINT_MAX_PROSE_SHARE * total;
+  const chromeMemo = new Map<Element, boolean>();
+  const underChrome = (el: Element): boolean => {
+    const memo = chromeMemo.get(el);
+    if (memo !== undefined) return memo;
+    let value: boolean;
+    // <main> and <article> are content whatever wraps them; nothing above them can make them chrome.
+    if (isSemanticMain(el)) value = false;
+    else {
+      const parent = el.parentElement;
+      value = isChrome(el) || hintIsChrome(el) || (parent !== null && parent !== root && underChrome(parent));
+    }
+    chromeMemo.set(el, value);
+    return value;
+  };
+
+  // Pass two: score the candidates. Text inside links counts for nothing rather than against: a
+  // menu or a grid of link cards then scores zero and cannot win, while a reference page whose
+  // prose is a third links (MDN) is not punished for being well cross-referenced.
+  const seenParagraphs = new Set<Element>();
+  for (const { block, inLink, length } of texts) {
+    const contribution = underChrome(block) ? -length / 2 : inLink ? 0 : length;
     const isNew = !seenParagraphs.has(block);
     if (isNew) seenParagraphs.add(block);
     for (let ancestor = block.parentElement; ancestor; ancestor = ancestor.parentElement) {
@@ -489,9 +564,12 @@ interface Walk {
   /**
    * True when the container is the body, i.e. no main content was found: then anything that looks
    * like chrome by its class or id (a cookie banner, a top bar, a modal) is left alone too, since
-   * there is no article boundary keeping it out.
+   * there is no article boundary keeping it out — unless it holds most of the page's text, in
+   * which case the name is just a name.
    */
   hintSkip: boolean;
+  /** Characters of text under the container, for the share rule above. */
+  total: number;
 }
 
 /** A block already wrapped is not wrapped again, unless the page replaced its content and our wrappers went with it. */
@@ -502,7 +580,7 @@ function isWrapped(el: Element): boolean {
 function visit(el: Element, block: Block | null, inLink: boolean, out: Block[], walk: Walk): void {
   const tag = el.localName;
   const blockLevel = BLOCK_LEVEL.has(tag);
-  if (isSkipped(el) || (walk.hintSkip && el !== walk.root && hasChromeHint(el))) {
+  if (isSkipped(el) || (walk.hintSkip && el !== walk.root && hasChromeHint(el) && textLength(el) < HINT_MAX_PROSE_SHARE * walk.total)) {
     if (blockLevel && block) {
       block.pendingBreak = true;
       block.hasBlockChild = true;
@@ -611,7 +689,8 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
   }
   const reg = registryOf(doc);
   const blocks: Block[] = [];
-  visit(container, null, false, blocks, { root: container, hintSkip: container === doc.body || container === doc.documentElement });
+  const fallback = container === doc.body || container === doc.documentElement;
+  visit(container, null, false, blocks, { root: container, hintSkip: fallback, total: fallback ? textLength(container) : 0 });
 
   const sentences: SentenceInput[] = [];
   let id = startId;

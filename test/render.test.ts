@@ -328,20 +328,13 @@ describe("reveal key", () => {
   });
 });
 
-/** The chip as a reader sees it: the kind word, how many of the five dots are lit, and what the meter says when asked. */
+/** The chip as a reader sees it: one word, and nothing else in it. */
 function chipReads(chip: HTMLElement) {
-  const dots = Array.from(chip.querySelectorAll(".osso-chip-meter i"));
-  return {
-    label: chip.querySelector(".osso-chip-label")?.textContent,
-    dots: dots.length,
-    lit: dots.filter((d) => d.classList.contains("osso-lit")).length,
-    meter: chip.querySelector(".osso-chip-meter")?.getAttribute("aria-label"),
-    pinned: chip.querySelector(".osso-chip-pin")?.textContent ?? null,
-  };
+  return { label: chip.querySelector(".osso-chip-label")?.textContent, parts: chip.children.length, text: chip.textContent };
 }
 
 describe("chip", () => {
-  it("appears after 250 ms of hover with the kind and a five-dot meter of p(keep), and hides on mouseout", () => {
+  it("appears after 250 ms of hover on a grey sentence with the reason in one word, and hides on mouseout", () => {
     vi.useFakeTimers();
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
@@ -351,9 +344,7 @@ describe("chip", () => {
     vi.advanceTimersByTime(1);
     const chip = document.querySelector<HTMLElement>(".osso-chip")!;
     expect(chip.classList.contains("osso-chip-show")).toBe(true);
-    expect(chipReads(chip)).toEqual({ label: "story", dots: 5, lit: 1, meter: "20% worth keeping", pinned: null });
-    // No number anywhere: the meter is the number.
-    expect(chip.textContent).toBe("story");
+    expect(chipReads(chip)).toEqual({ label: "story", parts: 1, text: "story" });
     expect(chip.getAttribute("aria-hidden")).toBe("true");
     expect(chip.style.position || "").toBe("");
     // Moving to another span of the same sentence keeps it; leaving hides it.
@@ -362,15 +353,19 @@ describe("chip", () => {
     expect(chip.classList.contains("osso-chip-show")).toBe(true);
     mouse("mouseout", spans(3)[1]!, { relatedTarget: document.body });
     expect(chip.classList.contains("osso-chip-show")).toBe(false);
-    // One chip, reused, for every sentence.
+    // Ink gets no note: a kept sentence shows nothing, however long the hover.
     mouse("mouseover", spans(4)[0]!);
+    vi.advanceTimersByTime(600);
+    expect(chip.classList.contains("osso-chip-show")).toBe(false);
+    mouse("mouseout", spans(4)[0]!, { relatedTarget: document.body });
+    // One chip, reused; scroll and keys hide it.
+    mouse("mouseover", spans(3)[0]!);
     vi.advanceTimersByTime(250);
     expect(document.querySelectorAll(".osso-chip")).toHaveLength(1);
-    expect(chipReads(chip)).toEqual({ label: "figure", dots: 5, lit: 5, meter: "95% worth keeping", pinned: null });
-    // Scroll and keys hide it.
+    expect(chip.classList.contains("osso-chip-show")).toBe(true);
     document.dispatchEvent(new Event("scroll"));
     expect(chip.classList.contains("osso-chip-show")).toBe(false);
-    mouse("mouseover", spans(4)[0]!);
+    mouse("mouseover", spans(3)[0]!);
     vi.advanceTimersByTime(250);
     expect(chip.classList.contains("osso-chip-show")).toBe(true);
     key("keydown", "a");
@@ -378,9 +373,9 @@ describe("chip", () => {
     off();
   });
 
-  it("lights the dots by p(keep) and says so when the sentence is pinned", () => {
+  it("gives the reason: the kind when the kind is one, 'aside' for a fact beside the point, 'pinned' when pinned", () => {
     vi.useFakeTimers();
-    const sentences = [S(0, 0, "filler_or_transition"), S(1, 0.09, "filler_or_transition"), S(2, 0.6, "fact"), S(3, 0.5, "opinion"), S(4, 1, "fact")];
+    const sentences = [S(0, 0, "filler_or_transition"), S(1, 0.09, "promotion_or_appeal"), S(2, 0.6, "fact"), S(3, 0.5, "opinion"), S(4, 1, "fact")];
     applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.7, animations: true });
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
     const chip = () => document.querySelector<HTMLElement>(".osso-chip")!;
@@ -390,20 +385,22 @@ describe("chip", () => {
       vi.advanceTimersByTime(250);
     };
     hover(0);
-    expect(chipReads(chip())).toMatchObject({ lit: 0, meter: "0% worth keeping" });
+    expect(chipReads(chip())).toEqual({ label: "filler", parts: 1, text: "filler" });
     hover(1);
-    expect(chipReads(chip())).toMatchObject({ label: "filler", lit: 0, meter: "9% worth keeping" });
+    expect(chipReads(chip())).toEqual({ label: "promo", parts: 1, text: "promo" });
+    // A fact at 0.6 under a 0.7 threshold is grey: true, and not what the reader came for.
     hover(2);
-    expect(chipReads(chip())).toMatchObject({ label: "fact", lit: 3, meter: "60% worth keeping" });
+    expect(chipReads(chip())).toEqual({ label: "aside", parts: 1, text: "aside" });
+    // A kept fact has nothing to explain.
     hover(4);
-    expect(chipReads(chip())).toMatchObject({ lit: 5, meter: "100% worth keeping" });
-    // Pinning the sentence under the pointer redraws the chip with the suffix; unpinning takes it away.
+    expect(chip().classList.contains("osso-chip-show")).toBe(false);
+    // Pinning the sentence under the pointer redraws the chip; unpinning restores the reason.
     hover(3);
-    expect(chipReads(chip())).toMatchObject({ label: "opinion", lit: 3, meter: "50% worth keeping", pinned: null });
+    expect(chipReads(chip())).toEqual({ label: "opinion", parts: 1, text: "opinion" });
     mouse("click", spans(3)[0]!);
-    expect(chipReads(chip())).toMatchObject({ label: "opinion", lit: 3, pinned: "· pinned" });
+    expect(chipReads(chip())).toEqual({ label: "pinned", parts: 1, text: "pinned" });
     mouse("click", spans(3)[0]!);
-    expect(chipReads(chip()).pinned).toBeNull();
+    expect(chipReads(chip()).label).toBe("opinion");
     off();
   });
 
@@ -523,6 +520,8 @@ describe("effectiveBackground", () => {
     const dark = document.getElementById("dark")!;
     stubBackgrounds(new Map([[dark, "rgb(17, 17, 17)"]]));
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    // Only a sentence with something to explain gets a chip; a rule gives these two one.
+    applyRules(document, { prices: { 0: 0.9, 4: 0.9 } }, ["prices"]);
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
     mouse("mouseover", spans(4)[0]!);
     vi.advanceTimersByTime(250);
@@ -582,8 +581,7 @@ describe("applyRules", () => {
     mouse("mouseover", spans(1)[0]!);
     vi.advanceTimersByTime(250);
     const chip = document.querySelector<HTMLElement>(".osso-chip")!;
-    expect(chip.querySelector(".osso-chip-rule")?.textContent).toBe("kept by: prices");
-    expect(chipReads(chip).label).toBe("promo");
+    expect(chipReads(chip)).toEqual({ label: "kept by prices", parts: 1, text: "kept by prices" });
     mouse("mouseout", spans(1)[0]!, { relatedTarget: document.body });
     mouse("mouseover", spans(3)[0]!);
     vi.advanceTimersByTime(250);
@@ -621,7 +619,7 @@ describe("applyRules", () => {
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
     mouse("mouseover", spans(1)[0]!);
     vi.advanceTimersByTime(250);
-    expect(document.querySelector(".osso-chip-rule")?.textContent).toBe("kept by: deadlines");
+    expect(document.querySelector(".osso-chip-label")?.textContent).toBe("kept by deadlines");
     off();
   });
 

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Loading… – Northwind Weekly</title>
+  <style>
+    body { font: 18px/1.55 Georgia, serif; margin: 0; color: #111; background: #fff; }
+    nav { padding: 12px 24px; border-bottom: 1px solid #eee; font: 14px system-ui, sans-serif; }
+    nav a { margin-right: 18px; color: #333; text-decoration: none; }
+    main { max-width: 720px; margin: 48px auto; padding: 0 24px; }
+    .skeleton { height: 14px; background: #eee; border-radius: 4px; margin: 14px 0; }
+  </style>
+</head>
+<body>
+  <nav><a href="#">Northwind Weekly</a><a href="#">Latest</a><a href="#">Subscribe</a></nav>
+  <main id="app">
+    <div class="skeleton" style="width: 60%"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton" style="width: 85%"></div>
+  </main>
+  <script>
+    // A single-page app: the shell paints first, the article arrives from an API call 2.5 s later.
+    setTimeout(() => {
+      document.title = "Council approves the harbour tram line – Northwind Weekly";
+      document.getElementById("app").innerHTML = `
+        <article>
+          <h1>Council approves the harbour tram line</h1>
+          <p>It was one of those evenings when the council chamber smells of wet coats and coffee, and nobody expects to be home before midnight. The public gallery filled early. People brought sandwiches.</p>
+          <p>The city council voted 24 to 9 on Tuesday to approve a 12-kilometre tram line connecting the airport to the central station. Construction is scheduled to begin in March 2027 and to take four years. The project is budgeted at 480 million euros, of which 310 million comes from EU regional funds.</p>
+          <p>Supporters in the gallery applauded as the result was announced, and a few of them hugged. The mayor, visibly tired, thanked everyone for their patience and joked that she would now go and find her umbrella.</p>
+          <p>Fares will be the same as the existing metro, 1.70 euros per ride, and the monthly pass will cover both. Via Roma will be closed to cars for the duration of the works, with deliveries allowed between 6 and 9 in the morning.</p>
+          <p>The tram has been a topic of conversation in the city for as long as most residents can remember, the kind of plan that grandparents describe to grandchildren. It remains to be seen whether the ambitious timeline will hold. Nobody in the chamber seemed to think it would, and nobody seemed to mind.</p>
+          <p>Residents along the route can apply for noise compensation from January; the form will be on the city website and the deadline is 31 March 2027.</p>
+        </article>`;
+    }, 2500);
+  </script>
+</body>
+</html>

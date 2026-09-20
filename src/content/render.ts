@@ -40,7 +40,6 @@ const CHIP_DELAY_MS = 250;
 /** Hover chip keeps this far from the text it describes and from a viewport edge; one and a half of it from the block's edge. */
 const CHIP_GAP_PX = 8;
 /** The chip's meter: p(keep) in this many dots. A bare probability meant nothing to most readers; five dots read at a glance. */
-const METER_DOTS = 5;
 
 /**
  * Contrast targets for the fade grey. The spec names `#b9b9b9` on white and `#5c5c5c` on near-black;
@@ -514,40 +513,23 @@ function chipOf(doc: Document, state: DocState): HTMLElement {
 }
 
 /**
- * What the chip says: the kind in a word, then p(keep) as a row of dots, lit from the left, then
- * the rule that keeps the sentence when one does, and "pinned" when the reader put it back. The
- * percentage is kept as the meter's label, for anyone who asks the element rather than looks at it.
+ * What the chip says, in one word: the reason. For a grey sentence, the kind when the kind is the
+ * reason (story, opinion, filler, promo) and "aside" when the model called it a fact, a figure or a
+ * step and still not what the reader came for. For a sentence brought back, what brought it back.
+ * An earlier chip put the kind beside p(keep) as a row of dots, and it read as a contradiction:
+ * "fact", one dot lit. A fact can be true and beside the point; the reader asks why it is grey.
  */
 function chipContent(doc: Document, j: SentenceJudgment, pinned: boolean, rule: string | null): Node[] {
   const label = doc.createElement("span");
   label.className = "osso-chip-label";
-  label.textContent = SENTENCE_KINDS[j.kind]?.label ?? j.kind;
+  const kind = SENTENCE_KINDS[j.kind];
+  label.textContent = rule !== null ? `kept by ${rule}` : pinned ? "pinned" : kind && !kind.substantive ? kind.label : "aside";
+  return [label];
+}
 
-  const meter = doc.createElement("span");
-  meter.className = "osso-chip-meter";
-  meter.setAttribute("role", "img");
-  meter.setAttribute("aria-label", `${Math.round(j.keep * 100)}% worth keeping`);
-  const lit = Math.max(0, Math.min(METER_DOTS, Math.round(j.keep * METER_DOTS)));
-  for (let i = 0; i < METER_DOTS; i++) {
-    const dot = doc.createElement("i");
-    if (i < lit) dot.className = "osso-lit";
-    meter.appendChild(dot);
-  }
-
-  const out: Node[] = [label, meter];
-  if (rule !== null) {
-    const by = doc.createElement("span");
-    by.className = "osso-chip-rule";
-    by.textContent = `kept by: ${rule}`;
-    out.push(by);
-  }
-  if (pinned) {
-    const pin = doc.createElement("span");
-    pin.className = "osso-chip-pin";
-    pin.textContent = "· pinned";
-    out.push(pin);
-  }
-  return out;
+/** Only a sentence with something to explain gets a chip: grey, pinned back, or kept by a rule. Ink needs no note. */
+function explained(state: DocState, span: HTMLElement, id: number): boolean {
+  return span.classList.contains("osso-fade") || span.classList.contains("osso-pin") || ruleKeeping(state, id) !== null;
 }
 
 interface Point {
@@ -622,7 +604,7 @@ export function placeChip(
 function showChip(doc: Document, state: DocState, span: HTMLElement, id: number, at?: Point) {
   const j = state.judgment.get(id);
   const win = doc.defaultView;
-  if (!j || !win || !span.isConnected) return;
+  if (!j || !win || !span.isConnected || !explained(state, span, id)) return;
   const rect = visibleRect(span, win, at);
   if (!rect) return;
   const block = span.closest<HTMLElement>(BLOCK);

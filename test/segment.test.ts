@@ -464,3 +464,61 @@ describe("segmentNewBlocks (SPA mutation)", () => {
     expect(() => segmentNewBlocks(a, b.body, 0)).toThrow(/another document/);
   });
 });
+
+describe("wrappers named like chrome on real sites", () => {
+  it("does not take a Tailwind grid named after its sidebar for chrome (react.dev)", () => {
+    const doc = fixture("tailwind");
+    const { container, sentences } = segmentPage(doc);
+    expect(container.closest("main")).not.toBeNull();
+    expect(sentences.length).toBeGreaterThanOrEqual(12);
+    expect(spans(doc, "nav")).toHaveLength(0);
+    expect(spans(doc, "footer")).toHaveLength(0);
+  });
+
+  it("does not take a BEM layout__header that holds the article for chrome (MDN)", () => {
+    const doc = fixture("bem");
+    const { container, sentences } = segmentPage(doc);
+    expect(container.closest("main")).not.toBeNull();
+    expect(sentences.length).toBeGreaterThanOrEqual(10);
+    expect(spans(doc, ".layout__header p").length).toBeGreaterThan(0);
+    expect(spans(doc, "aside")).toHaveLength(0);
+    expect(spans(doc, "header")).toHaveLength(0);
+  });
+
+  it("still leaves a small sidebar named as such alone when the body is the container", () => {
+    const doc = page(`
+      <p>First sentence of the actual text on this page. Second sentence with some more words in it. Third sentence to be sure.</p>
+      <p>Fourth sentence of the actual text. Fifth sentence, still the text. Sixth sentence keeps going along.</p>
+      <p>Seventh sentence here again. Eighth sentence here too. Ninth sentence to finish the page.</p>
+      <div class="sidebar"><p>A short promo line that lives in the sidebar of the page.</p></div>`);
+    const { container, sentences } = segmentPage(doc);
+    expect(container).toBe(doc.body);
+    expect(sentences.length).toBeGreaterThanOrEqual(9);
+    expect(spans(doc, ".sidebar")).toHaveLength(0);
+  });
+});
+
+describe("table-based layout", () => {
+  it("reads an essay laid out in one table cell, and still never touches a data table", () => {
+    const doc = fixture("table-layout");
+    const { sentences } = segmentPage(doc);
+    expect(sentences.length).toBeGreaterThanOrEqual(12);
+    expect(sentences.some((s) => s.text.startsWith("If you collected lists"))).toBe(true);
+    expect(spans(doc, "table[border='1']")).toHaveLength(0);
+    // Every judged sentence lives in the layout cell.
+    for (const s of spans(doc)) expect(s.closest("font")).not.toBeNull();
+  });
+
+  it("treats a table with header cells or many even cells as data", () => {
+    const doc = page(`
+      <table><tr><td>A cell with one sentence of text inside it here.</td><td>Another cell with one sentence of text inside.</td></tr>
+      <tr><td>A third cell with one sentence of text inside it.</td><td>A fourth cell with one sentence of text inside.</td></tr>
+      <tr><td>A fifth cell with one sentence of text inside it.</td><td>A sixth cell with one sentence of text inside.</td></tr></table>
+      <p>Prose outside the table, first sentence of it. Second sentence of the prose. Third sentence of the prose here.</p>
+      <p>Fourth sentence of the prose. Fifth one of the prose. Sixth one of the prose, and done.</p>
+      <p>Seventh sentence of the prose. Eighth of the prose. Ninth of the prose, and done for good.</p>`);
+    const { sentences } = segmentPage(doc);
+    expect(spans(doc, "table")).toHaveLength(0);
+    expect(sentences.length).toBe(9);
+  });
+});
