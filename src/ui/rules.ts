@@ -157,16 +157,28 @@ export function ruleField(input: HTMLInputElement, opts: RuleFieldOptions): { re
     }
   });
 
+  // The examples the placeholder walks through, minus the ones already on the list: a field that
+  // suggests "prices" under a "prices" chip reads as a bug. Restarted only when that set changes,
+  // since refresh runs on every poll while a page is being judged.
+  let shown = "";
   function refresh() {
-    const full = opts.rules().length >= MAX_RULES;
+    const rules = opts.rules();
+    const full = rules.length >= MAX_RULES;
     input.disabled = full;
     if (full) {
       cycling?.();
       cycling = null;
+      shown = "";
       input.placeholder = FULL_HINT;
-    } else if (!cycling && win) {
-      cycling = cyclePlaceholder(input, win);
+      return;
     }
+    if (!win) return;
+    const examples = RULE_EXAMPLES.filter((e) => findRule(rules, e) === undefined);
+    const key = examples.join("\n");
+    if (cycling && key === shown) return;
+    cycling?.();
+    shown = key;
+    cycling = cyclePlaceholder(input, win, examples.length ? examples : ["what to always keep"]);
   }
 
   return {

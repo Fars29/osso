@@ -284,7 +284,9 @@ describe("popup rules", () => {
     const counts = Array.from(document.querySelectorAll<HTMLElement>("#rule-list .rule-count"));
     expect(counts.map((c) => c.classList.contains("muted"))).toEqual([false, true, true]);
     expect(document.activeElement?.id).toBe("rule");
-    expect(input("rule").placeholder).toBe("prices");
+    // The placeholder never suggests a rule already on the list: "prices", "deadlines" and
+    // "allergens" are taken, so it walks on to the next example.
+    expect(input("rule").placeholder).toBe("what I have to do");
     expect(input("rule").maxLength).toBe(80);
     expect(input("rule").disabled).toBe(false);
     // A rule with no count yet keeps the popup asking the page.
