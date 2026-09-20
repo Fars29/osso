@@ -7,6 +7,7 @@ import {
   cacheSize,
   clearCache,
   getCached,
+  mergeRules,
   putCached,
   setCacheMaxPages,
 } from "../src/background/cache.ts";
@@ -128,6 +129,28 @@ describe("LRU", () => {
   });
 });
 
+describe("a full store", () => {
+  it("drops the older half of the cache and retries once when a write is refused", async () => {
+    for (const h of ["h1", "h2", "h3", "h4"]) await putCached(h, judgment());
+    const set = vi.mocked(chrome.storage.local.set);
+    const quota = new Error("QUOTA_BYTES quota exceeded");
+    set.mockRejectedValueOnce(quota);
+    await putCached("h5", judgment());
+    expect(hashes()).toEqual(["h3", "h4", "h5"]);
+    expect(store().has(CACHE_PREFIX + "h1")).toBe(false);
+    expect(store().has(CACHE_PREFIX + "h2")).toBe(false);
+    expect(store().get(CACHE_PREFIX + "h5")).toEqual(judgment());
+    expect(await getCached("h5")).toMatchObject({ cached: true });
+
+    // Refused twice in a row: the put rejects and the caller shrugs; the next put still runs.
+    set.mockRejectedValueOnce(quota).mockRejectedValueOnce(quota);
+    await expect(putCached("h6", judgment())).rejects.toThrow(/quota/i);
+    await putCached("h7", judgment());
+    expect(hashes()).toContain("h7");
+    expect(await getCached("h7")).toMatchObject({ cached: true });
+  });
+});
+
 describe("clearCache", () => {
   it("removes every cache key and the index, nothing else", async () => {
     await putCached("a", judgment());
@@ -155,5 +178,30 @@ describe("concurrency", () => {
     expect(await cacheSize()).toBe(4);
     const stored = [...store().keys()].filter((k) => k.startsWith(CACHE_PREFIX)).map((k) => k.slice(CACHE_PREFIX.length));
     expect(stored.sort()).toEqual([...hashes()].sort());
+  });
+});
+
+describe("rules", () => {
+  it("merges rule maps into a cached page one rule at a time and serves them with the judgment", async () => {
+    await putCached("h1", judgment(3));
+    expect(await mergeRules("h1", { prices: { 0: 0.9, 2: 0.2 } })).toBe(true);
+    expect(await mergeRules("h1", { deadlines: { 1: 0.7 } })).toBe(true);
+    expect((await getCached("h1"))?.rules).toEqual({ prices: { 0: 0.9, 2: 0.2 }, deadlines: { 1: 0.7 } });
+    // A rule judged again replaces its own map only.
+    await mergeRules("h1", { prices: { 1: 0.5 } });
+    expect((await getCached("h1"))?.rules).toEqual({ prices: { 1: 0.5 }, deadlines: { 1: 0.7 } });
+    // A record stored with rules keeps them, and a record from before rules existed reads as having none.
+    await putCached("h2", { ...judgment(2), rules: { allergens: { 0: 0.8 } } });
+    expect((await getCached("h2"))?.rules).toEqual({ allergens: { 0: 0.8 } });
+    expect((await getCached("h1"))?.sentences).toHaveLength(3);
+  });
+
+  it("reports a page that is not cached and leaves the index alone", async () => {
+    await putCached("h1", judgment());
+    const before = index().map((e) => ({ ...e }));
+    expect(await mergeRules("nope", { prices: { 0: 1 } })).toBe(false);
+    expect(store().has(CACHE_PREFIX + "nope")).toBe(false);
+    await mergeRules("h1", { prices: { 0: 1 } });
+    expect(index()).toEqual(before);
   });
 });

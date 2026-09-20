@@ -8,6 +8,7 @@ import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, THRESHOLD_MAX, THRESHOLD_MIN, U
 import type { FromBackground, RevealKey, Settings, Stats, ToBackground } from "../../shared/types.ts";
 import { getSettings, getStats, patchSettings, sendToBackground } from "../messaging.ts";
 import { SETTINGS_KEY } from "../../background/settings.ts";
+import { ruleField, ruleList } from "../rules.ts";
 
 /**
  * Local adapter: the shared contract has no message to reset usage counters. Sent as an
@@ -38,6 +39,8 @@ const ui = {
   thresholdValue: el<HTMLOutputElement>("threshold-value"),
   revealKey: el<HTMLSelectElement>("reveal-key"),
   animations: el<HTMLInputElement>("animations"),
+  rule: el<HTMLInputElement>("rule"),
+  ruleList: el<HTMLUListElement>("rule-list"),
   behaviourSaved: el<HTMLSpanElement>("behaviour-saved"),
   denied: el<HTMLTextAreaElement>("denied"),
   allowed: el<HTMLTextAreaElement>("allowed"),
@@ -58,6 +61,13 @@ const ui = {
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let connected = false;
 
+const chips = ruleList(ui.ruleList, { onRemove: (rule) => void saveRules(settings.rules.filter((r) => r !== rule)) });
+const field = ruleField(ui.rule, {
+  rules: () => settings.rules,
+  onAdd: (rule) => void saveRules([...settings.rules, rule]),
+  onDuplicate: (existing) => chips.flash(existing),
+});
+
 // ---- feedback -------------------------------------------------------------
 
 const savedTimers = new WeakMap<HTMLElement, number>();
@@ -76,6 +86,11 @@ async function save(patch: Partial<Settings>, badge: HTMLElement): Promise<boole
   flash(badge, ok ? "Saved" : "Not saved");
   if (!ok) offline();
   return ok;
+}
+
+async function saveRules(rules: string[]) {
+  await save({ rules }, ui.behaviourSaved);
+  renderRules();
 }
 
 function offline() {
@@ -131,10 +146,16 @@ function renderSettings() {
   ui.animations.checked = settings.animations;
   ui.denied.value = settings.deniedHosts.join("\n");
   ui.allowed.value = settings.allowedHosts.join("\n");
+  renderRules();
   if (settings.apiKeyInvalid && settings.apiKey) {
     ui.keyResult.textContent = "TypeSafe rejected this key the last time it was used.";
     ui.keyResult.className = "key-result bad";
   }
+}
+
+function renderRules() {
+  chips.render(settings.rules);
+  field.refresh();
 }
 
 function renderThreshold() {
@@ -279,6 +300,7 @@ function wire() {
 
   ui.clearCache.addEventListener("click", () => void clearCache());
   ui.resetUsage.addEventListener("click", () => void resetUsage());
+  window.addEventListener("pagehide", () => field.stop());
 }
 
 async function main() {

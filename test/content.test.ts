@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { FromBackground, FromContent, JudgeRequest, PageJudgment, Settings, TabState, ToBackground, ToContent } from "../src/shared/types.ts";
+import type { FromBackground, FromContent, JudgeRequest, PageJudgment, RuleResults, Settings, TabState, ToBackground, ToContent } from "../src/shared/types.ts";
 import { DEFAULT_SETTINGS, MUTATION_DEBOUNCE_MS } from "../src/shared/constants.ts";
 
 type ChromeMock = ReturnType<typeof import("./setup.ts").installChromeMock>;
@@ -43,7 +43,23 @@ function judgmentFor(req: JudgeRequest): PageJudgment {
 interface Script {
   settings: Settings;
   hostEnabled: boolean;
-  judge: (req: JudgeRequest) => FromBackground;
+  judge: (req: JudgeRequest) => FromBackground | Promise<FromBackground>;
+  rules: (contentHash: string, rules: string[]) => FromBackground | Promise<FromBackground>;
+}
+
+/** What each rule catches, for the scripted background: the sentence text against a pattern. */
+const RULE_PATTERNS: Record<string, RegExp> = { grandmothers: /nonna/i, prices: /\d+ ?g\b|%/, nothing: /(?!)/ };
+
+/** Rule results over the sentences of every judge request seen so far under this hash. */
+function rulesFor(contentHash: string, rules: string[]): FromBackground {
+  const req = judged.find((r) => r.contentHash === contentHash);
+  if (!req) return { type: "error", code: "unknown-page", error: "This page has not been judged yet" };
+  const out: RuleResults = {};
+  for (const rule of rules) {
+    const pattern = RULE_PATTERNS[rule] ?? /(?!)/;
+    out[rule] = Object.fromEntries(req.sentences.map((s) => [s.id, pattern.test(s.text) ? 0.9 : 0.1]));
+  }
+  return { type: "ruleJudgment", contentHash, rules: out };
 }
 
 /** Mirrors src/content/index.ts; importing the module statically would boot a second orchestrator. */
@@ -54,10 +70,11 @@ const withKey: Settings = { ...DEFAULT_SETTINGS, apiKey: "•" };
 let script: Script;
 let states: TabState[];
 let judged: JudgeRequest[];
+let ruled: { contentHash: string; rules: string[] }[];
 let listener: Listener | null = null;
 
 function scriptBackground(patch: Partial<Script> = {}) {
-  script = { settings: withKey, hostEnabled: true, judge: (req) => ({ type: "judgment", judgment: judgmentFor(req) }), ...patch };
+  script = { settings: withKey, hostEnabled: true, judge: (req) => ({ type: "judgment", judgment: judgmentFor(req) }), rules: rulesFor, ...patch };
   runtimeSend().mockImplementation(async (...args: unknown[]) => {
     const msg = args[0] as ToBackground;
     switch (msg.type) {
@@ -68,6 +85,9 @@ function scriptBackground(patch: Partial<Script> = {}) {
       case "judge":
         judged.push(msg.req);
         return script.judge(msg.req);
+      case "judgeRules":
+        ruled.push({ contentHash: msg.contentHash, rules: msg.rules });
+        return script.rules(msg.contentHash, msg.rules);
       case "tabState":
         states.push(msg.state);
         return { type: "ok" } satisfies FromBackground;
@@ -112,6 +132,7 @@ const untilStatus = (status: TabState["status"]) => until(() => last()?.status =
 beforeEach(() => {
   states = [];
   judged = [];
+  ruled = [];
   scriptBackground();
 });
 
@@ -452,5 +473,143 @@ describe("mutations", () => {
     document.body.appendChild(chip);
     await new Promise((r) => setTimeout(r, MUTATION_DEBOUNCE_MS + 200));
     expect(judged).toHaveLength(before);
+  });
+});
+
+describe("rules", () => {
+  const nonna = () => spans().find((s) => s.textContent?.includes("Every summer"))!;
+  const faded = (el: Element) => el.classList.contains("osso-fade");
+  const withRules = (rules: string[]): Settings => ({ ...withKey, rules });
+
+  it("on load the rules go out beside the judgment; what they catch stays in ink, underlined and counted", async () => {
+    scriptBackground({ settings: withRules(["grandmothers"]) });
+    await boot();
+    await untilDone();
+    // Both requests were sent before the judgment came back, under the page's own hash.
+    expect(ruled).toEqual([{ contentHash: judged[0]!.contentHash, rules: ["grandmothers"] }]);
+    await until(() => last()?.ruleHits.grandmothers !== undefined);
+    expect(faded(nonna())).toBe(false);
+    expect(nonna().classList.contains("osso-rule-hit")).toBe(true);
+    expect(last()?.ruleHits).toEqual({ grandmothers: 1 });
+    expect(last()).toMatchObject({ status: "done", total: 29, kept: last()!.total - last()!.faded });
+    // The sentence the rule keeps is not among the faded any more.
+    expect(last()!.faded).toBe(ids(spans().filter(faded)).size);
+    expect(judged).toHaveLength(1);
+  });
+
+  it("rulesChanged judges only the new rule, drops a removed one for free, and brings it back for free", async () => {
+    await boot();
+    await untilDone();
+    expect(faded(nonna())).toBe(true);
+    const doneReports = states.length;
+
+    tell({ type: "rulesChanged", rules: ["grandmothers"] });
+    await until(() => last()?.ruleHits.grandmothers !== undefined);
+    expect(ruled).toEqual([{ contentHash: judged[0]!.contentHash, rules: ["grandmothers"] }]);
+    expect(faded(nonna())).toBe(false);
+    expect(nonna().classList.contains("osso-rule-hit")).toBe(true);
+    expect(last()?.ruleHits).toEqual({ grandmothers: 1 });
+
+    tell({ type: "rulesChanged", rules: ["grandmothers", "prices"] });
+    await until(() => ruled.length === 2);
+    expect(ruled[1]).toEqual({ contentHash: judged[0]!.contentHash, rules: ["prices"] });
+    await until(() => last()?.ruleHits.prices !== undefined);
+    expect(last()?.ruleHits.prices).toBeGreaterThan(0);
+
+    // Off: no request, back in grey at once.
+    tell({ type: "rulesChanged", rules: ["prices"] });
+    await until(() => last()?.ruleHits.grandmothers === undefined);
+    expect(faded(nonna())).toBe(true);
+    expect(ruled).toHaveLength(2);
+    // On again: its results were kept, so still no request.
+    tell({ type: "rulesChanged", rules: ["prices", "grandmothers"] });
+    await until(() => last()?.ruleHits.grandmothers !== undefined);
+    expect(faded(nonna())).toBe(false);
+    expect(ruled).toHaveLength(2);
+    expect(judged).toHaveLength(1);
+    // A rule that catches nothing counts zero, and is not asked twice.
+    tell({ type: "rulesChanged", rules: ["prices", "grandmothers", "nothing"] });
+    await until(() => last()?.ruleHits.nothing !== undefined);
+    expect(last()?.ruleHits.nothing).toBe(0);
+    expect(ruled).toHaveLength(3);
+    tell({ type: "settingsChanged", settings: withRules(["prices", "grandmothers", "nothing"]) });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ruled).toHaveLength(3);
+    expect(states.length).toBeGreaterThan(doneReports);
+  });
+
+  it("a rule added while the page is still being judged waits for the judgment and goes out once", async () => {
+    let release: ((r: FromBackground) => void) | null = null;
+    scriptBackground({ judge: () => new Promise<FromBackground>((resolve) => (release = resolve)) });
+    await boot();
+    await untilStatus("judging");
+    tell({ type: "rulesChanged", rules: ["grandmothers"] });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(ruled).toHaveLength(0);
+    release!({ type: "judgment", judgment: judgmentFor(judged[0]!) });
+    await untilDone();
+    await until(() => last()?.ruleHits.grandmothers !== undefined);
+    expect(ruled).toEqual([{ contentHash: judged[0]!.contentHash, rules: ["grandmothers"] }]);
+    expect(faded(nonna())).toBe(false);
+  });
+
+  it("when the worker has forgotten the page, the request is sent again from the cache and the rule judged after", async () => {
+    let forgotten = 1;
+    scriptBackground({
+      rules: (hash, rules) => (forgotten-- > 0 ? { type: "error", code: "unknown-page", error: "forgotten" } : rulesFor(hash, rules)),
+    });
+    await boot();
+    await untilDone();
+    tell({ type: "rulesChanged", rules: ["grandmothers"] });
+    await until(() => last()?.ruleHits.grandmothers !== undefined);
+    expect(ruled).toHaveLength(2);
+    expect(judged).toHaveLength(2);
+    expect(judged[1]).toEqual(judged[0]);
+    expect(faded(nonna())).toBe(false);
+  });
+
+  it("a failed rule judgment leaves the rule unjudged, the page as it was, and asks again on the next change", async () => {
+    let failures = 1;
+    scriptBackground({ rules: (hash, rules) => (failures-- > 0 ? { type: "error", code: "server", error: "down" } : rulesFor(hash, rules)) });
+    await boot();
+    await untilDone();
+    tell({ type: "rulesChanged", rules: ["grandmothers"] });
+    await until(() => ruled.length === 1);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(last()?.ruleHits).toEqual({});
+    expect(faded(nonna())).toBe(true);
+    tell({ type: "rulesChanged", rules: ["grandmothers", "prices"] });
+    await until(() => last()?.ruleHits.grandmothers !== undefined);
+    expect(ruled[1]).toEqual({ contentHash: judged[0]!.contentHash, rules: ["grandmothers", "prices"] });
+    expect(faded(nonna())).toBe(false);
+  });
+
+  it("sentences a mutation adds are asked about the rules in force too", async () => {
+    scriptBackground({ settings: withRules(["grandmothers"]) });
+    await boot();
+    await untilDone();
+    await until(() => last()?.ruleHits.grandmothers === 1);
+    const container = document.querySelector("article.post")!;
+    const p = document.createElement("p");
+    p.textContent = "My nonna would have laughed at the pearl couscous. She used what she had and never apologised for it.";
+    container.appendChild(p);
+    await until(() => judged.length === 2, MUTATION_DEBOUNCE_MS * 4);
+    await until(() => ruled.length === 2);
+    expect(ruled[1]).toEqual({ contentHash: judged[1]!.contentHash, rules: ["grandmothers"] });
+    await until(() => last()?.ruleHits.grandmothers === 2);
+    const added = Array.from(p.querySelectorAll<HTMLElement>(".osso-s"));
+    const laughed = added.find((s) => s.textContent?.includes("laughed"))!;
+    expect(faded(laughed)).toBe(false);
+    expect(laughed.classList.contains("osso-rule-hit")).toBe(true);
+  });
+
+  it("switching the site off drops the rule state with everything else", async () => {
+    scriptBackground({ settings: withRules(["grandmothers"]) });
+    await boot();
+    await untilDone();
+    await until(() => last()?.ruleHits.grandmothers === 1);
+    tell({ type: "setEnabledHere", enabled: false });
+    expect(last()?.ruleHits).toEqual({});
+    expect(document.querySelectorAll(".osso-rule-hit")).toHaveLength(0);
   });
 });

@@ -1,16 +1,26 @@
 /**
- * Field probe for Osso's core judgment: does Jev separate substance from filler,
- * sentence by sentence, with the whole page as context — and how fast, at what cost,
- * with N sentences per request?
+ * Field probe for Osso's core judgment: does Jev separate substance from filler, sentence by
+ * sentence, with the page as context; how fast, at what cost, with N sentences per request; and
+ * does a fact stated twice on a page survive in both places?
  *
- * Run: node --env-file=../Draw/.env scripts/probe.ts
+ * The requests are built by the shipped code path (`buildRequestBody` and `parseAnswers` from
+ * `src/background/api.ts`, with the generic pack and the wording in `src/shared/constants.ts`),
+ * so what this measures is exactly what the extension sends. Pages I and J are the redundancy
+ * trap: a step and a tip that the faded introduction also states, a vague announcement beside
+ * the concrete one; their tagged sentences are printed on their own at the end.
+ *
+ * Run: npm run calibrate   (node --env-file=.env scripts/calibrate.ts; needs TYPESAFE_API_KEY)
+ * Results: docs/calibration.md
  */
+import { API_URL, KEEP_QUESTION, KIND_QUESTION, PAGE_KIND_QUESTION, PAGE_KINDS, SENTENCE_KINDS, USD_PER_INPUT_TOKEN } from "../src/shared/constants.ts";
+import { buildRequestBody, parseAnswers, type RequestBody } from "../src/background/api.ts";
+import { generic } from "../src/packs/generic.ts";
+import type { PageMeta, SentenceInput, SentenceJudgment, SentenceKind } from "../src/shared/types.ts";
+
 const KEY = process.env.TYPESAFE_API_KEY;
 if (!KEY) throw new Error("TYPESAFE_API_KEY missing");
-// Not named URL: that would shadow the global the fetch signature is typed against.
-const API = "https://api.typesafe.ai/v1/systemone";
 
-type Sent = { t: string; k: 0 | 1 };
+type Sent = { t: string; k: 0 | 1; tag?: string };
 type Page = { id: string; kind: string; title: string; lang: string; s: Sent[] };
 
 const PAGES: Page[] = [
@@ -116,58 +126,63 @@ const PAGES: Page[] = [
     { k: 0, t: "Somewhere a door closed." },
     { k: 0, t: "They walked back the way they had come." },
   ]},
+  // The redundancy trap: the lemon-off-the-heat fact is in the story and in the step; the
+  // leftovers tip is in the tip and in the closing story; page J states the price change vaguely
+  // in the greeting and concretely in the notice.
+  { id: "I", kind: "recipe blog", lang: "en", title: "One-Pot Lemon Chicken Orzo", s: [
+    { k: 0, t: "Every summer my grandmother would open the windows of her kitchen and the whole street would know what was for dinner." },
+    { k: 0, t: "The lemon goes in off the heat, which is the single detail my grandmother was strict about, and which I have since confirmed the hard way.", tag: "story-dup" },
+    { k: 0, t: "This recipe has been on my list for years, and honestly I don't know why it took me so long to share it with you." },
+    { k: 0, t: "If you make it, please tag me on Instagram, I love seeing your photos!" },
+    { k: 1, t: "500 g boneless, skin-on chicken thighs, patted dry" },
+    { k: 1, t: "300 g dried orzo" },
+    { k: 1, t: "1 large unwaxed lemon, zested and juiced" },
+    { k: 1, t: "Freshly ground black pepper", tag: "pepper" },
+    { k: 1, t: "Sear the chicken skin-side down for 6 minutes without moving it, or it will not brown." },
+    { k: 1, t: "Return the chicken to the pan and simmer uncovered for 12 to 14 minutes, stirring every few minutes so the orzo does not stick." },
+    { k: 1, t: "Turn off the heat, then stir in the lemon zest, the lemon juice and the Parmigiano; do not add the lemon juice while the pan is still on the heat, or the sauce will turn bitter.", tag: "step-dup" },
+    { k: 1, t: "Rest for 3 minutes, scatter with parsley and black pepper, and serve straight from the pan." },
+    { k: 1, t: "Leftovers keep in the fridge for up to three days; add a splash of stock when reheating.", tag: "tip-dup" },
+    { k: 0, t: "That is it, really; it is the thing I make when it is Tuesday and everyone is tired and hungry, and the leftovers are honestly even better the next day.", tag: "story-dup2" },
+  ]},
+  { id: "J", kind: "corporate statement", lang: "it", title: "Novità sul tuo abbonamento", s: [
+    { k: 0, t: "Gentile cliente, grazie per aver scelto di far parte della nostra community." },
+    { k: 0, t: "Come forse saprai, nei prossimi mesi il prezzo del tuo abbonamento cambierà, e vogliamo spiegarti perché.", tag: "vague-dup" },
+    { k: 0, t: "Continuiamo a investire ogni giorno per offrirti un servizio sempre migliore." },
+    { k: 1, t: "A partire dal 1° ottobre 2026 il canone mensile passerà da 9,99 € a 12,99 €.", tag: "concrete" },
+    { k: 1, t: "Se non desideri accettare le nuove condizioni, puoi disdire senza penali entro il 30 settembre dalla sezione Abbonamento." },
+    { k: 1, t: "In assenza di disdetta, il nuovo prezzo verrà applicato automaticamente al primo rinnovo utile.", tag: "concrete-dup" },
+    { k: 0, t: "Ti ringraziamo per la fiducia e non vediamo l'ora di continuare questo percorso con te." },
+  ]},
 ];
 
-const KINDS = {
-  fact: "A verifiable statement about what happened, what is, or what will happen: who, what, when, where, how much.",
-  figure_or_date: "A quantity, price, measurement, percentage, date, deadline or time is the point of the sentence.",
-  instruction_or_step: "Something the reader must do or how to do it, including warnings about what not to do.",
-  condition_or_obligation: "A rule, right, obligation, fee, penalty, or condition that binds the reader or the writer.",
-  opinion: "The writer's judgment, feeling or evaluation; not checkable.",
-  anecdote_or_story: "Personal memories, stories, scene-setting, emotional colour.",
-  filler_or_transition: "Greetings, thanks, generic reassurance, navigation hints, 'scroll down', 'read carefully', throat-clearing.",
-  promotion_or_appeal: "Asks the reader to follow, share, subscribe, buy or comment, or promotes a product, brand or person.",
-};
+/** The noise floor page has no labels; it is reported on its own and left out of the AUC. */
+const NOISE_PAGE = "H";
 
-function questionsFor(page: Page, prefix = "") {
-  const q: Record<string, unknown> = {};
-  page.s.forEach((s, i) => {
-    q[`${prefix}keepq_${i}`] = {
-      type: "noul",
-      instructions: `Consider this sentence from the page: «${s.t}». If this sentence were deleted, would a reader who came to this page for its practical content lose information that the rest of the page does not already give them?`,
-      criteria: {
-        true: "Yes: the sentence states a fact, figure, date, step, condition, cost, obligation, decision or warning that the reader needs and that is not stated elsewhere on the page.",
-        false: "No: the sentence is a story, opinion, greeting, thanks, reassurance, navigation hint, promotion, or it restates something the page already says; deleting it loses nothing practical.",
-      },
-    };
-    q[`${prefix}keeps_${i}`] = {
-      type: "noul",
-      instructions: `Sentence from the page: «${s.t}». This sentence carries information the reader came for: a fact, number, date, step, condition, cost, obligation, decision or warning that the rest of the page does not already state.`,
-    };
-    q[`${prefix}kind_${i}`] = {
-      type: "choice",
-      instructions: `What kind of sentence is this one from the page: «${s.t}»?`,
-      criteria: KINDS,
-    };
-  });
-  return q;
+function metaFor(page: Page): PageMeta {
+  return { url: `https://example.test/${page.id}`, host: "example.test", title: page.title, lang: page.lang, jsonLdTypes: [], ogType: null, sample: "", sentenceCount: page.s.length };
 }
 
-function stateFor(page: Page) {
-  return { page_kind_hint: page.kind, title: page.title, language: page.lang, text: page.s.map((x) => x.t).join(" ") };
+function inputsFor(page: Page, offset = 0): SentenceInput[] {
+  return page.s.map((s, i) => ({ id: offset + i, text: s.t }));
 }
 
-async function ask(state: unknown, questions: Record<string, unknown>) {
+/** Exactly the request the background worker sends for an unrouted page's first chunk. */
+function bodyFor(page: Page): RequestBody {
+  return buildRequestBody(inputsFor(page), metaFor(page), generic, true);
+}
+
+async function ask(body: RequestBody) {
   const t0 = performance.now();
-  const r = await fetch(API, {
+  const r = await fetch(API_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ state, model: "jev-latest", questions }),
+    body: JSON.stringify(body),
   });
   const ms = performance.now() - t0;
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  const j = await r.json();
-  return { ms, ...j };
+  const j = (await r.json()) as { answers: Record<string, unknown>; usage: { input_tokens: number } };
+  return { ms, answers: j.answers, tokens: j.usage.input_tokens };
 }
 
 function auc(pos: number[], neg: number[]) {
@@ -175,60 +190,93 @@ function auc(pos: number[], neg: number[]) {
   for (const p of pos) for (const n of neg) wins += p > n ? 1 : p === n ? 0.5 : 0;
   return pos.length && neg.length ? wins / (pos.length * neg.length) : NaN;
 }
-function mean(xs: number[]) { return xs.reduce((a, b) => a + b, 0) / (xs.length || 1); }
-function bestThreshold(pos: number[], neg: number[]) {
-  let best = { t: 0.5, acc: 0 };
-  for (let t = 0.05; t < 1; t += 0.05) {
-    const acc = (pos.filter((p) => p >= t).length + neg.filter((n) => n < t).length) / (pos.length + neg.length);
-    if (acc > best.acc) best = { t: Number(t.toFixed(2)), acc: Number(acc.toFixed(3)) };
-  }
-  return best;
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
+const usd = (tokens: number) => `$${(tokens * USD_PER_INPUT_TOKEN).toFixed(4)}`;
+
+/** Every threshold (step 0.05) that reaches the best accuracy, so the slider's safe range is visible. */
+function bestThresholds(pos: number[], neg: number[]) {
+  const acc = (t: number) => (pos.filter((p) => p >= t).length + neg.filter((n) => n < t).length) / (pos.length + neg.length);
+  const ts = Array.from({ length: 19 }, (_, i) => Number(((i + 1) * 0.05).toFixed(2)));
+  const best = Math.max(...ts.map(acc));
+  const range = ts.filter((t) => acc(t) === best);
+  return { from: range[0]!, to: range[range.length - 1]!, acc: Number(best.toFixed(3)) };
 }
 
-const rows: Array<{ page: string; k: number; q: number; s: number; kind: string; kconf: number; t: string }> = [];
-let totalMs = 0, totalTok = 0;
+type Row = { page: string; k: 0 | 1; tag?: string; t: string } & SentenceJudgment;
+
+const rows: Row[] = [];
+const requests: Array<{ page: string; questions: number; ms: number; tokens: number }> = [];
 
 for (const page of PAGES) {
-  const res = await ask(stateFor(page), questionsFor(page));
-  totalMs += res.ms; totalTok += res.usage.input_tokens;
-  console.log(`\n=== ${page.id} ${page.kind} (${page.lang}) — ${page.s.length} sentences × 3 q = ${page.s.length * 3} questions — ${res.ms.toFixed(0)} ms — ${res.usage.input_tokens} in-tokens`);
-  page.s.forEach((s, i) => {
-    const a = res.answers;
-    rows.push({ page: page.id, k: s.k, q: a[`keepq_${i}`].noul, s: a[`keeps_${i}`].noul, kind: a[`kind_${i}`].choice, kconf: a[`kind_${i}`].confidence, t: s.t });
-  });
-  const pr = rows.filter((r) => r.page === page.id).sort((a, b) => b.q - a.q);
-  for (const r of pr) console.log(`  ${r.k ? "KEEP" : "    "}  q=${r.q.toFixed(2)} s=${r.s.toFixed(2)}  ${r.kind.padEnd(24)} ${r.t.slice(0, 90)}`);
-  const pos = pr.filter((r) => r.k).map((r) => r.q), neg = pr.filter((r) => !r.k).map((r) => r.q);
-  if (pos.length && neg.length) console.log(`  AUC(q)=${auc(pos, neg).toFixed(3)}  AUC(s)=${auc(pr.filter((r) => r.k).map((r) => r.s), pr.filter((r) => !r.k).map((r) => r.s)).toFixed(3)}  mean keep=${mean(pos).toFixed(2)} mean filler=${mean(neg).toFixed(2)}`);
-  else console.log(`  noise floor: mean q=${mean(pr.map((r) => r.q)).toFixed(2)} max=${Math.max(...pr.map((r) => r.q)).toFixed(2)}  mean s=${mean(pr.map((r) => r.s)).toFixed(2)}`);
+  const body = bodyFor(page);
+  const res = await ask(body);
+  const questions = Object.keys(body.questions).length;
+  requests.push({ page: page.id, questions, ms: res.ms, tokens: res.tokens });
+  const parsed = parseAnswers(inputsFor(page), res.answers, true);
+  if (parsed.failedIds.length) throw new Error(`page ${page.id}: unparseable answers for ids ${parsed.failedIds.join(", ")}`);
+  const pk = parsed.pageKind ? `${parsed.pageKind.kind} (${parsed.pageKind.confidence.toFixed(2)})` : "?";
+  console.log(`\n=== ${page.id} ${page.kind} (${page.lang}) — ${page.s.length} sentences, ${questions} questions — ${res.ms.toFixed(0)} ms — ${res.tokens} in-tokens — page_kind: ${pk}`);
+  for (const j of parsed.sentences) {
+    const s = page.s[j.id]!;
+    const row: Row = { page: page.id, k: s.k, t: s.t, ...j };
+    if (s.tag) row.tag = s.tag;
+    rows.push(row);
+  }
+  const pr = rows.filter((r) => r.page === page.id).sort((a, b) => b.keep - a.keep);
+  for (const r of pr) console.log(`  ${r.k ? "KEEP" : "    "}  p=${r.keep.toFixed(2)}  ${r.kind.padEnd(24)} ${r.t.slice(0, 84)}${r.tag ? `  <${r.tag}>` : ""}`);
+  const pos = pr.filter((r) => r.k).map((r) => r.keep), neg = pr.filter((r) => !r.k).map((r) => r.keep);
+  if (pos.length && neg.length) console.log(`  AUC=${auc(pos, neg).toFixed(3)}  mean keep=${mean(pos).toFixed(2)} filler=${mean(neg).toFixed(2)}  min keep=${Math.min(...pos).toFixed(2)} max filler=${Math.max(...neg).toFixed(2)}`);
+  else console.log(`  noise floor: mean p=${mean(pr.map((r) => r.keep)).toFixed(2)} max=${Math.max(...pr.map((r) => r.keep)).toFixed(2)}`);
 }
 
-const labelled = rows.filter((r) => r.page !== "H");
+const labelled = rows.filter((r) => r.page !== NOISE_PAGE);
 const pos = labelled.filter((r) => r.k), neg = labelled.filter((r) => !r.k);
+const noise = rows.filter((r) => r.page === NOISE_PAGE).map((r) => r.keep);
 console.log(`\n=== OVERALL (${labelled.length} labelled sentences, ${pos.length} keep / ${neg.length} filler) ===`);
-console.log(`AUC question-form = ${auc(pos.map((r) => r.q), neg.map((r) => r.q)).toFixed(3)}   best threshold ${JSON.stringify(bestThreshold(pos.map((r) => r.q), neg.map((r) => r.q)))}`);
-console.log(`AUC statement-form = ${auc(pos.map((r) => r.s), neg.map((r) => r.s)).toFixed(3)}   best threshold ${JSON.stringify(bestThreshold(pos.map((r) => r.s), neg.map((r) => r.s)))}`);
-console.log(`mean keep q=${mean(pos.map((r) => r.q)).toFixed(2)} filler q=${mean(neg.map((r) => r.q)).toFixed(2)}   |   noise floor (page H) q=${mean(rows.filter((r) => r.page === "H").map((r) => r.q)).toFixed(2)}`);
-const keepKinds = ["fact", "figure_or_date", "instruction_or_step", "condition_or_obligation"];
-console.log(`kind proxy: keep→substantive kinds = ${(pos.filter((r) => keepKinds.includes(r.kind)).length / pos.length * 100).toFixed(0)}%   filler→non-substantive kinds = ${(neg.filter((r) => !keepKinds.includes(r.kind)).length / neg.length * 100).toFixed(0)}%`);
-console.log(`total: ${totalMs.toFixed(0)} ms sequential over ${PAGES.length} requests, ${totalTok} input tokens ≈ $${(totalTok / 1e6 * 0.042).toFixed(5)}`);
+console.log(`AUC = ${auc(pos.map((r) => r.keep), neg.map((r) => r.keep)).toFixed(3)}   best threshold ${JSON.stringify(bestThresholds(pos.map((r) => r.keep), neg.map((r) => r.keep)))}`);
+console.log(`mean keep=${mean(pos.map((r) => r.keep)).toFixed(2)} filler=${mean(neg.map((r) => r.keep)).toFixed(2)}   |   noise floor (page ${NOISE_PAGE}) mean=${mean(noise).toFixed(2)} max=${Math.max(...noise).toFixed(2)}`);
+const substantive = (k: SentenceKind) => SENTENCE_KINDS[k].substantive;
+console.log(`kind proxy: keep→substantive kinds = ${((pos.filter((r) => substantive(r.kind)).length / pos.length) * 100).toFixed(0)}%   filler→non-substantive kinds = ${((neg.filter((r) => !substantive(r.kind)).length / neg.length) * 100).toFixed(0)}%`);
+const totalMs = requests.reduce((a, r) => a + r.ms, 0), totalTok = requests.reduce((a, r) => a + r.tokens, 0);
+console.log(`latency: ${requests.map((r) => `${r.page}:${r.questions}q/${r.ms.toFixed(0)}ms`).join("  ")}`);
+console.log(`total: ${totalMs.toFixed(0)} ms sequential over ${PAGES.length} requests, ${totalTok} input tokens ≈ ${usd(totalTok)}`);
 
-// Scaling: everything in ONE request.
-const bigState = { pages: PAGES.map((p) => stateFor(p)) };
-let bigQ: Record<string, unknown> = {};
-for (const p of PAGES) bigQ = { ...bigQ, ...questionsFor(p, `${p.id}_`) };
-const nq = Object.keys(bigQ).length;
-const big = await ask(bigState, bigQ);
+console.log(`\n=== REDUNDANCY TRAP (tagged sentences) ===`);
+for (const r of rows.filter((r) => r.tag)) console.log(`  ${r.page} <${r.tag}>${"".padEnd(14 - r.tag!.length)} ${r.k ? "KEEP" : "    "}  p=${r.keep.toFixed(2)}  ${r.kind.padEnd(24)} ${r.t.slice(0, 84)}`);
+
+// Scaling: every page in ONE request, ids offset so the keys stay unique; the state is the whole text.
+const all: SentenceInput[] = [];
+const labels: Array<{ page: string; k: 0 | 1 }> = [];
+for (const p of PAGES) {
+  all.push(...inputsFor(p, all.length));
+  labels.push(...p.s.map((s) => ({ page: p.id, k: s.k })));
+}
+const bigMeta: PageMeta = { ...metaFor(PAGES[0]!), title: "Calibration pages", lang: "en", sentenceCount: all.length };
+const bigBody = buildRequestBody(all, bigMeta, generic, false);
+const nq = Object.keys(bigBody.questions).length;
+const big = await ask(bigBody);
+const bigParsed = parseAnswers(all, big.answers, false);
 const bpos: number[] = [], bneg: number[] = [];
-for (const p of PAGES) if (p.id !== "H") p.s.forEach((s, i) => (s.k ? bpos : bneg).push(big.answers[`${p.id}_keepq_${i}`].noul));
-console.log(`\n=== ONE REQUEST, ${nq} questions over all pages: ${big.ms.toFixed(0)} ms, ${big.usage.input_tokens} in-tokens ≈ $${(big.usage.input_tokens / 1e6 * 0.042).toFixed(5)}, AUC(q)=${auc(bpos, bneg).toFixed(3)}`);
+for (const j of bigParsed.sentences) {
+  const l = labels[j.id]!;
+  if (l.page !== NOISE_PAGE) (l.k ? bpos : bneg).push(j.keep);
+}
+console.log(`\n=== ONE REQUEST, ${nq} questions over all ${PAGES.length} pages: ${big.ms.toFixed(0)} ms, ${big.tokens} in-tokens ≈ ${usd(big.tokens)}, AUC=${auc(bpos, bneg).toFixed(3)}, failed=${bigParsed.failedIds.length}`);
 
 // Determinism: repeat page B.
-const pageB = PAGES[1]!;
-const rep = await ask(stateFor(pageB), questionsFor(pageB));
+const pageB = PAGES.find((p) => p.id === "B")!;
+const rep = await ask(bodyFor(pageB));
+const repParsed = parseAnswers(inputsFor(pageB), rep.answers, true);
 let maxDiff = 0;
-pageB.s.forEach((s, i) => { maxDiff = Math.max(maxDiff, Math.abs(rep.answers[`keepq_${i}`].noul - rows.find((r) => r.page === "B" && r.t === s.t)!.q)); });
+for (const j of repParsed.sentences) maxDiff = Math.max(maxDiff, Math.abs(j.keep - rows.find((r) => r.page === "B" && r.id === j.id)!.keep));
 console.log(`determinism on page B repeat: max |Δp| = ${maxDiff.toFixed(3)}  (${rep.ms.toFixed(0)} ms)`);
+
+console.log(`\n=== QUESTION (verbatim, generic pack) ===`);
+console.log(`keep: ${KEEP_QUESTION.instructions("S")}`);
+console.log(`  true:  ${KEEP_QUESTION.criteriaTrue}`);
+console.log(`  false: ${KEEP_QUESTION.criteriaFalse}`);
+console.log(`kind: ${KIND_QUESTION.instructions("S")}  [${Object.keys(SENTENCE_KINDS).join(", ")}]`);
+console.log(`page_kind: ${PAGE_KIND_QUESTION.instructions}  [${Object.keys(PAGE_KINDS).join(", ")}]`);
 
 // Top-level await needs a module; the probe exports nothing.
 export {};

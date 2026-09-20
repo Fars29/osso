@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
-import { API_URL, KEEP_QUESTION, MODEL, PAGE_KINDS, SENTENCE_KINDS } from "../src/shared/constants.ts";
+import { API_URL, KEEP_QUESTION, MODEL, PAGE_KINDS, RULE_QUESTION, SENTENCE_KINDS } from "../src/shared/constants.ts";
 import type { JudgeRequest, PageMeta, SentenceInput } from "../src/shared/types.ts";
-import { ApiError, buildRequestBody, chunkSentences, judgePage, parseAnswers, testKey, type PackLike } from "../src/background/api.ts";
+import {
+  ApiError,
+  buildRequestBody,
+  buildRuleRequestBody,
+  chunkSentences,
+  judgePage,
+  judgeRules,
+  parseAnswers,
+  parseRuleAnswers,
+  ruleChunkSize,
+  testKey,
+  type PackLike,
+} from "../src/background/api.ts";
 
 const meta: PageMeta = {
   url: "https://example.com/orzo",
@@ -130,6 +142,19 @@ describe("buildRequestBody", () => {
     expect(keep.criteria.true).toBe(KEEP_QUESTION.criteriaTrue);
     expect(keep.criteria.false).toBe(KEEP_QUESTION.criteriaFalse);
     expect(body.state.page_kind_hint).toBe("web page");
+  });
+
+  // A fact stated twice on a page must survive in both places: the wording that asked about
+  // "information the rest of the page does not already give" let a recipe step fade because the
+  // faded introduction said the same thing (docs/calibration.md, the redundancy trap).
+  it("asks about the sentence itself, never about what the rest of the page already says", () => {
+    const body = buildRequestBody(sents(1), meta, barePack, false);
+    const keep = body.questions.keep_0 as { instructions: string; criteria: { true: string; false: string } };
+    expect(keep.instructions).toMatch(/this sentence itself/);
+    expect(keep.criteria.true).toMatch(/even if the page says it again elsewhere/);
+    for (const text of [keep.instructions, keep.criteria.true, keep.criteria.false]) {
+      expect(text).not.toMatch(/rest of the page|elsewhere on the page|restates/);
+    }
   });
 });
 
@@ -349,16 +374,24 @@ describe("judgePage", () => {
     expect(onChunk).toHaveBeenCalledWith({ sentences: [], failedIds: middle });
   });
 
-  it("422 fails the chunk without retrying and warns with the body", async () => {
+  it("422 fails the chunk without retrying and warns with the status and size, never the body", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const fetchImpl = vi.fn(async () => reply(422, { error: "bad question" }));
+    // The API quotes the offending field, i.e. the page's own text: none of it may reach the console.
+    const body = { error: "bad question: «Sentence 2 of the page.»" };
+    const fetchImpl = vi.fn(async () => reply(422, body));
     const sleep = vi.fn(async (_ms: number) => undefined);
     const out = await judgePage(request(sents(5)), recipePack, { apiKey: "sk", maxSentencesPerRequest: 60, fetchImpl, sleep });
     expect(out.failedIds).toEqual([0, 1, 2, 3, 4]);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(sleep).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("[osso]"), expect.stringContaining("bad question"));
-    expect(out.chunkErrors[0]).toMatchObject({ code: "server", status: 422 });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = warn.mock.calls[0]!.map(String).join(" ");
+    expect(logged).toContain("[osso]");
+    expect(logged).toContain("422");
+    expect(logged).toContain(`${JSON.stringify(body).length} bytes`);
+    expect(logged).not.toContain("Sentence 2");
+    expect(logged).not.toContain("bad question");
+    expect(out.chunkErrors[0]).toMatchObject({ code: "server", status: 422, message: "Request rejected by the API" });
     warn.mockRestore();
   });
 
@@ -488,5 +521,142 @@ describe("testKey", () => {
     const fetchImpl = vi.fn();
     expect(await testKey("", fetchImpl)).toEqual({ ok: false, ms: 0, error: "No API key" });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+/** Rule question keys in a body: [ruleIndex, sentenceId]. */
+function ruleIdsOf(body: RequestBodyShape): [number, number][] {
+  return Object.keys(body.questions)
+    .filter((k) => k.startsWith("rule_"))
+    .map((k) => k.split("_").slice(1).map(Number) as [number, number]);
+}
+
+/** Answers every rule question: rule 0 hits even ids, rule 1 hits ids divisible by 3, later rules hit nothing. */
+function okRuleReply(init: RequestInit | undefined, inputTokens = 40): Response {
+  const answers: Record<string, unknown> = {};
+  for (const [ri, id] of ruleIdsOf(bodyOf(init))) {
+    const hit = ri === 0 ? id % 2 === 0 : ri === 1 ? id % 3 === 0 : false;
+    answers[`rule_${ri}_${id}`] = { noul: hit ? 0.9 : 0.1 };
+  }
+  return reply(200, { answers, usage: { input_tokens: inputTokens } });
+}
+
+describe("buildRuleRequestBody / parseRuleAnswers", () => {
+  const rules = ["prices", "deadlines"];
+
+  it("asks rule_<ri>_<sid> per rule per sentence, the rule quoted in every part, over the keep question's state", () => {
+    const chunk = sents(3, 10);
+    const body = buildRuleRequestBody(chunk, meta, recipePack, rules);
+    expect(Object.keys(body.questions).sort()).toEqual(
+      ["rule_0_10", "rule_0_11", "rule_0_12", "rule_1_10", "rule_1_11", "rule_1_12"].sort(),
+    );
+    expect(body.model).toBe(MODEL);
+    expect(body.state).toEqual(buildRequestBody(chunk, meta, recipePack, false).state);
+    const q = body.questions.rule_1_11 as { type: string; instructions: string; criteria: { true: string; false: string } };
+    expect(q.type).toBe("noul");
+    expect(q.instructions).toBe(RULE_QUESTION.instructions(chunk[1]!.text, "deadlines"));
+    expect(q.instructions).toContain(`«${chunk[1]!.text}»`);
+    expect(q.instructions).toContain("«deadlines»");
+    expect(q.criteria.true).toBe(RULE_QUESTION.criteriaTrue("deadlines"));
+    expect(q.criteria.false).toBe(RULE_QUESTION.criteriaFalse("deadlines"));
+    expect(q.criteria.true).toContain("«deadlines»");
+    expect(q.criteria.false).toContain("«deadlines»");
+    // A rule request never re-asks the keep question or the page kind.
+    expect(Object.keys(body.questions).some((k) => !k.startsWith("rule_"))).toBe(false);
+  });
+
+  it("parses to rules[rule][id], clamps, and fails only a sentence no rule answered for", () => {
+    const out = parseRuleAnswers(
+      sents(3),
+      {
+        rule_0_0: { noul: 0.92 },
+        rule_1_0: { noul: 1.4 },
+        rule_0_1: { noul: "yes" },
+        rule_1_1: { noul: -0.3 },
+        rule_0_2: { confidence: 0.5 },
+      },
+      rules,
+    );
+    expect(out.rules).toEqual({ prices: { 0: 0.92 }, deadlines: { 0: 1, 1: 0 } });
+    expect(out.failedIds).toEqual([2]);
+    expect(parseRuleAnswers(sents(2), {}, rules)).toEqual({ rules: { prices: {}, deadlines: {} }, failedIds: [0, 1] });
+  });
+
+  it("ruleChunkSize keeps a request at about the keep judgment's question count", () => {
+    expect(ruleChunkSize(60, 1)).toBe(60);
+    expect(ruleChunkSize(60, 2)).toBe(60);
+    expect(ruleChunkSize(60, 3)).toBe(40);
+    expect(ruleChunkSize(60, 8)).toBe(15);
+    expect(ruleChunkSize(60, 500)).toBe(1);
+    expect(ruleChunkSize(0, 1)).toBe(1);
+  });
+});
+
+describe("judgeRules", () => {
+  const rules = ["prices", "deadlines", "allergens", "names of people"];
+  const opts = { apiKey: "sk", maxSentencesPerRequest: 60, sleep: noSleep };
+
+  it("throws no-key without touching the network; no rules or no sentences answer empty without one", async () => {
+    const fetchImpl = vi.fn();
+    await expect(judgeRules(request(sents(10)), recipePack, rules, { ...opts, apiKey: "", fetchImpl })).rejects.toMatchObject({ code: "no-key" });
+    expect(await judgeRules(request(sents(10)), recipePack, [], { ...opts, fetchImpl })).toEqual({ rules: {}, failedIds: [], inputTokens: 0, ms: 0, chunkErrors: [] });
+    expect(await judgeRules(request([]), recipePack, rules, { ...opts, fetchImpl })).toMatchObject({ rules: { prices: {}, deadlines: {}, allergens: {}, "names of people": {} }, failedIds: [] });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("chunks by rule count, runs the pool, merges every chunk's answers and counts the tokens", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => okRuleReply(init, 7));
+    const all = sents(130);
+    const out = await judgeRules(request(all), recipePack, rules, { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch, concurrency: 2 });
+    // 4 rules → 30 sentences per chunk → 130 sentences in 5 balanced chunks of 26.
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    for (const [, init] of fetchImpl.mock.calls) {
+      const ids = ruleIdsOf(bodyOf(init));
+      expect(ids).toHaveLength(26 * 4);
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer sk");
+    }
+    expect(Object.keys(out.rules)).toEqual(rules);
+    for (const rule of rules) expect(Object.keys(out.rules[rule]!)).toHaveLength(130);
+    expect(out.rules.prices![4]).toBe(0.9);
+    expect(out.rules.prices![5]).toBe(0.1);
+    expect(out.rules.deadlines![9]).toBe(0.9);
+    expect(out.rules.allergens![0]).toBe(0.1);
+    expect(out.failedIds).toEqual([]);
+    expect(out.inputTokens).toBe(35);
+    expect(out.chunkErrors).toEqual([]);
+    expect(out.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("a chunk that fails for good leaves its ids out of every rule and in failedIds; the others answer", async () => {
+    const all = sents(90);
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const first = ruleIdsOf(bodyOf(init))[0]![1];
+      return first === 45 ? reply(529, "overloaded") : okRuleReply(init);
+    });
+    const out = await judgeRules(request(all), recipePack, ["prices"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch, retries: 1 });
+    expect(out.failedIds).toEqual(all.slice(45).map((s) => s.id));
+    expect(Object.keys(out.rules.prices!).map(Number)).toEqual(all.slice(0, 45).map((s) => s.id));
+    expect(out.chunkErrors).toEqual([{ code: "server", status: 529, message: "Server error 529" }]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1 + 2);
+  });
+
+  it("401 throws invalid-key at once and stops the other chunks", async () => {
+    const fetchImpl = vi.fn(async () => reply(401, "no"));
+    await expect(judgeRules(request(sents(200)), recipePack, ["prices"], { ...opts, fetchImpl, concurrency: 1 })).rejects.toMatchObject({
+      name: "ApiError",
+      code: "invalid-key",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("429 then 200 retries with backoff, like a keep request", async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => (++calls === 1 ? reply(429, "slow") : okRuleReply(init)));
+    const sleep = vi.fn(async (_ms: number) => undefined);
+    const out = await judgeRules(request(sents(5)), recipePack, ["prices"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch, sleep });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(out.failedIds).toEqual([]);
+    expect(Object.keys(out.rules.prices!)).toHaveLength(5);
   });
 });

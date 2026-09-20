@@ -84,6 +84,25 @@ describe("splitSentences", () => {
     expect(splitSentences("")).toEqual([]);
   });
 
+  it("splits scripts without case, and CJK with no space after the full stop", () => {
+    // Arabic: a period, whitespace, then a letter that has no upper case.
+    expect(pieces("هذه هي الجملة الأولى من النص. وهذه هي الجملة الثانية من النص؟ وهذه الجملة الثالثة هنا أيضا.")).toHaveLength(3);
+    // Hebrew and Devanagari likewise; the danda is a terminator.
+    expect(pieces("זה המשפט הראשון בטקסט הזה. זה המשפט השני בטקסט הזה.")).toHaveLength(2);
+    expect(pieces("यह पहला वाक्य है और लंबा है। यह दूसरा वाक्य है और लंबा है।")).toHaveLength(2);
+    // Chinese: full-width stops sit flush against the next sentence.
+    expect(pieces("这是第一句话，里面有几个字。这是第二句话，也有几个字。这是第三句话！")).toEqual([
+      "这是第一句话，里面有几个字。",
+      "这是第二句话，也有几个字。",
+      "这是第三句话！",
+    ]);
+    expect(countWords("这是第二句话")).toBe(6);
+    expect(countWords("これは日本語の文です")).toBe(10);
+    // A page in Chinese clears MIN_SENTENCES like any other.
+    const doc = page(`<main>${"<p>这是第一句话，里面有几个字。这是第二句话，也有几个字。这是第三句话！</p>".repeat(4)}</main>`);
+    expect(segmentPage(doc).sentences).toHaveLength(12);
+  });
+
   it("counts words across scripts and contractions", () => {
     expect(countWords("It's a weeknight staple")).toBe(4);
     expect(countWords("500 g di farina")).toBe(4);
@@ -169,6 +188,54 @@ describe("recipe fixture", () => {
     unwrapAll(doc);
     expect(doc.body.innerHTML).toBe(before);
     expect(doc.querySelectorAll(`[${BLOCK_ATTR}]`)).toHaveLength(0);
+  });
+
+  it("unwrapAll gives the page's own text nodes their characters back, and merges nothing of the page's", () => {
+    const doc = fixture("recipe");
+    const article = doc.querySelector("article")!;
+    // A framework rendering `You have {n} messages` keeps three text nodes and a reference to each.
+    const live = doc.createElement("p");
+    const held = [doc.createTextNode("You have "), doc.createTextNode("3"), doc.createTextNode(" new messages waiting for you today.")];
+    live.append(...held);
+    article.appendChild(live);
+    // A node holding several sentences is split; the page's node must be the one that survives.
+    const long = doc.createElement("p");
+    const original = doc.createTextNode("First sentence of the text is here. Second sentence of the text follows. Third sentence of the text ends it.");
+    long.appendChild(original);
+    article.appendChild(long);
+
+    segmentPage(doc);
+    expect(long.querySelectorAll(".osso-s")).toHaveLength(3);
+    expect(original.parentElement?.classList.contains("osso-s")).toBe(true);
+    expect(original.data).toBe("First sentence of the text is here.");
+
+    unwrapAll(doc);
+    // The same three nodes, in the same place: identity, not just equal text.
+    expect(live.childNodes).toHaveLength(3);
+    held.forEach((n, i) => expect(live.childNodes[i]).toBe(n));
+    expect(held.map((n) => n.data)).toEqual(["You have ", "3", " new messages waiting for you today."]);
+    expect(long.childNodes).toHaveLength(1);
+    expect(long.firstChild).toBe(original);
+    expect(original.data).toBe("First sentence of the text is here. Second sentence of the text follows. Third sentence of the text ends it.");
+    // The framework writes to the node it holds, and the page shows it.
+    held[1]!.data = "4";
+    expect(live.textContent).toBe("You have 4 new messages waiting for you today.");
+  });
+
+  it("unwrapAll reaches wrappers in a subtree the page has detached, so a cached view comes back clean", () => {
+    const doc = fixture("recipe");
+    const before = doc.body.innerHTML;
+    const seg = segmentPage(doc);
+    const view = seg.container;
+    const parent = view.parentNode!;
+    const next = view.nextSibling;
+    view.remove();
+    expect(view.querySelectorAll(".osso-s").length).toBeGreaterThan(0);
+    unwrapAll(doc);
+    expect(view.querySelectorAll(".osso-s")).toHaveLength(0);
+    expect(view.querySelectorAll(`[${BLOCK_ATTR}]`)).toHaveLength(0);
+    parent.insertBefore(view, next);
+    expect(doc.body.innerHTML).toBe(before);
   });
 
   it("is not an app", () => {
@@ -294,6 +361,69 @@ describe("what is never touched", () => {
     const seg = segmentPage(doc);
     expect(seg.sentences).toHaveLength(3);
     for (const sel of ["h2", "form", "nav", "aside", "footer"]) expect(spans(doc, sel), sel).toHaveLength(0);
+  });
+
+  it("an article under a hidden ancestor is neither chosen as the container nor wrapped", () => {
+    const doc = page(`
+      <div id="print" aria-hidden="true"><article>${prose(6)}</article></div>
+      <div id="amp" hidden><article>${prose(6)}</article></div>
+      <div id="mobile" style="display:none"><article>${prose(6)}</article></div>
+      <main>${prose(3)}</main>`);
+    const seg = segmentPage(doc);
+    expect(seg.container.localName).toBe("main");
+    expect(seg.sentences).toHaveLength(3);
+    for (const id of ["print", "amp", "mobile"]) {
+      expect(spans(doc, `#${id}`), id).toHaveLength(0);
+      // Asked directly, as the observer would for new blocks, a container under a hidden ancestor yields nothing.
+      expect(segmentNewBlocks(doc, doc.querySelector(`#${id} article`)!, 100), id).toEqual([]);
+      expect(spans(doc, `#${id}`), id).toHaveLength(0);
+    }
+  });
+
+  it("a page whose whole body is one form is still judged; a form of controls is chrome", () => {
+    const doc = page(`<form id="form1" action="./default.aspx">
+      <input type="hidden" name="__VIEWSTATE" value="x">
+      <div id="content">${prose(9)}</div>
+      <div><input type="search" name="q"><button>Go</button></div>
+    </form>`);
+    const seg = segmentPage(doc);
+    expect(seg.container.id).toBe("content");
+    expect(seg.sentences).toHaveLength(9);
+
+    const login = page(`<main>${prose(4)}
+      <form id="login">
+        <p>Sign in with the email address you registered.</p>
+        <p>Forgot your password? Reset it from here.</p>
+        <p>New here? Create an account in a minute.</p>
+        <input type="email"><input type="password"><input type="checkbox"><button>Sign in</button>
+      </form></main>`);
+    expect(segmentPage(login).sentences).toHaveLength(4);
+    expect(spans(login, "#login")).toHaveLength(0);
+  });
+
+  it("prose in plain divs is found; with no main content, chrome named by class or id is left alone", () => {
+    const div = (n: number) => Array.from({ length: n }, (_, i) => `<div>Paragraph ${i} set in a div carries a plain statement of fact.</div>`).join("");
+    // Divs count as paragraph carriers, so the wrapper of divs wins over the body.
+    const forum = page(`<div class="topbar">Sign in to your account to keep reading.</div>
+      <div id="posts">${div(4)}</div>
+      <div class="cookie-banner">We use cookies to improve your experience on this site.</div>`);
+    const seg = segmentPage(forum);
+    expect(seg.container.id).toBe("posts");
+    expect(seg.sentences).toHaveLength(4);
+    expect(spans(forum, ".topbar")).toHaveLength(0);
+    expect(spans(forum, ".cookie-banner")).toHaveLength(0);
+
+    // Nothing scores: the body is the container, and the banners are recognised by name.
+    const flat = page(`<div class="topbar">Sign in to your account to keep reading.</div>
+      ${div(4)}
+      <div id="cookie-notice">We use cookies to improve your experience on this site.</div>
+      <div class="modal open">Subscribe to our newsletter for weekly updates.</div>`);
+    const flatSeg = segmentPage(flat);
+    expect(flatSeg.container).toBe(flat.body);
+    expect(flatSeg.sentences).toHaveLength(4);
+    expect(spans(flat, ".topbar")).toHaveLength(0);
+    expect(spans(flat, "#cookie-notice")).toHaveLength(0);
+    expect(spans(flat, ".modal")).toHaveLength(0);
   });
 
   it("layout divs with block children are not blocks themselves; a br starts a new line", () => {

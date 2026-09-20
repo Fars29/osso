@@ -29,6 +29,17 @@
     .comment { border-top: 1px solid #eee; padding: 16px 0; }
     .comment .who { font-family: system-ui, sans-serif; font-size: 14px; color: #666; }
     footer { border-top: 1px solid #e5e5e5; padding: 24px 32px; font-family: system-ui, sans-serif; font-size: 13px; color: #666; }
+    /* A dark theme, so the fade and the chip can be checked on dark grounds too (e2e/screens.mjs). */
+    @media (prefers-color-scheme: dark) {
+      html { color-scheme: dark; }
+      body { color: #e6e3dc; background: #151515; }
+      nav, footer { border-color: #2a2a2a; }
+      nav a { color: #c9c6c0; }
+      .byline, .comment .who, footer { color: #9a9791; }
+      .sponsor { background: #2a2418; border-left-color: #a8863f; }
+      aside.rail { border-color: #2a2a2a; }
+      .comment { border-top-color: #242424; }
+    }
   </style>
 </head>
 <body>

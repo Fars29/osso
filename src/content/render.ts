@@ -6,8 +6,8 @@
  * each judged block carries `data-osso-block`. We add classes, custom properties and one chip; we
  * never unwrap.
  */
-import type { PageJudgment, RevealKey, SentenceJudgment } from "../shared/types.ts";
-import { SENTENCE_KINDS } from "../shared/constants.ts";
+import type { PageJudgment, RevealKey, RuleResults, SentenceJudgment } from "../shared/types.ts";
+import { RULE_THRESHOLD, SENTENCE_KINDS } from "../shared/constants.ts";
 
 export interface Counts {
   total: number;
@@ -24,15 +24,23 @@ export interface RGB {
 const SPAN = ".osso-s";
 const BLOCK = "[data-osso-block]";
 
-/** Settle: a wave down the page, 10 ms per faded sentence, capped so a long page still settles in ~1 s. */
-const WAVE_STEP_MS = 10;
-const WAVE_MAX_MS = 500;
-const SETTLE_MS = 550;
+/**
+ * Settle: a wave down the page, one sentence after another, capped so a long page still settles in
+ * about a second and a half. Each sentence takes SETTLE_MS to go grey (osso.css matches). Shorter
+ * and the page snaps; the reader should see it settle, top to bottom, like ink drying.
+ */
+export const WAVE_STEP_MS = 18;
+export const WAVE_MAX_MS = 600;
+export const SETTLE_MS = 900;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
+/** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
+export const RULE_HIT_MS = 240 + 1200;
 const CHIP_DELAY_MS = 250;
-/** Hover chip sits this far above the sentence's line box, and never closer than this to a viewport edge. */
+/** Hover chip keeps this far from the text it describes and from a viewport edge; one and a half of it from the block's edge. */
 const CHIP_GAP_PX = 8;
+/** The chip's meter: p(keep) in this many dots. A bare probability meant nothing to most readers; five dots read at a glance. */
+const METER_DOTS = 5;
 
 /**
  * Contrast targets for the fade grey. The spec names `#b9b9b9` on white and `#5c5c5c` on near-black;
@@ -63,6 +71,15 @@ interface DocState {
   settleTimer: ReturnType<typeof setTimeout> | null;
   instantTimer: ReturnType<typeof setTimeout> | null;
   chip: HTMLElement | null;
+  /** Every rule result this page has seen, active or not: removing a rule and adding it back costs nothing. */
+  rules: RuleResults;
+  /** The rules in force, in the user's order; the first that hits a sentence is the one the chip names. */
+  activeRules: string[];
+  /** Rule hits already shown, as `rule\u0000id`; only a hit not in here gets the underline. */
+  seenHits: Set<string>;
+  /** Spans wearing the transient underline, and the timer that takes it off them. */
+  hitSpans: Set<HTMLElement>;
+  hitTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const states = new WeakMap<Document, DocState>();
@@ -80,6 +97,11 @@ function stateOf(doc: Document): DocState {
       settleTimer: null,
       instantTimer: null,
       chip: null,
+      rules: {},
+      activeRules: [],
+      seenHits: new Set(),
+      hitSpans: new Set(),
+      hitTimer: null,
     };
     states.set(doc, s);
   }
@@ -122,10 +144,20 @@ function prefersReducedMotion(doc: Document): boolean {
   }
 }
 
+/** The first active rule that keeps this sentence, or null. Rules are the reader's own words, so their order is the reader's priority. */
+function ruleKeeping(state: DocState, id: number): string | null {
+  for (const rule of state.activeRules) {
+    const p = state.rules[rule]?.[id];
+    if (p !== undefined && p >= RULE_THRESHOLD) return rule;
+  }
+  return null;
+}
+
 /**
  * Toggles fade/pin classes from the stored judgment. With `wave`, sentences that become faded in this
  * pass get a delay by their rank in document order, so the page settles top to bottom. Sentences that
- * were already faded keep their state; kept sentences end with no class and no inline style.
+ * were already faded keep their state; kept sentences end with no class and no inline style. A
+ * sentence an active rule keeps is never faded, whatever the slider says.
  */
 function render(doc: Document, state: DocState, wave: boolean): Counts {
   let total = 0;
@@ -136,7 +168,7 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
     const j = state.judgment.get(id);
     if (!j || state.failed.has(id)) continue;
     total++;
-    const fade = j.keep < state.threshold;
+    const fade = j.keep < state.threshold && ruleKeeping(state, id) === null;
     const pinned = state.pinned.has(id);
     const wasFaded = spans[0]!.classList.contains("osso-fade");
     for (const s of spans) {
@@ -351,10 +383,8 @@ export function applyJudgment(
   return counts;
 }
 
-/** The popup slider: re-render from stored probabilities, no stagger, no inference. */
-export function setThreshold(doc: Document, threshold: number): Counts {
-  const state = stateOf(doc);
-  state.threshold = threshold;
+/** A re-render with no stagger and a short settle: the slider, and a rule coming or going. */
+function renderInstant(doc: Document, state: DocState): Counts {
   const root = doc.documentElement;
   root.classList.add("osso-instant");
   const counts = render(doc, state, false);
@@ -364,6 +394,88 @@ export function setThreshold(doc: Document, threshold: number): Counts {
     root.classList.remove("osso-instant");
   }, INSTANT_MS + 50);
   return counts;
+}
+
+/** The popup slider: re-render from stored probabilities, no stagger, no inference. */
+export function setThreshold(doc: Document, threshold: number): Counts {
+  const state = stateOf(doc);
+  state.threshold = threshold;
+  return renderInstant(doc, state);
+}
+
+/**
+ * The user's rules on the page. `rules` are results to merge (rule → sentence id → p(hit)), and
+ * may carry rules that are no longer active: they are kept, so a rule added back is free.
+ * `activeRules` are the rules in force. Sentences with a hit on an active rule lose their fade;
+ * a hit shown for the first time gets the transient `osso-rule-hit` underline, the one place the
+ * accent colour touches a page, so the reader sees what the rule caught. A rule removed simply
+ * re-fades, with no animation beyond the normal one.
+ *
+ * While the entrance wave is still playing this rides along with it (a sentence a cached rule
+ * keeps never goes grey at all); afterwards it takes the instant path, like the slider.
+ */
+export function applyRules(doc: Document, rules: RuleResults, activeRules: string[]): Counts {
+  const state = stateOf(doc);
+  for (const [rule, byId] of Object.entries(rules)) state.rules[rule] = { ...state.rules[rule], ...byId };
+  state.activeRules = [...activeRules];
+
+  const fresh: HTMLElement[] = [];
+  const hits = new Set<string>();
+  for (const [id, spans] of spansById(doc)) {
+    for (const rule of state.activeRules) {
+      const p = state.rules[rule]?.[id];
+      if (p === undefined || p < RULE_THRESHOLD) continue;
+      const key = `${rule}\u0000${id}`;
+      hits.add(key);
+      if (!state.seenHits.has(key)) fresh.push(...spans);
+    }
+  }
+  state.seenHits = hits;
+
+  const counts = state.settleTimer ? render(doc, state, false) : renderInstant(doc, state);
+  if (fresh.length > 0) underline(doc, state, fresh);
+  return counts;
+}
+
+/**
+ * Puts the underline on freshly caught spans and takes it off everything wearing it once the
+ * animation has played. A span caught again while still underlined starts over: the class is
+ * re-applied after a forced style flush so the animation restarts.
+ */
+function underline(doc: Document, state: DocState, spans: HTMLElement[]) {
+  for (const s of spans) {
+    if (s.classList.contains("osso-rule-hit")) {
+      s.classList.remove("osso-rule-hit");
+      void s.offsetWidth;
+    }
+    s.classList.add("osso-rule-hit");
+    state.hitSpans.add(s);
+  }
+  if (state.hitTimer) clearTimeout(state.hitTimer);
+  state.hitTimer = setTimeout(() => {
+    state.hitTimer = null;
+    for (const s of state.hitSpans) s.classList.remove("osso-rule-hit");
+    state.hitSpans.clear();
+  }, RULE_HIT_MS);
+  void doc;
+}
+
+/** How many sentences on the page each active rule keeps: what the popup's chips count. */
+export function ruleHits(doc: Document): Record<string, number> {
+  const out: Record<string, number> = {};
+  const state = states.get(doc);
+  if (!state) return out;
+  for (const rule of state.activeRules) {
+    const byId = state.rules[rule];
+    if (!byId) continue;
+    let n = 0;
+    for (const id of spansById(doc).keys()) {
+      const p = byId[id];
+      if (p !== undefined && p >= RULE_THRESHOLD) n++;
+    }
+    out[rule] = n;
+  }
+  return out;
 }
 
 export function setReveal(doc: Document, on: boolean): void {
@@ -401,6 +513,43 @@ function chipOf(doc: Document, state: DocState): HTMLElement {
   return chip;
 }
 
+/**
+ * What the chip says: the kind in a word, then p(keep) as a row of dots, lit from the left, then
+ * the rule that keeps the sentence when one does, and "pinned" when the reader put it back. The
+ * percentage is kept as the meter's label, for anyone who asks the element rather than looks at it.
+ */
+function chipContent(doc: Document, j: SentenceJudgment, pinned: boolean, rule: string | null): Node[] {
+  const label = doc.createElement("span");
+  label.className = "osso-chip-label";
+  label.textContent = SENTENCE_KINDS[j.kind]?.label ?? j.kind;
+
+  const meter = doc.createElement("span");
+  meter.className = "osso-chip-meter";
+  meter.setAttribute("role", "img");
+  meter.setAttribute("aria-label", `${Math.round(j.keep * 100)}% worth keeping`);
+  const lit = Math.max(0, Math.min(METER_DOTS, Math.round(j.keep * METER_DOTS)));
+  for (let i = 0; i < METER_DOTS; i++) {
+    const dot = doc.createElement("i");
+    if (i < lit) dot.className = "osso-lit";
+    meter.appendChild(dot);
+  }
+
+  const out: Node[] = [label, meter];
+  if (rule !== null) {
+    const by = doc.createElement("span");
+    by.className = "osso-chip-rule";
+    by.textContent = `kept by: ${rule}`;
+    out.push(by);
+  }
+  if (pinned) {
+    const pin = doc.createElement("span");
+    pin.className = "osso-chip-pin";
+    pin.textContent = "· pinned";
+    out.push(pin);
+  }
+  return out;
+}
+
 interface Point {
   x: number;
   y: number;
@@ -423,31 +572,79 @@ function visibleRect(span: HTMLElement, win: Window, at?: Point): DOMRect | null
   return rects.find((r) => r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw) ?? null;
 }
 
+/** Which side of the line the chip sits on; osso.css slides it in from the text's side. */
+export type ChipSide = "left" | "right" | "above";
+
+export interface ChipPlace {
+  left: number;
+  top: number;
+  side: ChipSide;
+}
+
+/**
+ * Where the chip goes: beside the line it describes, in the nearer margin, like a note in the
+ * margin of a book, so it never covers a word of the sentence. With no margin to speak of it takes
+ * the free run at the end of the line when `lineEndFree` says there is one, and only as a last
+ * resort sits above the line. Margins are the block's, not the line's, so a short last line still
+ * gets its note beside it.
+ */
+export function placeChip(
+  line: DOMRect,
+  block: DOMRect,
+  at: Point | undefined,
+  size: { width: number; height: number },
+  view: { width: number; height: number },
+  lineEndFree: () => boolean,
+): ChipPlace {
+  const gap = CHIP_GAP_PX;
+  const edge = gap * 1.5;
+  const vw = view.width || Infinity;
+  const vh = view.height || Infinity;
+  const clampY = (y: number) => Math.max(gap / 2, Math.min(y, vh - size.height - gap / 2));
+  const beside = clampY(line.top + line.height / 2 - size.height / 2);
+  const roomLeft = block.left - edge - size.width >= gap;
+  const roomRight = vw - block.right - edge - size.width >= gap;
+  const nearer: ChipSide = at && at.x > block.left + block.width / 2 ? "right" : "left";
+  for (const side of nearer === "right" ? (["right", "left"] as const) : (["left", "right"] as const)) {
+    if (side === "left" && roomLeft) return { left: block.left - edge - size.width, top: beside, side };
+    if (side === "right" && roomRight) return { left: block.right + edge, top: beside, side };
+  }
+  if (line.right + gap + size.width <= Math.min(block.right, vw - gap) && lineEndFree()) {
+    return { left: line.right + gap, top: beside, side: "right" };
+  }
+  let left = line.left + line.width / 2 - size.width / 2;
+  left = Math.min(Math.max(left, gap), Math.max(gap, vw - size.width - gap));
+  let top = line.top - size.height - gap;
+  if (top < gap / 2) top = line.bottom + gap;
+  return { left, top: clampY(top), side: "above" };
+}
+
 function showChip(doc: Document, state: DocState, span: HTMLElement, id: number, at?: Point) {
   const j = state.judgment.get(id);
   const win = doc.defaultView;
   if (!j || !win || !span.isConnected) return;
   const rect = visibleRect(span, win, at);
   if (!rect) return;
+  const block = span.closest<HTMLElement>(BLOCK);
   const chip = chipOf(doc, state);
-  const label = SENTENCE_KINDS[j.kind]?.label ?? j.kind;
-  chip.textContent = `${label} · ${Math.round(j.keep * 100)}% worth keeping${state.pinned.has(id) ? " · pinned" : ""}`;
-  chip.classList.toggle("osso-chip-light", span.closest(BLOCK)?.classList.contains("osso-dark") ?? false);
+  chip.replaceChildren(...chipContent(doc, j, state.pinned.has(id), ruleKeeping(state, id)));
+  chip.classList.toggle("osso-chip-on-dark", block?.classList.contains("osso-dark") ?? false);
 
   // Reads, then writes. Measuring the chip here also flushes its style so the show transition plays.
-  const cw = chip.offsetWidth;
-  const ch = chip.offsetHeight;
-  const vw = win.innerWidth || 0;
-  const vh = win.innerHeight || 0;
-
-  let left = rect.left + rect.width / 2 - cw / 2;
-  if (vw > 0) left = Math.min(Math.max(left, CHIP_GAP_PX), Math.max(CHIP_GAP_PX, vw - cw - CHIP_GAP_PX));
-  let top = rect.top - ch - CHIP_GAP_PX;
-  if (top < CHIP_GAP_PX / 2) top = rect.bottom + CHIP_GAP_PX;
-  if (vh > 0) top = Math.min(top, Math.max(0, vh - ch - CHIP_GAP_PX));
-  top = Math.max(CHIP_GAP_PX / 2, top);
-  chip.style.left = `${Math.round(left)}px`;
-  chip.style.top = `${Math.round(top)}px`;
+  const size = { width: chip.offsetWidth, height: chip.offsetHeight };
+  const view = { width: win.innerWidth || 0, height: win.innerHeight || 0 };
+  const blockRect = block?.getBoundingClientRect() ?? rect;
+  // Is the run after the line's end empty page, or another sentence on the same line?
+  const lineEndFree = () => {
+    if (typeof doc.elementFromPoint !== "function") return false;
+    const hit = doc.elementFromPoint(rect.right + CHIP_GAP_PX + size.width / 2, rect.top + rect.height / 2);
+    return !!hit && !hit.closest(SPAN) && (block?.contains(hit) ?? false);
+  };
+  const place = placeChip(rect, blockRect, at, size, view, lineEndFree);
+  chip.classList.remove("osso-chip-left", "osso-chip-right", "osso-chip-above");
+  chip.classList.add(`osso-chip-${place.side}`);
+  chip.style.left = `${Math.round(place.left)}px`;
+  chip.style.top = `${Math.round(place.top)}px`;
   chip.classList.add("osso-chip-show");
 }
 
@@ -613,12 +810,13 @@ export function clearRender(doc: Document): void {
   if (state) {
     if (state.settleTimer) clearTimeout(state.settleTimer);
     if (state.instantTimer) clearTimeout(state.instantTimer);
+    if (state.hitTimer) clearTimeout(state.hitTimer);
     state.chip?.remove();
     states.delete(doc);
   }
   doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
-    s.classList.remove("osso-fade", "osso-pin");
+    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit");
     dropProperty(s, "--osso-delay");
   }
   for (const b of doc.querySelectorAll<HTMLElement>(BLOCK)) {

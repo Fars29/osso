@@ -16,6 +16,7 @@ import type {
   PageJudgment,
   PageKind,
   PageMeta,
+  RuleResults,
   SentenceInput,
   Settings,
   TabState,
@@ -23,7 +24,17 @@ import type {
   ToContent,
 } from "../shared/types.ts";
 import { route } from "../packs/index.ts";
-import { applyJudgment, clearRender, counts, installInteractions, setReveal, setThreshold } from "./render.ts";
+import {
+  applyJudgment,
+  applyRules,
+  clearRender,
+  counts,
+  installInteractions,
+  ruleHits,
+  setReveal,
+  setThreshold,
+  type Counts,
+} from "./render.ts";
 import { isAppLikePage, segmentNewBlocks, segmentPage, unwrapAll, unwrapBlock } from "./segment.ts";
 
 /** What the popup says for each failure the background can report. */
@@ -56,8 +67,14 @@ interface Mounted {
   meta: PageMeta;
   packId: PageKind;
   pageKind: PageKind;
+  /** The whole-page request, kept so a rule can be judged over it later, and resent if the worker forgot it. */
+  req: JudgeRequest;
   /** Ids continue from here for sentences a mutation adds, so no id is ever reused on one page view. */
   nextId: number;
+  /** Every rule result this view has, active or not; a rule missing here is one to ask for. */
+  ruleResults: RuleResults;
+  /** The rules last painted, so a settings change that left them alone repaints nothing. */
+  applied: string[];
   uninstall: () => void;
 }
 
@@ -79,6 +96,12 @@ let mutationRequests = 0;
 let lastMutationRequestAt = 0;
 /** Judged blocks whose text the page changed under our wrappers: what was judged is no longer what is on screen. */
 const stale = new Set<Element>();
+/**
+ * Rule work runs one step at a time: a rule added while the page is still being judged, or while
+ * an earlier rule is out with the model, waits its turn instead of racing it. Every step re-reads
+ * the current rules, so a step queued behind another never acts on a stale list.
+ */
+let ruleChain: Promise<void> = Promise.resolve();
 
 function blank(): TabState {
   return {
@@ -93,6 +116,7 @@ function blank(): TabState {
     inputTokens: 0,
     cached: false,
     revealed: false,
+    ruleHits: {},
   };
 }
 
@@ -117,6 +141,11 @@ function report(patch: Partial<TabState>, reason?: string): void {
   if (reason !== undefined) next.reason = reason;
   state = next;
   void ask({ type: "tabState", state });
+}
+
+/** Counts as the popup wants them: the numbers, plus what each rule keeps. */
+function tally(c: Counts): Partial<TabState> {
+  return { ...c, ruleHits: ruleHits(document) };
 }
 
 function reasonOf(reply: FromBackground | null): string {
@@ -147,7 +176,7 @@ function interactions(s: Settings): () => void {
   return installInteractions(document, {
     revealKey: s.revealKey,
     holdMs: REVEAL_HOLD_MS,
-    onPinChange: (c) => report(c),
+    onPinChange: (c) => report(tally(c)),
     onRevealChange: (on) => report({ revealed: on }),
   });
 }
@@ -192,16 +221,23 @@ async function start(): Promise<void> {
       return;
     }
     const packId = route(seg.meta);
-    report({ status: "judging", packId, pageKind: null, total: seg.sentences.length, kept: 0, faded: 0 });
+    report({ status: "judging", packId, pageKind: null, total: seg.sentences.length, kept: 0, faded: 0, ruleHits: {} });
     const req: JudgeRequest = { meta: seg.meta, packId, contentHash: seg.contentHash, sentences: seg.sentences };
-    const reply = await ask({ type: "judge", req });
+    // Rules go out beside the keep question, not after it, so they never hold the settle up; the
+    // background remembers the request before it awaits anything, so the order they land in is free.
+    const judging = ask({ type: "judge", req });
+    const rules = settings.rules;
+    const ruling = rules.length > 0 ? ask({ type: "judgeRules", contentHash: req.contentHash, rules }) : null;
+    const reply = await judging;
     if (!live()) return;
     if (reply?.type !== "judgment") {
       wrapped(() => unwrapAll(document));
       report({ status: "error", packId: null, total: 0 }, reasonOf(reply));
       return;
     }
-    mount(seg.container, seg.meta, packId, seg.sentences.length, reply.judgment);
+    mount(seg.container, seg.meta, packId, req, reply.judgment);
+    if (ruling) queueRules(() => firstRules(ruling, gen));
+    queueRules(syncRules);
   } catch (err) {
     if (live()) fail(err);
   } finally {
@@ -209,16 +245,30 @@ async function start(): Promise<void> {
   }
 }
 
-function mount(container: Element, meta: PageMeta, packId: PageKind, count: number, judgment: PageJudgment): void {
+function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeRequest, judgment: PageJudgment): void {
   const s = settings;
   if (!s) throw new Error("settings missing at mount");
-  const c = applyJudgment(document, judgment, renderOptions(s));
-  mounted = { container, meta, packId, pageKind: judgment.pageKind, nextId: count, uninstall: interactions(s) };
+  const ruleResults: RuleResults = { ...judgment.rules };
+  let c = applyJudgment(document, judgment, renderOptions(s));
+  // A cached page carries its rules: they apply in the same breath as the fade, so a sentence a
+  // rule keeps never goes grey at all.
+  if (s.rules.length > 0) c = applyRules(document, ruleResults, s.rules);
+  mounted = {
+    container,
+    meta,
+    packId,
+    pageKind: judgment.pageKind,
+    req,
+    nextId: req.sentences.length,
+    ruleResults,
+    applied: [...s.rules],
+    uninstall: interactions(s),
+  };
   report({
     status: "done",
     packId,
     pageKind: judgment.pageKind,
-    ...c,
+    ...tally(c),
     ms: judgment.ms,
     inputTokens: judgment.inputTokens,
     cached: judgment.cached,
@@ -263,6 +313,67 @@ function fail(err: unknown): void {
   }
   state = blank();
   report({ status: "error" }, `Osso hit an error on this page: ${err instanceof Error ? err.message : String(err)}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rules
+
+function queueRules(step: () => Promise<void>): void {
+  ruleChain = ruleChain.then(step).catch((err: unknown) => {
+    if (mounted) fail(err);
+  });
+}
+
+function sameRules(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((r, i) => r === b[i]);
+}
+
+/** Paints the rules in force with every result the page has, and tells the popup what they keep. */
+function paintRules(m: Mounted): void {
+  const s = settings;
+  if (!s || mounted !== m) return;
+  m.applied = [...s.rules];
+  report(tally(applyRules(document, m.ruleResults, s.rules)));
+}
+
+/** The rule reply that went out with the first judgment lands here, on the page it was asked for. */
+async function firstRules(ruling: Promise<FromBackground | null>, gen: number): Promise<void> {
+  const reply = await ruling;
+  const m = mounted;
+  if (gen !== generation || !m || reply?.type !== "ruleJudgment") return;
+  Object.assign(m.ruleResults, reply.rules);
+  paintRules(m);
+}
+
+/**
+ * Brings the page in line with the rules in force: rules with no result yet are judged (one
+ * request, over the sentences the background remembers), rules taken away come off at once,
+ * and the counts go to the popup. Removing a rule costs nothing: its results stay on the page.
+ * Rules that are as they were last painted are left alone.
+ */
+async function syncRules(): Promise<void> {
+  const m = mounted;
+  const s = settings;
+  if (!m || !s) return;
+  const gen = generation;
+  const active = s.rules;
+  const missing = active.filter((r) => !Object.prototype.hasOwnProperty.call(m.ruleResults, r));
+  if (missing.length === 0 && sameRules(active, m.applied)) return;
+  if (missing.length > 0) {
+    let reply = await ask({ type: "judgeRules", contentHash: m.req.contentHash, rules: missing });
+    if (gen !== generation) return;
+    if (reply?.type === "error" && reply.code === "unknown-page") {
+      // The worker has restarted since this page was judged and forgot its sentences; the cache
+      // still has the judgment, so sending the request again costs nothing and jogs its memory.
+      await ask({ type: "judge", req: m.req });
+      if (gen !== generation) return;
+      reply = await ask({ type: "judgeRules", contentHash: m.req.contentHash, rules: missing });
+      if (gen !== generation) return;
+    }
+    if (reply?.type === "ruleJudgment") Object.assign(m.ruleResults, reply.rules);
+    // Anything else: the rule stays unjudged on this view and the popup keeps showing "…" for it.
+  }
+  paintRules(m);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -365,7 +476,9 @@ function regrow(): void {
 /**
  * New blocks under the container get the next ids and a request of their own; the background never
  * caches those. A block whose text changed is unwrapped first and comes back as new, so the model
- * judges what is on screen and the old ids fall out of the counts.
+ * judges what is on screen and the old ids fall out of the counts. The rules in force are asked
+ * about the new sentences too, in a request of their own, so a live page keeps what the reader
+ * asked for.
  */
 async function onSettled(): Promise<void> {
   const m = mounted;
@@ -386,7 +499,7 @@ async function onSettled(): Promise<void> {
     if (pending.length === 0 || mutationRequests >= MAX_MUTATION_REQUESTS) {
       // Nothing to ask, or nothing more we will ask on this view: the counts the popup shows may still have moved.
       pending = [];
-      report(counts(document));
+      report(tally(counts(document)));
       return;
     }
     const wait = lastMutationRequestAt + MUTATION_MIN_INTERVAL_MS - Date.now();
@@ -404,15 +517,28 @@ async function onSettled(): Promise<void> {
       contentHash: hashText(batch.map((s) => s.text).join("\n")),
       sentences: batch,
     };
-    const reply = await ask({ type: "judge", req });
+    const rules = settings?.rules ?? [];
+    const judging = ask({ type: "judge", req });
+    const ruling = rules.length > 0 ? ask({ type: "judgeRules", contentHash: req.contentHash, rules }) : null;
+    const reply = await judging;
     if (gen !== generation || !mounted) return;
     // A failed partial leaves its sentences in ink, like a failed chunk; the page is still readable.
     if (reply?.type !== "judgment" || !settings) return;
     const c = applyJudgment(document, reply.judgment, renderOptions(settings));
-    report({ ...c, ms: state.ms + reply.judgment.ms, inputTokens: state.inputTokens + reply.judgment.inputTokens });
+    report({ ...tally(c), ms: state.ms + reply.judgment.ms, inputTokens: state.inputTokens + reply.judgment.inputTokens });
+    if (ruling) queueRules(() => partialRules(ruling, gen));
   } catch (err) {
     if (gen === generation) fail(err);
   }
+}
+
+/** Rule results for sentences a mutation added join the page's, sentence by sentence. */
+async function partialRules(ruling: Promise<FromBackground | null>, gen: number): Promise<void> {
+  const reply = await ruling;
+  const m = mounted;
+  if (gen !== generation || !m || !settings || reply?.type !== "ruleJudgment") return;
+  for (const [rule, byId] of Object.entries(reply.rules)) m.ruleResults[rule] = { ...m.ruleResults[rule], ...byId };
+  paintRules(m);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -444,7 +570,9 @@ async function onSettingsChanged(next: Settings): Promise<void> {
       cached: true,
       failedIds: [],
     };
-    report(applyJudgment(document, empty, renderOptions(next)));
+    report(tally(applyJudgment(document, empty, renderOptions(next))));
+    // The rules travel with the settings too; `rulesChanged` usually gets here first, and then this is a no-op.
+    queueRules(syncRules);
     return;
   }
   // A key was added, Osso was switched back on, or this host was allowed: the guard runs again.
@@ -457,7 +585,7 @@ function onMessage(msg: ToContent): FromContent {
       return { type: "tabState", state };
     case "setThreshold":
       if (settings) settings = { ...settings, threshold: msg.value };
-      if (mounted) report(setThreshold(document, msg.value));
+      if (mounted) report(tally(setThreshold(document, msg.value)));
       return { type: "tabState", state };
     case "reveal":
       if (mounted) {
@@ -474,6 +602,10 @@ function onMessage(msg: ToContent): FromContent {
       } else {
         stop("Off on this site");
       }
+      return { type: "tabState", state };
+    case "rulesChanged":
+      if (settings) settings = { ...settings, rules: msg.rules };
+      queueRules(syncRules);
       return { type: "tabState", state };
     case "settingsChanged":
       void onSettingsChanged(msg.settings);

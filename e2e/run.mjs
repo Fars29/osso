@@ -1,41 +1,19 @@
 /**
  * End-to-end smoke against the live model: load dist/ into Chromium, serve the fixtures on
  * localhost, save a real key through the options page, and check that a recipe page comes back
- * with its story faded and its ingredients in ink. No test runner; a plain script that exits 1
- * on the first failed assertion and prints why.
+ * with its story faded and its ingredients in ink, and that a rule of the reader's keeps what it
+ * names. No test runner; a plain script that exits 1 on the first failed assertion and prints why.
  *
  * Run: npm run build && node --env-file=.env e2e/run.mjs
  */
-import { chromium } from "playwright";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { startServer } from "./server.mjs";
+import { AssertionFailed, FIXTURE_HOST, JUDGE_TIMEOUT_MS, assert, here, launch, preflight, saveKey, sleep, waitJudged } from "./harness.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, "..");
-const dist = join(root, "dist");
 const shots = join(here, "screenshots");
-const FIXTURE_HOST = "127.0.0.1";
-/** Generous: a cold page is one or two model round-trips of 1–3 s each, plus the settle animation. */
-const JUDGE_TIMEOUT_MS = 20_000;
-
-const key = process.env.TYPESAFE_API_KEY;
-if (!key) {
-  console.error("[osso e2e] TYPESAFE_API_KEY is not set. Put it in .env (see .env.example) and run: node --env-file=.env e2e/run.mjs");
-  process.exit(1);
-}
-if (!existsSync(join(dist, "manifest.json"))) {
-  console.error("[osso e2e] dist/ is missing: run npm run build");
-  process.exit(1);
-}
-
-class AssertionFailed extends Error {}
-function assert(cond, msg) {
-  if (!cond) throw new AssertionFailed(msg);
-}
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const key = preflight("run.mjs");
 
 /** Counts per sentence id, not per span: a sentence split around inline markup is several spans with one data-osso. */
 function countSentences() {
@@ -58,55 +36,57 @@ function fadedByText(needle) {
   return spans.some((s) => s.getAttribute("data-osso") === id && s.classList.contains("osso-fade"));
 }
 
-async function launch(userDataDir) {
-  const args = [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`, "--no-first-run"];
-  // New headless Chromium loads extensions; the headless shell does not. Try it, and if the
-  // worker never shows up fall back to a visible window rather than guess at the cause.
-  for (const opts of [{ headless: true, channel: "chromium" }, { headless: false }]) {
-    const context = await chromium.launchPersistentContext(userDataDir, { ...opts, args, viewport: { width: 1200, height: 900 } });
-    try {
-      const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker", { timeout: 5000 }));
-      const id = new URL(worker.url()).host;
-      console.log(`[osso e2e] extension ${id} (${opts.headless ? "headless" : "headed"})`);
-      return { context, id };
-    } catch {
-      await context.close();
-      console.log(`[osso e2e] no service worker in 5 s with ${JSON.stringify(opts)}; retrying`);
-    }
-  }
-  throw new Error("the extension's service worker never started");
+/** Does the sentence containing `needle` wear the rule-hit underline? */
+function underlinedByText(needle) {
+  const spans = [...document.querySelectorAll(".osso-s")];
+  const hit = spans.find((s) => (s.textContent ?? "").includes(needle));
+  if (!hit) return false;
+  const id = hit.getAttribute("data-osso");
+  return spans.some((s) => s.getAttribute("data-osso") === id && s.classList.contains("osso-rule-hit"));
 }
 
-async function saveKey(context, id) {
-  const page = await context.newPage();
-  await page.goto(`chrome-extension://${id}/options.html`);
-  const input = (await page.locator("#apiKey").count()) ? page.locator("#apiKey") : page.locator("input[type=password]").first();
-  if (await input.count()) {
-    await input.fill(key);
-    const button = (await page.locator("#saveKey").count()) ? page.locator("#saveKey") : page.getByText("Save", { exact: true }).first();
-    await button.click();
-    try {
-      await page.getByText("Saved").first().waitFor({ timeout: 10_000 });
-    } catch {
-      // The confirmation may be worded differently; what matters is that the key is stored.
-      const reply = await page.evaluate(() => chrome.runtime.sendMessage({ type: "getSettings" }));
-      assert(reply?.settings?.apiKey === key, "options: no 'Saved' confirmation and getSettings does not return the key");
+/**
+ * Counts the worker's requests to the API by wrapping its fetch from outside: the production
+ * bundle needs no debug handle, and `api.ts` looks fetch up on globalThis at call time. A worker
+ * restart would drop the wrapper; `fetchCount` then reads undefined and the assertion says so.
+ */
+async function armFetchCounter(context) {
+  const worker = context.serviceWorkers()[0];
+  await worker.evaluate(() => {
+    if (!globalThis.__ossoFetch) {
+      globalThis.__ossoFetch = globalThis.fetch;
+      globalThis.fetch = (...args) => {
+        globalThis.__ossoRequests = (globalThis.__ossoRequests ?? 0) + 1;
+        return globalThis.__ossoFetch(...args);
+      };
     }
-  } else {
-    // The options page has no key input yet; go through the contract instead so the rest still runs.
-    console.log("[osso e2e] no key input on options.html; setting the key via setSettings");
-    await page.evaluate((apiKey) => chrome.runtime.sendMessage({ type: "setSettings", patch: { apiKey } }), key);
-  }
-  // Localhost is denied by default (it is where people run their own apps); re-enable it for the fixtures.
-  await page.evaluate((host) => chrome.runtime.sendMessage({ type: "setHostEnabled", host, enabled: true }), FIXTURE_HOST);
-  await page.close();
+    globalThis.__ossoRequests = 0;
+  });
 }
 
-async function waitJudged(page) {
-  await page.waitForFunction(() => document.documentElement.classList.contains("osso-on"), null, { timeout: JUDGE_TIMEOUT_MS });
-  await page.waitForSelector(".osso-fade", { state: "attached", timeout: JUDGE_TIMEOUT_MS });
-  // Let the staggered settle finish so the screenshot shows the final greys.
-  await sleep(800);
+async function fetchCount(context) {
+  return context.serviceWorkers()[0].evaluate(() => globalThis.__ossoRequests);
+}
+
+/** The recipe tab's state as the popup would read it, through an extension page (the popup itself needs a real toolbar click). */
+async function fixtureTabState(ext) {
+  return ext.evaluate(async (host) => {
+    for (const tab of await chrome.tabs.query({})) {
+      const r = await chrome.runtime.sendMessage({ type: "getTabState", tabId: tab.id });
+      if (r?.state?.host === host) return r.state;
+    }
+    return null;
+  }, FIXTURE_HOST);
+}
+
+async function untilTabState(ext, predicate, what) {
+  const t0 = performance.now();
+  for (;;) {
+    const state = await fixtureTabState(ext);
+    if (state && predicate(state)) return state;
+    assert(performance.now() - t0 < JUDGE_TIMEOUT_MS, `timed out waiting for the tab state: ${what} (last: ${JSON.stringify(state)})`);
+    await sleep(100);
+  }
 }
 
 const rows = [];
@@ -120,7 +100,7 @@ try {
   mkdirSync(shots, { recursive: true });
   const launched = await launch(userDataDir);
   context = launched.context;
-  await saveKey(context, launched.id);
+  await saveKey(context, launched.id, key);
 
   // Recipe: story faded, ingredients kept, chrome untouched.
   const page = await context.newPage();
@@ -141,6 +121,29 @@ try {
   assert(chromeSpans === 0, `recipe: ${chromeSpans} judged spans inside nav/footer`);
   await page.screenshot({ path: join(shots, "recipe-faded.png"), fullPage: true });
 
+  // Hover a faded sentence: the chip names its kind and lights the meter, no number in sight.
+  await page.locator(".osso-fade").first().scrollIntoViewIfNeeded();
+  await page.locator(".osso-fade").first().hover();
+  await page.waitForSelector(".osso-chip.osso-chip-show", { state: "visible", timeout: 5000 });
+  const chip = await page.evaluate(() => {
+    const c = document.querySelector(".osso-chip.osso-chip-show");
+    const dots = [...(c?.querySelectorAll(".osso-chip-meter i") ?? [])];
+    return {
+      label: c?.querySelector(".osso-chip-label")?.textContent ?? "",
+      dots: dots.length,
+      lit: dots.filter((d) => d.classList.contains("osso-lit")).length,
+      meter: c?.querySelector(".osso-chip-meter")?.getAttribute("aria-label") ?? "",
+      text: c?.textContent ?? "",
+    };
+  });
+  assert(["fact", "figure", "step", "condition", "opinion", "story", "filler", "promo"].includes(chip.label), `recipe: chip label "${chip.label}" is not a kind`);
+  assert(chip.dots === 5 && chip.lit >= 0 && chip.lit <= 5, `recipe: chip meter has ${chip.dots} dots, ${chip.lit} lit`);
+  assert(/^\d{1,3}% worth keeping$/.test(chip.meter), `recipe: chip meter label "${chip.meter}"`);
+  assert(!/\d/.test(chip.text), `recipe: chip shows a number ("${chip.text}")`);
+  console.log(`[osso e2e] chip on the first faded sentence: ${chip.label}, ${chip.lit}/5 (${chip.meter})`);
+  await page.screenshot({ path: join(shots, "recipe-chip.png") });
+  await page.mouse.move(0, 0);
+
   // Reveal: hold Shift past REVEAL_HOLD_MS, everything is ink; release, it fades back.
   await page.keyboard.down("Shift");
   await sleep(300);
@@ -149,6 +152,69 @@ try {
   await page.keyboard.up("Shift");
   await sleep(500);
   assert(!(await page.evaluate(() => document.documentElement.classList.contains("osso-reveal"))), "recipe: releasing Shift left html.osso-reveal on");
+
+  // Rules. "sponsor discount codes" names the THYME15 sentence, which the keep question fades.
+  const SPONSOR = "THYME15";
+  const RULE = "sponsor discount codes";
+  assert((await page.evaluate(fadedByText, SPONSOR)) === true, "recipe: the sponsor code sentence was not faded before any rule");
+  // Settings are written the way the popup writes them, from an extension page; the recipe stays in front.
+  const ext = await context.newPage();
+  await ext.goto(`chrome-extension://${launched.id}/options.html`);
+  await page.bringToFront();
+  const setRules = (rules) => ext.evaluate((rules) => chrome.runtime.sendMessage({ type: "setSettings", patch: { rules } }), rules);
+  const waitRule = (faded, what) =>
+    page.waitForFunction(
+      ([needle, faded]) => {
+        const spans = [...document.querySelectorAll(".osso-s")];
+        const hit = spans.find((s) => (s.textContent ?? "").includes(needle));
+        if (!hit) return false;
+        const id = hit.getAttribute("data-osso");
+        const same = spans.filter((s) => s.getAttribute("data-osso") === id);
+        return same.some((s) => s.classList.contains("osso-fade")) === faded;
+      },
+      [SPONSOR, faded],
+      { timeout: JUDGE_TIMEOUT_MS, polling: 50 },
+    ).catch(() => {
+      throw new AssertionFailed(`recipe: the sponsor sentence did not ${what} in ${JUDGE_TIMEOUT_MS} ms`);
+    });
+
+  await armFetchCounter(context);
+  t0 = performance.now();
+  await setRules([RULE]);
+  await waitRule(false, "come back to ink after the rule was added");
+  const ruleMs = Math.round(performance.now() - t0);
+  // The underline is on for 1.44 s from the same instant the fade came off; the poll above runs every 50 ms.
+  assert(await page.evaluate(underlinedByText, SPONSOR), "recipe: the sponsor sentence came back without the rule-hit underline");
+  await page.screenshot({ path: join(shots, "recipe-rule.png"), fullPage: true });
+  const added = await fetchCount(context);
+  assert(added >= 1, `recipe: adding a rule made ${added} requests`);
+  const withRule = await untilTabState(ext, (s) => typeof s.ruleHits?.[RULE] === "number", `ruleHits["${RULE}"]`);
+  assert(withRule.ruleHits[RULE] >= 1, `recipe: the popup would show "${RULE} · ${withRule.ruleHits[RULE]}"`);
+  assert(withRule.kept === withRule.total - withRule.faded, "recipe: kept, faded and total disagree after the rule");
+  rows.push({ page: "recipe.html (rule)", total: withRule.total, kept: withRule.kept, faded: withRule.faded, ms: ruleMs });
+  console.log(`[osso e2e] rule "${RULE}": ${withRule.ruleHits[RULE]} kept, ${added} request(s), ${ruleMs} ms`);
+
+  // Removing the rule fades the sentence again with no request at all.
+  await armFetchCounter(context);
+  await setRules([]);
+  await waitRule(true, "fade again after the rule was removed");
+  await sleep(1000);
+  const removed = await fetchCount(context);
+  assert(removed === 0, `recipe: removing a rule made ${removed} request(s)`);
+  const without = await untilTabState(ext, (s) => !(RULE in (s.ruleHits ?? {})), "the rule gone from ruleHits");
+  assert(without.faded === recipe.faded, `recipe: ${without.faded} faded after the rule was removed, ${recipe.faded} before it was added`);
+
+  // Back on: the page's record carries the rule now, so still no request.
+  await armFetchCounter(context);
+  await setRules([RULE]);
+  await waitRule(false, "come back to ink after the rule was added again");
+  const readded = await untilTabState(ext, (s) => typeof s.ruleHits?.[RULE] === "number", `ruleHits["${RULE}"] the second time`);
+  assert(readded.ruleHits[RULE] === withRule.ruleHits[RULE], `recipe: the rule kept ${readded.ruleHits[RULE]} the second time, ${withRule.ruleHits[RULE]} the first`);
+  const cachedRule = await fetchCount(context);
+  assert(cachedRule === 0, `recipe: adding the rule back made ${cachedRule} request(s)`);
+  await setRules([]);
+  await waitRule(true, "fade again after the second removal");
+  await ext.close();
 
   // Terms: the binding clauses are the substance; the auto-renewal sentence must stay in ink.
   t0 = performance.now();

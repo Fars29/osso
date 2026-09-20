@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, THRESHOLD_MAX, THRESHOLD_MIN } from "../src/shared/constants.ts";
+import { DEFAULT_SETTINGS, MAX_RULE_LENGTH, MAX_RULES, THRESHOLD_MAX, THRESHOLD_MIN } from "../src/shared/constants.ts";
 import {
   SETTINGS_KEY,
   STATS_KEY,
@@ -8,6 +8,8 @@ import {
   getStats,
   isHostEnabled,
   normalizeHost,
+  normalizeRule,
+  normalizeRules,
   onSettingsChanged,
   resetStats,
   setHostEnabled,
@@ -203,5 +205,37 @@ describe("stats", () => {
     expect((await getStats()).cacheHits).toBe(12);
     await resetStats();
     expect(await getStats()).toEqual({ pagesJudged: 0, sentencesJudged: 0, inputTokens: 0, ms: 0, cacheHits: 0 });
+  });
+});
+
+describe("rules", () => {
+  it("normalises one rule: trimmed, inner whitespace collapsed, cut at MAX_RULE_LENGTH", () => {
+    expect(normalizeRule("  prices ")).toBe("prices");
+    expect(normalizeRule("what  I\thave\nto do")).toBe("what I have to do");
+    expect(normalizeRule("   ")).toBe("");
+    const long = "a".repeat(MAX_RULE_LENGTH + 20);
+    expect(normalizeRule(long)).toHaveLength(MAX_RULE_LENGTH);
+    // A cut that lands on a space does not leave it dangling.
+    expect(normalizeRule("x".repeat(MAX_RULE_LENGTH - 1) + " tail")).toHaveLength(MAX_RULE_LENGTH - 1);
+  });
+
+  it("normalises the list: order kept, first spelling wins over a case-insensitive duplicate, junk dropped, count capped", () => {
+    expect(normalizeRules(["Prices", " prices", "PRICES ", "deadlines", "", "   ", 42, null, "Deadlines"])).toEqual(["Prices", "deadlines"]);
+    expect(normalizeRules("prices")).toEqual([]);
+    expect(normalizeRules(undefined)).toEqual([]);
+    const many = Array.from({ length: MAX_RULES + 5 }, (_, i) => `rule ${i}`);
+    expect(normalizeRules(many)).toEqual(many.slice(0, MAX_RULES));
+    // Duplicates do not use up the cap.
+    expect(normalizeRules(["a", "A", "b", "B", ...many])).toEqual(["a", "b", ...many.slice(0, MAX_RULES - 2)]);
+  });
+
+  it("validate repairs the stored field and setSettings stores the normalised list", async () => {
+    store().set(SETTINGS_KEY, { rules: "not a list" });
+    expect((await getSettings()).rules).toEqual([]);
+    const s = await setSettings({ rules: [" Prices", "prices", "deadlines "] });
+    expect(s.rules).toEqual(["Prices", "deadlines"]);
+    expect((store().get(SETTINGS_KEY) as { rules: string[] }).rules).toEqual(["Prices", "deadlines"]);
+    expect((await getSettings()).rules).toEqual(["Prices", "deadlines"]);
+    expect(DEFAULT_SETTINGS.rules).toEqual([]);
   });
 });

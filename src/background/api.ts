@@ -7,6 +7,9 @@
  * chunk that fails after retries only leaves its own sentences untouched; the rest of the page
  * still paints. The exact question wording lives in `shared/constants.ts` and is what the probe
  * measured; packs may only append hints to the keep criteria.
+ *
+ * The user's rules go through the same pool in requests of their own (`judgeRules`): one Noul per
+ * rule per sentence over the same state, so a rule added later never re-asks the keep question.
  */
 import {
   API_URL,
@@ -18,6 +21,7 @@ import {
   PAGE_KIND_QUESTION,
   PAGE_KINDS,
   REQUEST_TIMEOUT_MS,
+  RULE_QUESTION,
   SENTENCE_KINDS,
 } from "../shared/constants.ts";
 import type {
@@ -25,6 +29,7 @@ import type {
   PageJudgment,
   PageKind,
   PageMeta,
+  RuleResults,
   SentenceInput,
   SentenceJudgment,
   SentenceKind,
@@ -56,6 +61,16 @@ export interface ChunkError {
 
 /** `PageJudgment` plus why chunks failed, so the popup can say "rate-limited" rather than nothing. */
 export interface JudgeResult extends PageJudgment {
+  chunkErrors: ChunkError[];
+}
+
+/** The outcome of `judgeRules`: p(hit) per rule per sentence, plus what `judgePage` reports about its chunks. */
+export interface RuleResult {
+  rules: RuleResults;
+  /** Ids whose chunk failed for every rule asked. */
+  failedIds: number[];
+  inputTokens: number;
+  ms: number;
   chunkErrors: ChunkError[];
 }
 
@@ -187,6 +202,53 @@ export function parseAnswers(chunk: SentenceInput[], answers: Record<string, any
   return { sentences, failedIds };
 }
 
+/** Rule questions are keyed by the rule's index in the request, so the rule's text never has to survive a round trip as a key. */
+function ruleKey(ri: number, id: number): string {
+  return `rule_${ri}_${id}`;
+}
+
+/**
+ * One request for one chunk, one rule question per rule per sentence. The state is the same as the
+ * keep question's, so the model reads the sentence in the same context it was judged in.
+ */
+export function buildRuleRequestBody(chunk: SentenceInput[], meta: PageMeta, pack: PackLike, rules: string[]): RequestBody {
+  const questions: Record<string, unknown> = {};
+  rules.forEach((rule, ri) => {
+    const criteria = { true: RULE_QUESTION.criteriaTrue(rule), false: RULE_QUESTION.criteriaFalse(rule) };
+    for (const s of chunk) {
+      questions[ruleKey(ri, s.id)] = { type: "noul", instructions: RULE_QUESTION.instructions(s.text, rule), criteria };
+    }
+  });
+  return {
+    state: { page_kind_hint: pack.stateHint, title: meta.title, language: meta.lang, text: chunk.map((s) => s.text).join(" ") },
+    model: MODEL,
+    questions,
+  };
+}
+
+/**
+ * Rule answers are read per rule and per sentence: a missing one leaves that pair out of the map,
+ * so a rule with a partial answer still keeps what it caught. A sentence is failed only when no
+ * rule answered for it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function parseRuleAnswers(chunk: SentenceInput[], answers: Record<string, any>, rules: string[]): { rules: RuleResults; failedIds: number[] } {
+  const out: RuleResults = {};
+  for (const rule of rules) out[rule] = {};
+  const failedIds: number[] = [];
+  for (const s of chunk) {
+    let answered = false;
+    rules.forEach((rule, ri) => {
+      const p = finite(answers?.[ruleKey(ri, s.id)]?.noul);
+      if (p === null) return;
+      out[rule]![s.id] = clamp01(p);
+      answered = true;
+    });
+    if (!answered) failedIds.push(s.id);
+  }
+  return { rules: out, failedIds };
+}
+
 const defaultFetch: typeof fetch = (input, init) => globalThis.fetch(input, init);
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -299,27 +361,42 @@ function toChunkError(err: ApiError): ChunkError {
   return err.status === undefined ? { code: err.code, message: err.message } : { code: err.code, status: err.status, message: err.message };
 }
 
-/**
- * Judge a whole page. Chunks run through a pool of `concurrency` workers; the first chunk also asks
- * `page_kind`. `onChunk` fires as each chunk settles, success or failure, so the content script can
- * paint progressively. Only a bad key throws: it is fatal for the page and marks the key in
- * settings. Everything else degrades to `failedIds`, and the page stays readable.
- */
-export async function judgePage(req: JudgeRequest, pack: PackLike, opts: JudgeOptions): Promise<JudgeResult> {
-  if (!opts.apiKey) throw new ApiError("no-key", "No API key");
-  const t0 = performance.now();
-  const chunks = chunkSentences(req.sentences, opts.maxSentencesPerRequest);
-  const pageAbort = new AbortController();
-  const ctx: RequestContext = {
+function contextFor(opts: Omit<JudgeOptions, "onChunk">, pageSignal: AbortSignal): RequestContext {
+  return {
     apiKey: opts.apiKey,
     fetchImpl: opts.fetchImpl ?? defaultFetch,
     timeoutMs: opts.timeoutMs ?? REQUEST_TIMEOUT_MS,
     retries: opts.retries ?? MAX_RETRIES,
     sleep: opts.sleep ?? defaultSleep,
-    pageSignal: pageAbort.signal,
+    pageSignal,
   };
+}
 
-  const parsed: (ParsedChunk | undefined)[] = new Array(chunks.length);
+/** How one kind of request turns a chunk into a body and an answer into a result. */
+interface ChunkPlan<T> {
+  build(chunk: SentenceInput[], index: number): unknown;
+  parse(chunk: SentenceInput[], answers: Record<string, unknown>, index: number): T;
+  /** What a chunk yields when its request failed after every retry. */
+  failed(chunk: SentenceInput[]): T;
+  onChunk?: (result: T) => void;
+}
+
+interface PoolResult<T> {
+  results: (T | undefined)[];
+  chunkErrors: ChunkError[];
+  inputTokens: number;
+}
+
+/**
+ * Runs every chunk through a pool of `concurrency` workers. `onChunk` fires as each chunk
+ * settles, success or failure, so a caller can paint progressively. Only a bad key throws: it is
+ * fatal for the page, and chunks still in flight are aborted so no more of it is spent.
+ * Everything else degrades to the plan's `failed` result, and the page stays readable.
+ */
+async function runPool<T>(chunks: SentenceInput[][], plan: ChunkPlan<T>, opts: Omit<JudgeOptions, "onChunk">): Promise<PoolResult<T>> {
+  const pageAbort = new AbortController();
+  const ctx = contextFor(opts, pageAbort.signal);
+  const results: (T | undefined)[] = new Array(chunks.length);
   const chunkErrors: ChunkError[] = [];
   let inputTokens = 0;
   let fatal: ApiError | undefined;
@@ -329,12 +406,11 @@ export async function judgePage(req: JudgeRequest, pack: PackLike, opts: JudgeOp
     while (next < chunks.length && !fatal) {
       const i = next++;
       const chunk = chunks[i]!;
-      const includePageKind = i === 0;
-      let result: ParsedChunk;
+      let result: T;
       try {
-        const res = await requestWithRetry(buildRequestBody(chunk, req.meta, pack, includePageKind), ctx);
+        const res = await requestWithRetry(plan.build(chunk, i), ctx);
         inputTokens += res.inputTokens;
-        result = parseAnswers(chunk, res.answers, includePageKind);
+        result = plan.parse(chunk, res.answers, i);
       } catch (e) {
         if (fatal) return;
         const err = e instanceof ApiError ? e : new ApiError("network", e instanceof Error ? e.message : String(e));
@@ -344,25 +420,44 @@ export async function judgePage(req: JudgeRequest, pack: PackLike, opts: JudgeOp
           return;
         }
         chunkErrors.push(toChunkError(err));
-        result = { sentences: [], failedIds: chunk.map((s) => s.id) };
+        result = plan.failed(chunk);
       }
-      parsed[i] = result;
-      opts.onChunk?.({ sentences: result.sentences, failedIds: result.failedIds });
+      results[i] = result;
+      plan.onChunk?.(result);
     }
   }
 
   const workers = Math.max(1, Math.min(opts.concurrency ?? MAX_CONCURRENT_REQUESTS, chunks.length));
   await Promise.all(Array.from({ length: workers }, worker));
   if (fatal) throw fatal;
+  return { results, chunkErrors, inputTokens };
+}
+
+/**
+ * Judge a whole page: keep and kind per sentence, and `page_kind` on the first chunk. Chunks,
+ * failures and a bad key are handled by `runPool`.
+ */
+export async function judgePage(req: JudgeRequest, pack: PackLike, opts: JudgeOptions): Promise<JudgeResult> {
+  if (!opts.apiKey) throw new ApiError("no-key", "No API key");
+  const t0 = performance.now();
+  const chunks = chunkSentences(req.sentences, opts.maxSentencesPerRequest);
+  const plan: ChunkPlan<ParsedChunk> = {
+    build: (chunk, i) => buildRequestBody(chunk, req.meta, pack, i === 0),
+    parse: (chunk, answers, i) => parseAnswers(chunk, answers, i === 0),
+    failed: (chunk) => ({ sentences: [], failedIds: chunk.map((s) => s.id) }),
+  };
+  const onChunk = opts.onChunk;
+  if (onChunk) plan.onChunk = (r) => onChunk({ sentences: r.sentences, failedIds: r.failedIds });
+  const { results, chunkErrors, inputTokens } = await runPool(chunks, plan, opts);
 
   const sentences: SentenceJudgment[] = [];
   const failedIds: number[] = [];
-  for (const p of parsed) {
+  for (const p of results) {
     if (!p) continue;
     sentences.push(...p.sentences);
     failedIds.push(...p.failedIds);
   }
-  const pageKind = parsed[0]?.pageKind ?? { kind: pack.id, confidence: 0 };
+  const pageKind = results[0]?.pageKind ?? { kind: pack.id, confidence: 0 };
   return {
     packId: pack.id,
     pageKind: pageKind.kind,
@@ -374,6 +469,48 @@ export async function judgePage(req: JudgeRequest, pack: PackLike, opts: JudgeOp
     failedIds,
     chunkErrors,
   };
+}
+
+/**
+ * The keep judgment asks two questions per sentence; a rule request asks one per rule. The chunk
+ * shrinks with the number of rules so a request carries about as many questions as a keep
+ * request does, and answers in about the same time.
+ */
+export function ruleChunkSize(maxSentencesPerRequest: number, ruleCount: number): number {
+  const max = Math.max(1, Math.floor(maxSentencesPerRequest) || 1);
+  return Math.max(1, Math.min(max, Math.floor((max * 2) / Math.max(1, ruleCount))));
+}
+
+/**
+ * Judge the user's rules on a page already judged: p(hit) per rule per sentence, through the same
+ * pool, retries and key handling as `judgePage`. A rule whose every chunk failed is still present
+ * in the map, empty; `failedIds` says which sentences got no answer at all.
+ */
+export async function judgeRules(
+  req: JudgeRequest,
+  pack: PackLike,
+  rules: string[],
+  opts: Omit<JudgeOptions, "onChunk">,
+): Promise<RuleResult> {
+  if (!opts.apiKey) throw new ApiError("no-key", "No API key");
+  const t0 = performance.now();
+  const merged: RuleResults = {};
+  for (const rule of rules) merged[rule] = {};
+  if (rules.length === 0 || req.sentences.length === 0) return { rules: merged, failedIds: [], inputTokens: 0, ms: 0, chunkErrors: [] };
+  const chunks = chunkSentences(req.sentences, ruleChunkSize(opts.maxSentencesPerRequest, rules.length));
+  const plan: ChunkPlan<{ rules: RuleResults; failedIds: number[] }> = {
+    build: (chunk) => buildRuleRequestBody(chunk, req.meta, pack, rules),
+    parse: (chunk, answers) => parseRuleAnswers(chunk, answers, rules),
+    failed: (chunk) => ({ rules: {}, failedIds: chunk.map((s) => s.id) }),
+  };
+  const { results, chunkErrors, inputTokens } = await runPool(chunks, plan, opts);
+  const failedIds: number[] = [];
+  for (const r of results) {
+    if (!r) continue;
+    failedIds.push(...r.failedIds);
+    for (const [rule, byId] of Object.entries(r.rules)) Object.assign(merged[rule]!, byId);
+  }
+  return { rules: merged, failedIds, inputTokens, ms: Math.round(performance.now() - t0), chunkErrors };
 }
 
 /** The options page's "test key": the smallest possible request, no retries, a plain verdict. */

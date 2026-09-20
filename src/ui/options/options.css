@@ -105,10 +105,15 @@ body {
   line-height: 1.4;
 }
 
-.row-slider {
+.row-slider,
+.row-rules {
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
+}
+
+.row-rules .rule-list {
+  margin-top: 0;
 }
 
 .slider {
@@ -138,7 +143,7 @@ body {
 
 /* ---- inputs ----------------------------------------------------------- */
 
-input[type="text"],
+input[type="text"]:not(.rule-input),
 input[type="password"],
 select,
 textarea {
@@ -152,14 +157,14 @@ textarea {
   transition: border-color var(--t), background var(--t);
 }
 
-input[type="text"]:hover,
+input[type="text"]:not(.rule-input):hover,
 input[type="password"]:hover,
 select:hover,
 textarea:hover {
   border-color: var(--ink-3);
 }
 
-input[type="text"]:focus,
+input[type="text"]:not(.rule-input):focus,
 input[type="password"]:focus,
 select:focus,
 textarea:focus {

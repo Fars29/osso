@@ -1,22 +1,28 @@
 /**
- * The popup. One number (sentences kept), one switch, one slider, one reveal. Everything it
- * shows comes from the background's copy of the tab state or, when the content script answers,
- * from the page itself. It must render something sensible when neither answers.
+ * The popup. One field (what to always keep), one number (sentences kept), one switch, one
+ * slider, one reveal. Everything it shows comes from the background's copy of the tab state or,
+ * when the content script answers, from the page itself. It must render something sensible when
+ * neither answers.
  */
 import { DEFAULT_SETTINGS, MIN_SENTENCES, PAGE_KINDS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
 import type { Settings, TabState } from "../../shared/types.ts";
 import { getSettings, getTabStateFromBackground, getTabStateFromTab, patchSettings, sendToBackground, sendToTab } from "../messaging.ts";
+import { ruleField, ruleList, type RuleCount } from "../rules.ts";
 
 type View = "loading" | "cannot" | "no-key" | "invalid-key" | "disabled" | "off" | "skipped" | "error" | "judging" | "idle" | "done";
 
 const POLL_MS = 500;
 /** An "idle" tab may never start judging (content script waiting on a page that never settles); stop asking after this. */
 const IDLE_POLL_LIMIT = 40;
+/** A rule's count is one request away (~0.5 s); after this many polls without one the chip says so instead of "…". */
+const RULE_POLL_LIMIT = 60;
 /** The content script's skip sentinels, said the way a person would; anything else is shown as it came. */
 const SKIP_REASONS: Record<string, string> = {
   "too little text": `Fewer than ${MIN_SENTENCES} sentences of body text.`,
   "looks like an app": "This page is an app, not something to read.",
 };
+/** Views with nothing for a rule to count: the field still works (rules are global), the chips show no number. */
+const NO_RULES_VIEWS: readonly View[] = ["loading", "cannot", "no-key", "invalid-key"];
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function el<T extends HTMLElement>(id: string): T {
@@ -28,6 +34,9 @@ function el<T extends HTMLElement>(id: string): T {
 const ui = {
   root: el<HTMLElement>("popup"),
   chip: el<HTMLSpanElement>("chip"),
+  rules: el<HTMLElement>("rules"),
+  rule: el<HTMLInputElement>("rule"),
+  ruleList: el<HTMLUListElement>("rule-list"),
   count: el<HTMLDivElement>("v-count"),
   kept: el<HTMLSpanElement>("kept"),
   total: el<HTMLSpanElement>("total"),
@@ -59,7 +68,17 @@ const model = {
   raf: 0,
   poll: 0,
   idlePolls: 0,
+  rulePolls: 0,
+  /** The field takes focus once, when the page is judged; not again on every poll. */
+  focused: false,
 };
+
+const chips = ruleList(ui.ruleList, { onRemove: (rule) => void removeRule(rule) });
+const field = ruleField(ui.rule, {
+  rules: () => model.settings.rules,
+  onAdd: (rule) => void addRule(rule),
+  onDuplicate: (existing) => chips.flash(existing),
+});
 
 // ---- formatting -----------------------------------------------------------
 
@@ -124,6 +143,32 @@ function show(view: View) {
   ui.threshold.disabled = !live;
   ui.reveal.disabled = !live;
   ui.hint.hidden = !live;
+  renderRules(view);
+}
+
+/** What a chip shows for a rule on this page: a count once the page has answered, "…" while it is answering. */
+function countFor(rule: string): RuleCount {
+  const s = model.state;
+  if (!s || (s.status !== "done" && s.status !== "judging")) return null;
+  const n = s.ruleHits[rule];
+  if (typeof n === "number") return n;
+  return model.rulePolls >= RULE_POLL_LIMIT ? "unknown" : "judging";
+}
+
+function renderRules(view: View) {
+  const on = model.settingsLoaded && !NO_RULES_VIEWS.includes(view);
+  ui.rules.hidden = !on;
+  if (!on) {
+    field.stop();
+    return;
+  }
+  chips.render(model.settings.rules, countFor);
+  field.refresh();
+  // The one field the reader talks to is ready to type in the moment there is a page to talk about.
+  if (view === "done" && !model.focused && !ui.rule.disabled && document.activeElement === document.body) {
+    model.focused = true;
+    ui.rule.focus();
+  }
 }
 
 function note(title: string, sub = "", action?: { label: string; primary?: boolean; onClick: () => void }, soft = false) {
@@ -190,8 +235,8 @@ function render() {
   switch (s.status) {
     case "disabled":
       show("disabled");
-      if (settings.enabled) note("Off on this site", "", undefined, true);
-      else note("Osso is off", "", { label: "Turn on", primary: true, onClick: () => void turnOn() }, true);
+      if (settings.enabled) note("Off on this site", "Switch it on below to judge this page.", undefined, true);
+      else note("Osso is off", "Every page is left as it is.", { label: "Turn on", primary: true, onClick: () => void turnOn() }, true);
       return;
     case "skipped":
       show("skipped");
@@ -243,10 +288,18 @@ async function refresh() {
   schedulePolling();
 }
 
+/** A rule with no count yet on a judged page: the page is asking the model about it. */
+function rulesPending(): boolean {
+  const s = model.state;
+  if (!s || s.status !== "done") return false;
+  return model.settings.rules.some((r) => typeof s.ruleHits[r] !== "number");
+}
+
 function wantsPolling(): boolean {
   const st = model.state?.status;
   if (st === "judging") return true;
   if (st === "idle") return model.idlePolls++ < IDLE_POLL_LIMIT;
+  if (rulesPending()) return model.rulePolls++ < RULE_POLL_LIMIT;
   return false;
 }
 
@@ -291,6 +344,32 @@ async function turnOn() {
   if (model.tabId !== null) await sendToTab(model.tabId, { type: "setEnabledHere", enabled: true }).catch(() => null);
   model.idlePolls = 0;
   await refresh();
+}
+
+/**
+ * Saves the list and shows it at once: the chip is there before the background answers, with
+ * "…" until the page reports what the rule keeps. The background tells the page; the popup only
+ * has to keep asking the page for its counts.
+ */
+async function saveRules(rules: string[]) {
+  model.settings = { ...model.settings, rules };
+  model.rulePolls = 0;
+  render();
+  schedulePolling();
+  if (!(await patchSettings({ rules }))) {
+    // Nobody saved it: the chip would lie. Reload what is really there.
+    const fresh = await getSettings();
+    if (fresh) model.settings = fresh;
+    render();
+  }
+}
+
+function addRule(rule: string) {
+  return saveRules([...model.settings.rules, rule]);
+}
+
+function removeRule(rule: string) {
+  return saveRules(model.settings.rules.filter((r) => r !== rule));
 }
 
 function setSliderFill() {
@@ -353,7 +432,10 @@ async function main() {
     e.preventDefault();
     openOptions();
   });
-  window.addEventListener("pagehide", stopPolling);
+  window.addEventListener("pagehide", () => {
+    stopPolling();
+    field.stop();
+  });
 
   let tab: chrome.tabs.Tab | undefined;
   try {

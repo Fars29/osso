@@ -26,7 +26,8 @@ const onCommand = registered(mock().commands.onCommand.addListener);
 const onInstalled = registered(mock().runtime.onInstalled.addListener);
 
 const PAGE: Sender = { tab: { id: 7 } as chrome.tabs.Tab, url: "https://example.com/orzo" };
-const POPUP: Sender = {};
+/** The action popup: an extension page with no tab of its own. */
+const POPUP: Sender = { url: "chrome-extension://osso/popup.html" };
 const OPTIONS: Sender = { tab: { id: 3 } as chrome.tabs.Tab, url: "chrome-extension://osso/options.html" };
 
 /** MV3 contract: the listener returns true and answers through sendResponse later. */
@@ -73,6 +74,27 @@ function okReply(init: RequestInit | undefined): Response {
   return reply(200, { answers, usage: { input_tokens: 100 } });
 }
 
+/** Answers rule questions the way the API does: rule 0 hits even ids, any later rule hits ids divisible by 3. */
+function ruleReply(init: RequestInit | undefined): Response {
+  const body = JSON.parse(String(init?.body)) as { questions: Record<string, unknown> };
+  const answers: Record<string, unknown> = {};
+  for (const k of Object.keys(body.questions)) {
+    if (!k.startsWith("rule_")) continue;
+    const [ri, id] = k.split("_").slice(1).map(Number) as [number, number];
+    answers[k] = { noul: (ri === 0 ? id % 2 === 0 : id % 3 === 0) ? 0.9 : 0.1 };
+  }
+  return reply(200, { answers, usage: { input_tokens: 40 } });
+}
+
+/** Keep or rule request, by what the body asks. */
+function anyReply(init: RequestInit | undefined): Response {
+  const body = JSON.parse(String(init?.body)) as { questions: Record<string, unknown> };
+  return Object.keys(body.questions).some((k) => k.startsWith("rule_")) ? ruleReply(init) : okReply(init);
+}
+
+const ruleKeysOf = (init: RequestInit | undefined) =>
+  Object.keys((JSON.parse(String(init?.body)) as { questions: Record<string, unknown> }).questions).filter((k) => k.startsWith("rule_"));
+
 const state = (patch: Partial<TabState>): TabState => ({
   host: "example.com",
   status: "done",
@@ -85,6 +107,7 @@ const state = (patch: Partial<TabState>): TabState => ({
   inputTokens: 3000,
   cached: false,
   revealed: false,
+  ruleHits: {},
   ...patch,
 });
 
@@ -93,7 +116,7 @@ let fetchMock: Mock<(url: unknown, init?: RequestInit) => Promise<Response>>;
 
 beforeEach(() => {
   mock().__store.clear();
-  fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => okReply(init));
+  fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => anyReply(init));
   globalThis.fetch = fetchMock as unknown as typeof fetch;
   asMock(mock().tabs.sendMessage).mockClear();
   asMock(mock().tabs.query).mockResolvedValue([{ id: 1, url: "https://example.com/", active: true }]);
@@ -107,18 +130,47 @@ afterEach(() => {
 });
 
 describe("settings and the key", () => {
-  it("hands the key to extension pages only; a page sees a presence marker", async () => {
-    const set = await send({ type: "setSettings", patch: { apiKey: "ts-secret" } }, POPUP);
-    expect(set).toMatchObject({ type: "settings", settings: { apiKey: "ts-secret" } });
-    expect(await send({ type: "getSettings" }, PAGE)).toMatchObject({ type: "settings", settings: { apiKey: "•" } });
-    expect(await send({ type: "getSettings" }, OPTIONS)).toMatchObject({ type: "settings", settings: { apiKey: "ts-secret" } });
-    expect(JSON.stringify(await send({ type: "getSettings" }, PAGE))).not.toContain("ts-secret");
+  it("hands the key to the options page only; the popup and a page see a presence marker", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret", deniedHosts: ["example.org"] } }, OPTIONS);
+    expect(await send({ type: "getSettings" }, OPTIONS)).toMatchObject({ type: "settings", settings: { apiKey: "ts-secret", deniedHosts: ["example.org"] } });
+    // The popup only asks whether a key exists; the answer to a write is redacted the same way.
+    expect(await send({ type: "getSettings" }, POPUP)).toMatchObject({ type: "settings", settings: { apiKey: "•" } });
+    expect(await send({ type: "setSettings", patch: { threshold: 0.6 } }, POPUP)).toMatchObject({ type: "settings", settings: { apiKey: "•", threshold: 0.6 } });
+    // A page gets the marker and none of the host lists, which only the worker consults.
+    const page = await send({ type: "getSettings" }, PAGE);
+    expect(page).toMatchObject({ type: "settings", settings: { apiKey: "•", deniedHosts: [], allowedHosts: [] } });
+    for (const sender of [PAGE, POPUP]) expect(JSON.stringify(await send({ type: "getSettings" }, sender))).not.toContain("ts-secret");
+    // An empty key is reported as empty, not as present.
+    await send({ type: "setSettings", patch: { apiKey: "" } }, OPTIONS);
+    expect(await send({ type: "getSettings" }, PAGE)).toMatchObject({ settings: { apiKey: "" } });
   });
 
   it("refuses a settings write that claims to come from a page", async () => {
     await send({ type: "setSettings", patch: { threshold: 0.7 } }, POPUP);
     expect(await send({ type: "setSettings", patch: { threshold: 0.3 } }, PAGE)).toMatchObject({ type: "error" });
     expect(await send({ type: "getSettings" }, POPUP)).toMatchObject({ settings: { threshold: 0.7 } });
+  });
+
+  it("lets a page ask only what a page needs; the rest is refused before it runs", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } }, OPTIONS);
+    await send({ type: "tabState", state: state({}) }, PAGE);
+    const refused: (ToBackground | { type: string })[] = [
+      { type: "testKey", apiKey: "ts-probe" },
+      { type: "setHostEnabled", host: "github.com", enabled: true },
+      { type: "clearCache" },
+      { type: "resetStats" },
+      { type: "getTabState", tabId: 7 },
+    ];
+    for (const msg of refused) expect(await send(msg, PAGE), msg.type).toMatchObject({ type: "error", error: "Not allowed from a page" });
+    // None of them did anything: no probe went out, the deny list is as it was, the tab state is still there.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await send({ type: "isHostEnabled", host: "github.com" }, PAGE)).toEqual({ type: "hostEnabled", enabled: false });
+    expect(await send({ type: "getTabState", tabId: 7 }, POPUP)).toMatchObject({ state: { status: "done" } });
+    // What a page may send still answers.
+    expect(await send({ type: "getSettings" }, PAGE)).toMatchObject({ type: "settings" });
+    expect(await send({ type: "isHostEnabled", host: "example.com" }, PAGE)).toEqual({ type: "hostEnabled", enabled: true });
+    expect(await send({ type: "tabState", state: state({ kept: 3 }) }, PAGE)).toEqual({ type: "ok" });
+    expect((await send({ type: "judge", req: request(sents(12)) }, PAGE)).type).toBe("judgment");
   });
 
   it("broadcasts every settings change to every tab, key redacted", async () => {
@@ -218,6 +270,31 @@ describe("judge", () => {
     expect(await send({ type: "getStats" })).toMatchObject({ stats: { pagesJudged: 0 } });
   });
 
+  it("still serves the judgment when storage refuses the cache and stats writes", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const quota = new Error("QUOTA_BYTES quota exceeded");
+    // The settings write above went through; from here every write is refused, as a full profile would.
+    asMock(mock().storage.local.set).mockRejectedValue(quota);
+    try {
+      const r = await send({ type: "judge", req: request(sents(12)) }, PAGE);
+      expect(r.type).toBe("judgment");
+      if (r.type !== "judgment") return;
+      expect(r.judgment.sentences).toHaveLength(12);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(await cacheSize()).toBe(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain("[osso]");
+      // Once is enough: the next page says nothing more.
+      expect((await send({ type: "judge", req: request(sents(12), "hash-2") }, PAGE)).type).toBe("judgment");
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      // mockReset puts the store-backed implementation from setup.ts back.
+      asMock(mock().storage.local.set).mockReset();
+      warn.mockRestore();
+    }
+  });
+
   it("does not cache a page with a failed chunk, so it is judged afresh next time", async () => {
     await send({ type: "setSettings", patch: { apiKey: "ts-secret", maxSentencesPerRequest: 10 } });
     // Two chunks: the first answers, the second is rejected.
@@ -308,5 +385,121 @@ describe("command and install", () => {
     await flush();
     await flush();
     expect(asMock(mock().runtime.openOptionsPage)).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("rules", () => {
+  const evens = (n: number) => Array.from({ length: n }, (_, i) => i).filter((i) => i % 2 === 0);
+
+  it("judges rules over the remembered page, stores them beside the judgment, and answers from memory after that", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await send({ type: "judge", req: request(sents(12)) }, PAGE);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const first = await send({ type: "judgeRules", contentHash: "hash-1", rules: ["prices"] }, PAGE);
+    expect(first.type).toBe("ruleJudgment");
+    if (first.type !== "ruleJudgment") return;
+    expect(first.contentHash).toBe("hash-1");
+    expect(Object.keys(first.rules)).toEqual(["prices"]);
+    expect(Object.keys(first.rules.prices!)).toHaveLength(12);
+    expect(Object.entries(first.rules.prices!).filter(([, p]) => p >= 0.5).map(([id]) => Number(id))).toEqual(evens(12));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, init] = fetchMock.mock.calls[1]!;
+    expect(ruleKeysOf(init)).toHaveLength(12);
+    expect(ruleKeysOf(init)[0]).toBe("rule_0_0");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ts-secret");
+    expect(await send({ type: "getStats" })).toMatchObject({ stats: { inputTokens: 140, pagesJudged: 1 } });
+
+    // The cache record carries the rule now.
+    const hit = await send({ type: "judge", req: request(sents(12)) }, PAGE);
+    expect(hit).toMatchObject({ type: "judgment", judgment: { cached: true, rules: { prices: expect.any(Object) } } });
+
+    // Asking again costs nothing; asking for one more judges only the one more.
+    expect(await send({ type: "judgeRules", contentHash: "hash-1", rules: ["prices"] }, PAGE)).toMatchObject({ type: "ruleJudgment" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const both = await send({ type: "judgeRules", contentHash: "hash-1", rules: ["prices", "deadlines"] }, PAGE);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(ruleKeysOf(fetchMock.mock.calls[2]![1]).every((k) => k.startsWith("rule_0_"))).toBe(true);
+    expect(both).toMatchObject({ type: "ruleJudgment" });
+    if (both.type !== "ruleJudgment") return;
+    expect(Object.keys(both.rules).sort()).toEqual(["deadlines", "prices"]);
+    // Sent on its own, "deadlines" was rule 0 of that request: the mock's even ids hit.
+    expect(both.rules.deadlines![4]).toBe(0.9);
+    expect(both.rules.deadlines![3]).toBe(0.1);
+    // Removing a rule is the page's business; the record still has both for when it comes back.
+    const again = await send({ type: "judge", req: request(sents(12)) }, PAGE);
+    if (again.type === "judgment") expect(Object.keys(again.judgment.rules ?? {}).sort()).toEqual(["deadlines", "prices"]);
+  });
+
+  it("rules asked in the same breath as the first judgment land in the cache with it", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    const [judgment, rules] = await Promise.all([
+      send({ type: "judge", req: request(sents(12), "hash-2") }, PAGE),
+      send({ type: "judgeRules", contentHash: "hash-2", rules: ["prices"] }, PAGE),
+    ]);
+    expect(judgment.type).toBe("judgment");
+    expect(rules).toMatchObject({ type: "ruleJudgment", rules: { prices: expect.any(Object) } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const hit = await send({ type: "judge", req: request(sents(12), "hash-2") }, PAGE);
+    expect(hit).toMatchObject({ type: "judgment", judgment: { cached: true } });
+    if (hit.type === "judgment") expect(Object.keys(hit.judgment.rules?.prices ?? {})).toHaveLength(12);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("an unknown hash is refused as unknown-page without a request, and an empty ask answers empty", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    expect(await send({ type: "judgeRules", contentHash: "never-seen", rules: ["prices"] }, PAGE)).toMatchObject({ type: "error", code: "unknown-page" });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await send({ type: "judge", req: request(sents(12), "hash-3") }, PAGE);
+    expect(await send({ type: "judgeRules", contentHash: "hash-3", rules: [] }, PAGE)).toEqual({ type: "ruleJudgment", contentHash: "hash-3", rules: {} });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("without a key the rules are refused too; a 401 marks the key invalid", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await send({ type: "judge", req: request(sents(12), "hash-4") }, PAGE);
+    await send({ type: "setSettings", patch: { apiKey: "" } });
+    expect(await send({ type: "judgeRules", contentHash: "hash-4", rules: ["prices"] }, PAGE)).toMatchObject({ type: "error", code: "no-key" });
+    await send({ type: "setSettings", patch: { apiKey: "ts-bad" } });
+    fetchMock.mockResolvedValue(reply(401, "unauthorised"));
+    expect(await send({ type: "judgeRules", contentHash: "hash-4", rules: ["prices"] }, PAGE)).toMatchObject({ type: "error", code: "invalid-key" });
+    expect(await send({ type: "getSettings" })).toMatchObject({ settings: { apiKeyInvalid: true } });
+  });
+
+  it("when nothing could be judged the reply is an error and the rule is asked again next time", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await send({ type: "judge", req: request(sents(12), "hash-5") }, PAGE);
+    fetchMock.mockResolvedValueOnce(reply(400, "bad"));
+    expect(await send({ type: "judgeRules", contentHash: "hash-5", rules: ["prices"] }, PAGE)).toMatchObject({ type: "error", code: "server" });
+    expect(await send({ type: "judgeRules", contentHash: "hash-5", rules: ["prices"] }, PAGE)).toMatchObject({ type: "ruleJudgment" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("a partial page's rules are judged but not stored", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await send({ type: "judge", req: request(sents(4, 30), "hash-partial") }, PAGE);
+    const r = await send({ type: "judgeRules", contentHash: "hash-partial", rules: ["prices"] }, PAGE);
+    expect(r).toMatchObject({ type: "ruleJudgment" });
+    if (r.type === "ruleJudgment") expect(Object.keys(r.rules.prices!).map(Number)).toEqual([30, 31, 32, 33]);
+    expect(await cacheSize()).toBe(0);
+  });
+
+  it("a settings write that changes the rules tells every tab the rules, and only the rules; other writes do not", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await flush();
+    asMock(mock().tabs.sendMessage).mockClear();
+    await send({ type: "setSettings", patch: { rules: [" prices", "Prices"] } }, POPUP);
+    await flush();
+    const rulesMsgs = () => asMock(mock().tabs.sendMessage).mock.calls.filter(([, m]) => (m as { type: string }).type === "rulesChanged");
+    expect(rulesMsgs()).toEqual([[1, { type: "rulesChanged", rules: ["prices"] }]]);
+    expect(JSON.stringify(rulesMsgs())).not.toContain("ts-secret");
+    await send({ type: "setSettings", patch: { threshold: 0.6 } }, POPUP);
+    await send({ type: "setSettings", patch: { rules: ["prices"] } }, POPUP);
+    await flush();
+    expect(rulesMsgs()).toHaveLength(1);
+    await send({ type: "setSettings", patch: { rules: [] } }, OPTIONS);
+    await flush();
+    expect(rulesMsgs()).toHaveLength(2);
+    expect(rulesMsgs()[1]).toEqual([1, { type: "rulesChanged", rules: [] }]);
   });
 });

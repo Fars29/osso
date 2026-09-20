@@ -8,20 +8,21 @@ A browser extension. Every page you open arrives with its filler faded to a quie
 
 Tagline: **Solo l'osso.** ("Just the bones.")
 
-## Evidence this works (probe, 2026-09-20, `scripts/calibrate.ts`)
+## Evidence this works (probe, 2026-09-20, `scripts/calibrate.ts`; full results in `docs/calibration.md`)
 
-78 hand-labelled sentences from seven synthetic-but-realistic pages (recipe blog, corporate statement, terms of service, LinkedIn post, news article; English and Italian) plus one page of bland narrative as a noise floor:
+99 hand-labelled sentences from nine synthetic-but-realistic pages (recipe blog, corporate statement, terms of service, LinkedIn post, news article; English and Italian; two of them a redundancy trap where a fact is stated twice) plus one page of bland narrative as a noise floor. The script builds every request with `buildRequestBody` and the generic pack, so it measures exactly what ships:
 
 | measure | value |
 |---|---|
-| AUC substance vs filler, one generic question, all pages | **0.999** (1.000 on every page) |
-| mean p(keep): substance / filler / noise floor | 0.94 / 0.16 / 0.11 |
-| best single threshold | 0.5–0.8 (acc ≥ 0.987) |
-| 24–42 questions per request | 350–500 ms |
-| 258 questions, one request, all pages | 1.26 s, 49.7k tokens, $0.0021 |
-| repeat of the same request | max Δp = 0.010 |
+| AUC substance vs filler, one generic question, all pages | **0.998** (1.000 on eight pages, 0.978 on the redundancy trap) |
+| mean p(keep): substance / filler / noise floor | 0.94 / 0.12 / 0.05 |
+| best single threshold | 0.55–0.6 (acc 0.980; 0.970 at the default 0.5) |
+| 15–29 questions per request | 610–1330 ms once warm |
+| 214 questions, one request, all pages | 2.73 s, 52.3k tokens, $0.0022, AUC 0.989 |
+| repeat of the same request | max Δp = 0.020 |
+| redundancy trap: the recipe step also stated in the faded story | p(keep) 0.98 (0.52 under the earlier "not already given elsewhere" wording) |
 
-Conclusions that fix the design: (1) one generic "would the reader lose information?" question separates well on every page kind, so routing tunes wording but is not load-bearing; (2) embedding the sentence in the question with the page text as state works — per-element attention holds; (3) batching is the cost/latency model: ~60 sentences × 2 questions per request, chunks in parallel.
+Conclusions that fix the design: (1) one generic "does this sentence itself carry practical content?" question separates well on every page kind, so routing tunes wording but is not load-bearing; (2) embedding the sentence in the question with the page text as state works — per-element attention holds; (3) the question must be about the sentence, not about what the rest of the page says: a redundancy clause let two sentences stating one fact eliminate each other; (4) batching is the cost/latency model: ~60 sentences × 2 questions per request, chunks in parallel.
 
 ## Non-goals
 
@@ -66,7 +67,7 @@ No summaries or generated text of any kind. No `display: none`. No server of our
 
 State: `{ page_kind_hint, title, language, text }`.
 
-`keep_i` — Noul. Instructions: *Consider this sentence from the page: «S». If this sentence were deleted, would a reader who came to this page for its practical content lose information that the rest of the page does not already give them?* Criteria true: *Yes: the sentence states a fact, figure, date, step, condition, cost, obligation, decision or warning that the reader needs and that is not stated elsewhere on the page.* false: *No: the sentence is a story, opinion, greeting, thanks, reassurance, navigation hint, promotion, or it restates something the page already says; deleting it loses nothing practical.*
+`keep_i` — Noul. Instructions: *Consider this sentence from the page: «S». Does this sentence itself carry practical content the reader came to this page for?* Criteria true: *Yes: the sentence states a fact, figure, date, quantity, ingredient, step, condition, cost, obligation, decision or warning that the reader needs, even if the page says it again elsewhere.* false: *No: the sentence is a story, memory, opinion, greeting, thanks, reassurance, navigation hint or promotion; a reader looking for the practical content would skip it.*
 
 `kind_i` — Choice over `fact, figure_or_date, instruction_or_step, condition_or_obligation, opinion, anecdote_or_story, filler_or_transition, promotion_or_appeal` with the descriptions in `shared/constants.ts`.
 
@@ -74,9 +75,9 @@ State: `{ page_kind_hint, title, language, text }`.
 
 ### Rendering rules
 
-- A fade is a **colour change only**: `color` transitions to a grey chosen per block for its effective background (walk ancestors to the first opaque background; pick the grey giving ≈1.6:1 contrast — about `#b9b9b9` on white, `#5c5c5c` on near-black). Links inside faded text inherit the grey and stay clickable. Nothing changes size, position or layout.
-- Settle: delay `min(order × 10 ms, 500 ms)`, `550 ms ease-out`. `prefers-reduced-motion` → 120 ms, no stagger.
-- Hover on a judged sentence (250 ms delay): a small chip above its first span — kind label and p(keep), e.g. `anecdote · 0.11`.
+- A fade is a **colour change only**: `color` transitions to a grey chosen per block for its effective background (walk ancestors to the first opaque background; pick the grey giving ≈1.6:1 contrast — about `#b9b9b9` on white, `#5c5c5c` on near-black). Links inside faded text go grey with their sentence, underline included (`a:has(.osso-fade)` takes `text-decoration-color`), stay clickable and come back in the author's colour under the pointer. Nothing changes size, position or layout.
+- Settle: delay `min(order × 18 ms, 600 ms)`, `900 ms` on a curve that starts gently (`cubic-bezier(0.4, 0.05, 0.2, 1)`), so the page is seen to settle top to bottom rather than snap. `prefers-reduced-motion` → 120 ms, no stagger. (Revised 2026-09-20 after frame-by-frame review: 10 ms / 550 ms ease-out greyed a whole screen in ~200 ms and read as a loading effect.)
+- Hover on a judged sentence (250 ms delay): a small chip beside the line box under the pointer, in the nearer margin like a note in the margin of a book, so it never covers a word (with no margin: the free end of the line, else above the line) — the kind label in a word (`story`) and p(keep) as a five-dot meter lit from the left (`aria-label` "11% worth keeping"), plus `· pinned` when the sentence was clicked back. No bare number: the chip is for people who do not read probabilities.
 - Reveal: hold `settings.revealKey` (default **Shift**; Space is never used, it scrolls) ≥ 120 ms → root class `osso-reveal`, faded text returns to ink in 180 ms; release → fades back in 300 ms. Click on a faded sentence → pinned back for this page view.
 - Threshold slider in the popup → `setThreshold` → re-render from cached probabilities, 0 ms, no inference.
 - Never touched: headings, tables, `pre`/`code`, `nav`/`header`/`footer`/`aside`, forms and editable regions, `aria-hidden`, anything under 3 words, images/figures (captions are judged).

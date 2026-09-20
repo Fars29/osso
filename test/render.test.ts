@@ -6,12 +6,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageJudgment, SentenceJudgment } from "../src/shared/types.ts";
 import {
+  RULE_HIT_MS,
+  SETTLE_MS,
+  WAVE_MAX_MS,
+  WAVE_STEP_MS,
   applyJudgment,
+  applyRules,
   clearRender,
   counts,
   effectiveBackground,
   installInteractions,
   pickGrey,
+  ruleHits,
   setReveal,
   setThreshold,
 } from "../src/content/render.ts";
@@ -102,25 +108,26 @@ describe("applyJudgment", () => {
   it("staggers the first fade down the page and drops the delays once settled", () => {
     vi.useFakeTimers();
     applyJudgment(document, judgment(), { threshold: 0.95, animations: true });
-    // Faded in document order: 0, 1, 2, 3 → 0, 10, 20, 30 ms; all spans of a sentence share its delay.
+    // Faded in document order: 0, 1, 2, 3 → one step each; all spans of a sentence share its delay.
     expect(spans(0)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
-    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe("10ms");
-    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe("20ms");
-    for (const s of spans(3)) expect(s.style.getPropertyValue("--osso-delay")).toBe("30ms");
+    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
+    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${2 * WAVE_STEP_MS}ms`);
+    for (const s of spans(3)) expect(s.style.getPropertyValue("--osso-delay")).toBe(`${3 * WAVE_STEP_MS}ms`);
     expect(spans(4)[0]!.style.getPropertyValue("--osso-delay")).toBe("");
     expect(root().classList.contains("osso-settled")).toBe(false);
-    vi.advanceTimersByTime(30 + 550 + 50);
+    vi.advanceTimersByTime(3 * WAVE_STEP_MS + SETTLE_MS + 50);
     expect(root().classList.contains("osso-settled")).toBe(true);
     for (const id of [0, 1, 2, 3]) for (const s of spans(id)) expect(s.style.getPropertyValue("--osso-delay")).toBe("");
   });
 
-  it("caps the wave at 500 ms", () => {
+  it("caps the wave so a long page still settles", () => {
     document.body.innerHTML = `<p data-osso-block="">${Array.from({ length: 60 }, (_, i) => `<span class="osso-s" data-osso="${i}">s${i}.</span>`).join(" ")}</p>`;
     const sentences = Array.from({ length: 60 }, (_, i) => S(i, 0.1, "filler_or_transition"));
     applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.5, animations: true });
-    expect(spans(49)[0]!.style.getPropertyValue("--osso-delay")).toBe("490ms");
-    expect(spans(50)[0]!.style.getPropertyValue("--osso-delay")).toBe("500ms");
-    expect(spans(59)[0]!.style.getPropertyValue("--osso-delay")).toBe("500ms");
+    const last = Math.floor(WAVE_MAX_MS / WAVE_STEP_MS);
+    expect(spans(last - 1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${(last - 1) * WAVE_STEP_MS}ms`);
+    expect(spans(last + 1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_MAX_MS}ms`);
+    expect(spans(59)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_MAX_MS}ms`);
   });
 
   it("uses no delay with animations off, and marks the root still", () => {
@@ -249,6 +256,60 @@ describe("reveal key", () => {
     off();
   });
 
+  it("gives back only what it took: a reveal switched on from the popup survives a Shift tap and a hold", () => {
+    vi.useFakeTimers();
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    const onRevealChange = vi.fn();
+    const off = installInteractions(document, { revealKey: "Shift", holdMs: 120, onRevealChange });
+    setReveal(document, true);
+    key("keydown", "Shift");
+    vi.advanceTimersByTime(150);
+    key("keyup", "Shift");
+    expect(root().classList.contains("osso-reveal")).toBe(true);
+    expect(onRevealChange).not.toHaveBeenCalled();
+    setReveal(document, false);
+    key("keydown", "Shift");
+    vi.advanceTimersByTime(150);
+    expect(root().classList.contains("osso-reveal")).toBe(true);
+    key("keyup", "Shift");
+    expect(root().classList.contains("osso-reveal")).toBe(false);
+    off();
+  });
+
+  it("does not reveal while text is selected or a mouse button is down: Shift is extending a selection then", () => {
+    vi.useFakeTimers();
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
+    const selection = vi.spyOn(document, "getSelection").mockReturnValue({ isCollapsed: false } as Selection);
+    key("keydown", "Shift");
+    vi.advanceTimersByTime(500);
+    expect(root().classList.contains("osso-reveal")).toBe(false);
+    key("keyup", "Shift");
+    selection.mockReturnValue({ isCollapsed: true } as Selection);
+    // A selection that starts during the hold cancels it.
+    key("keydown", "Shift");
+    vi.advanceTimersByTime(60);
+    selection.mockReturnValue({ isCollapsed: false } as Selection);
+    document.dispatchEvent(new Event("selectionchange"));
+    vi.advanceTimersByTime(500);
+    expect(root().classList.contains("osso-reveal")).toBe(false);
+    key("keyup", "Shift");
+    selection.mockReturnValue({ isCollapsed: true } as Selection);
+    // Shift+click: the button is down first.
+    mouse("mousedown", spans(0)[0]!);
+    key("keydown", "Shift");
+    vi.advanceTimersByTime(500);
+    expect(root().classList.contains("osso-reveal")).toBe(false);
+    mouse("mouseup", spans(0)[0]!);
+    key("keyup", "Shift");
+    // Nothing selected, nothing pressed: the hold reveals as usual.
+    key("keydown", "Shift");
+    vi.advanceTimersByTime(150);
+    expect(root().classList.contains("osso-reveal")).toBe(true);
+    key("keyup", "Shift");
+    off();
+  });
+
   it("ignores key repeats, other keys and editable targets", () => {
     vi.useFakeTimers();
     document.body.insertAdjacentHTML("beforeend", '<input id="in"><div id="ed" contenteditable="true">x</div>');
@@ -267,8 +328,20 @@ describe("reveal key", () => {
   });
 });
 
+/** The chip as a reader sees it: the kind word, how many of the five dots are lit, and what the meter says when asked. */
+function chipReads(chip: HTMLElement) {
+  const dots = Array.from(chip.querySelectorAll(".osso-chip-meter i"));
+  return {
+    label: chip.querySelector(".osso-chip-label")?.textContent,
+    dots: dots.length,
+    lit: dots.filter((d) => d.classList.contains("osso-lit")).length,
+    meter: chip.querySelector(".osso-chip-meter")?.getAttribute("aria-label"),
+    pinned: chip.querySelector(".osso-chip-pin")?.textContent ?? null,
+  };
+}
+
 describe("chip", () => {
-  it("appears after 250 ms of hover with kind and p(keep), and hides on mouseout", () => {
+  it("appears after 250 ms of hover with the kind and a five-dot meter of p(keep), and hides on mouseout", () => {
     vi.useFakeTimers();
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
@@ -278,7 +351,9 @@ describe("chip", () => {
     vi.advanceTimersByTime(1);
     const chip = document.querySelector<HTMLElement>(".osso-chip")!;
     expect(chip.classList.contains("osso-chip-show")).toBe(true);
-    expect(chip.textContent).toBe("story · 0.20");
+    expect(chipReads(chip)).toEqual({ label: "story", dots: 5, lit: 1, meter: "20% worth keeping", pinned: null });
+    // No number anywhere: the meter is the number.
+    expect(chip.textContent).toBe("story");
     expect(chip.getAttribute("aria-hidden")).toBe("true");
     expect(chip.style.position || "").toBe("");
     // Moving to another span of the same sentence keeps it; leaving hides it.
@@ -291,7 +366,7 @@ describe("chip", () => {
     mouse("mouseover", spans(4)[0]!);
     vi.advanceTimersByTime(250);
     expect(document.querySelectorAll(".osso-chip")).toHaveLength(1);
-    expect(chip.textContent).toBe("figure · 0.95");
+    expect(chipReads(chip)).toEqual({ label: "figure", dots: 5, lit: 5, meter: "95% worth keeping", pinned: null });
     // Scroll and keys hide it.
     document.dispatchEvent(new Event("scroll"));
     expect(chip.classList.contains("osso-chip-show")).toBe(false);
@@ -300,6 +375,35 @@ describe("chip", () => {
     expect(chip.classList.contains("osso-chip-show")).toBe(true);
     key("keydown", "a");
     expect(chip.classList.contains("osso-chip-show")).toBe(false);
+    off();
+  });
+
+  it("lights the dots by p(keep) and says so when the sentence is pinned", () => {
+    vi.useFakeTimers();
+    const sentences = [S(0, 0, "filler_or_transition"), S(1, 0.09, "filler_or_transition"), S(2, 0.6, "fact"), S(3, 0.5, "opinion"), S(4, 1, "fact")];
+    applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.7, animations: true });
+    const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
+    const chip = () => document.querySelector<HTMLElement>(".osso-chip")!;
+    const hover = (id: number) => {
+      mouse("mouseout", document.body, { relatedTarget: document.body });
+      mouse("mouseover", spans(id)[0]!);
+      vi.advanceTimersByTime(250);
+    };
+    hover(0);
+    expect(chipReads(chip())).toMatchObject({ lit: 0, meter: "0% worth keeping" });
+    hover(1);
+    expect(chipReads(chip())).toMatchObject({ label: "filler", lit: 0, meter: "9% worth keeping" });
+    hover(2);
+    expect(chipReads(chip())).toMatchObject({ label: "fact", lit: 3, meter: "60% worth keeping" });
+    hover(4);
+    expect(chipReads(chip())).toMatchObject({ lit: 5, meter: "100% worth keeping" });
+    // Pinning the sentence under the pointer redraws the chip with the suffix; unpinning takes it away.
+    hover(3);
+    expect(chipReads(chip())).toMatchObject({ label: "opinion", lit: 3, meter: "50% worth keeping", pinned: null });
+    mouse("click", spans(3)[0]!);
+    expect(chipReads(chip())).toMatchObject({ label: "opinion", lit: 3, pinned: "· pinned" });
+    mouse("click", spans(3)[0]!);
+    expect(chipReads(chip()).pinned).toBeNull();
     off();
   });
 
@@ -354,6 +458,33 @@ describe("pickGrey", () => {
     }
     expect(pickGrey({ r: 200, g: 30, b: 30 })).toMatch(/^#[0-9a-f]{6}$/);
   });
+
+  it("moves between ink and ground when the ground's grey would match the author's ink", () => {
+    const greyLum = (hex: string) => {
+      const g = hexToGrey(hex);
+      return lum({ r: g, g, b: g });
+    };
+    // White on a mid-grey card: the ground alone asks for #d9d9d9, which white text would barely leave.
+    const mid = { r: 0x80, g: 0x80, b: 0x80 };
+    const white = { r: 255, g: 255, b: 255 };
+    const fromGround = pickGrey(mid);
+    expect(ratio(lum(white), greyLum(fromGround))).toBeLessThan(1.5);
+    // With the ink known the grey sits where it is as far from the ink as from the ground.
+    const withInk = pickGrey(mid, white);
+    expect(ratio(lum(white), greyLum(withInk))).toBeGreaterThanOrEqual(1.8);
+    expect(ratio(greyLum(withInk), lum(mid))).toBeGreaterThanOrEqual(1.8);
+    expect(ratio(lum(white), greyLum(withInk))).toBeCloseTo(ratio(greyLum(withInk), lum(mid)), 1);
+    // A caption already set in #999 on white: the paper's grey would be darker than the ink; the
+    // fade goes lighter instead, as far from both as that pairing allows.
+    const inkGrey = { r: 0x99, g: 0x99, b: 0x99 };
+    const caption = pickGrey(white, inkGrey);
+    expect(greyLum(caption)).toBeGreaterThan(lum(inkGrey));
+    expect(ratio(lum(inkGrey), greyLum(caption))).toBeGreaterThanOrEqual(1.6);
+    expect(ratio(lum(inkGrey), greyLum(caption))).toBeCloseTo(ratio(greyLum(caption), lum(white)), 1);
+    // Ordinary ink on ordinary paper: the ink changes nothing.
+    expect(pickGrey(white, { r: 0x16, g: 0x16, b: 0x16 })).toBe("#b9b9b9");
+    expect(pickGrey({ r: 0x11, g: 0x11, b: 0x11 }, { r: 0xee, g: 0xee, b: 0xee })).toBe("#5c5c5c");
+  });
 });
 
 describe("effectiveBackground", () => {
@@ -387,7 +518,7 @@ describe("effectiveBackground", () => {
     expect(dark.classList.contains("osso-dark")).toBe(true);
   });
 
-  it("gives the chip its light variant over a dark block", () => {
+  it("gives the chip its dark variant over a dark block", () => {
     vi.useFakeTimers();
     const dark = document.getElementById("dark")!;
     stubBackgrounds(new Map([[dark, "rgb(17, 17, 17)"]]));
@@ -395,11 +526,11 @@ describe("effectiveBackground", () => {
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
     mouse("mouseover", spans(4)[0]!);
     vi.advanceTimersByTime(250);
-    expect(document.querySelector(".osso-chip")!.classList.contains("osso-chip-light")).toBe(true);
+    expect(document.querySelector(".osso-chip")!.classList.contains("osso-chip-on-dark")).toBe(true);
     mouse("mouseout", spans(4)[0]!, { relatedTarget: document.body });
     mouse("mouseover", spans(0)[0]!);
     vi.advanceTimersByTime(250);
-    expect(document.querySelector(".osso-chip")!.classList.contains("osso-chip-light")).toBe(false);
+    expect(document.querySelector(".osso-chip")!.classList.contains("osso-chip-on-dark")).toBe(false);
     off();
   });
 });
@@ -427,5 +558,108 @@ describe("clearRender", () => {
     expect(document.querySelector("main")!.textContent).toContain("There is something magical about one pot.");
     expect(counts(document)).toEqual({ total: 0, kept: 0, faded: 0 });
     off();
+  });
+});
+
+describe("applyRules", () => {
+  const hitIds = () =>
+    Array.from(new Set(Array.from(document.querySelectorAll(".osso-rule-hit")).map((s) => Number(s.getAttribute("data-osso"))))).sort();
+
+  it("un-fades sentences an active rule keeps, counts them kept, and names the rule in the chip", () => {
+    vi.useFakeTimers();
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    expect(fadedIds()).toEqual([1, 3]);
+    const c = applyRules(document, { prices: { 0: 0.9, 1: 0.8, 3: 0.2 }, deadlines: { 3: 0.6 } }, ["prices"]);
+    expect(c).toEqual({ total: 5, kept: 4, faded: 1 });
+    expect(fadedIds()).toEqual([3]);
+    expect(counts(document)).toEqual(c);
+    // Both hits are new, the one that was faded and the one that was kept anyway; below the threshold is no hit; an inactive rule keeps nothing.
+    expect(hitIds()).toEqual([0, 1]);
+    expect(ruleHits(document)).toEqual({ prices: 2 });
+    for (const s of spans(1)) expect(s.classList.contains("osso-fade")).toBe(false);
+
+    const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
+    mouse("mouseover", spans(1)[0]!);
+    vi.advanceTimersByTime(250);
+    const chip = document.querySelector<HTMLElement>(".osso-chip")!;
+    expect(chip.querySelector(".osso-chip-rule")?.textContent).toBe("kept by: prices");
+    expect(chipReads(chip).label).toBe("promo");
+    mouse("mouseout", spans(1)[0]!, { relatedTarget: document.body });
+    mouse("mouseover", spans(3)[0]!);
+    vi.advanceTimersByTime(250);
+    expect(chip.querySelector(".osso-chip-rule")).toBeNull();
+    off();
+  });
+
+  it("underlines only new hits, takes the underline off after RULE_HIT_MS, and a rule coming back is new again", () => {
+    vi.useFakeTimers();
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyRules(document, { prices: { 1: 0.8 } }, ["prices"]);
+    expect(hitIds()).toEqual([1]);
+    vi.advanceTimersByTime(RULE_HIT_MS + 10);
+    expect(hitIds()).toEqual([]);
+    for (const s of spans(1)) expect(s.classList.contains("osso-fade")).toBe(false);
+    // Same rules again: nothing new, nothing underlined.
+    applyRules(document, {}, ["prices"]);
+    expect(hitIds()).toEqual([]);
+    // A second rule: only its catch is underlined.
+    applyRules(document, { deadlines: { 3: 0.7, 1: 0.9 } }, ["prices", "deadlines"]);
+    expect(hitIds()).toEqual([1, 3]);
+    expect(fadedIds()).toEqual([]);
+    expect(ruleHits(document)).toEqual({ prices: 1, deadlines: 2 });
+    vi.advanceTimersByTime(RULE_HIT_MS + 10);
+    // Removing a rule re-fades at once, with no underline; its results stay, so adding it back is a new catch again.
+    expect(applyRules(document, {}, ["deadlines"])).toEqual({ total: 5, kept: 5, faded: 0 });
+    expect(applyRules(document, {}, [])).toEqual({ total: 5, kept: 3, faded: 2 });
+    expect(fadedIds()).toEqual([1, 3]);
+    expect(hitIds()).toEqual([]);
+    expect(ruleHits(document)).toEqual({});
+    expect(applyRules(document, {}, ["prices"])).toEqual({ total: 5, kept: 4, faded: 1 });
+    expect(hitIds()).toEqual([1]);
+    // The chip names the first active rule that keeps the sentence, in the user's order.
+    applyRules(document, {}, ["deadlines", "prices"]);
+    const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
+    mouse("mouseover", spans(1)[0]!);
+    vi.advanceTimersByTime(250);
+    expect(document.querySelector(".osso-chip-rule")?.textContent).toBe("kept by: deadlines");
+    off();
+  });
+
+  it("holds against the slider: a rule-kept sentence never fades, and a pin still works elsewhere", () => {
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyRules(document, { prices: { 1: 0.8 } }, ["prices"]);
+    expect(setThreshold(document, 0.95)).toEqual({ total: 5, kept: 2, faded: 3 });
+    expect(fadedIds()).toEqual([0, 2, 3]);
+    expect(setThreshold(document, 0.3)).toEqual({ total: 5, kept: 4, faded: 1 });
+    expect(fadedIds()).toEqual([3]);
+  });
+
+  it("rides the entrance wave while it plays and takes the instant path after it", () => {
+    vi.useFakeTimers();
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyRules(document, { prices: { 1: 0.8 } }, ["prices"]);
+    expect(root().classList.contains("osso-instant")).toBe(false);
+    expect(root().classList.contains("osso-settled")).toBe(false);
+    vi.advanceTimersByTime(2000);
+    expect(root().classList.contains("osso-settled")).toBe(true);
+    applyRules(document, { deadlines: { 3: 0.9 } }, ["prices", "deadlines"]);
+    expect(root().classList.contains("osso-instant")).toBe(true);
+    expect(spans(3)[0]!.style.getPropertyValue("--osso-delay")).toBe("");
+    vi.advanceTimersByTime(300);
+    expect(root().classList.contains("osso-instant")).toBe(false);
+  });
+
+  it("a later judgment merge keeps the rule state, and clearRender drops it all", () => {
+    vi.useFakeTimers();
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyRules(document, { prices: { 5: 0.9, 1: 0.9 } }, ["prices"]);
+    const c = applyJudgment(document, judgment({ sentences: [S(5, 0.05, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    expect(c).toEqual({ total: 6, kept: 5, faded: 1 });
+    expect(fadedIds()).toEqual([3]);
+    clearRender(document);
+    expect(document.querySelectorAll(".osso-rule-hit")).toHaveLength(0);
+    expect(ruleHits(document)).toEqual({});
+    vi.advanceTimersByTime(RULE_HIT_MS + 10);
+    expect(document.querySelectorAll(".osso-fade")).toHaveLength(0);
   });
 });

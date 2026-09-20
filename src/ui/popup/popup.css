@@ -1,4 +1,4 @@
-/* The popup: one number, three controls, nothing that competes with the number. */
+/* The popup: one field, one number, three controls, nothing that competes with the number. */
 
 body {
   width: 320px;
@@ -9,8 +9,8 @@ body {
 .popup {
   display: flex;
   flex-direction: column;
-  padding: 16px 18px 14px;
-  gap: 14px;
+  padding: 16px 16px 12px;
+  gap: 16px;
 }
 
 /* ---- header ----------------------------------------------------------- */
@@ -42,10 +42,17 @@ body {
   }
 }
 
+/* ---- rules ------------------------------------------------------------ */
+
+.rules {
+  display: flex;
+  flex-direction: column;
+}
+
 /* ---- hero ------------------------------------------------------------- */
 
 .hero {
-  min-height: 92px;
+  min-height: 96px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -59,7 +66,7 @@ body {
 
 .big {
   font-family: var(--font-display);
-  font-size: 44px;
+  font-size: 48px;
   line-height: 1;
   letter-spacing: -0.02em;
   color: var(--ink);
@@ -97,16 +104,16 @@ body {
 }
 
 .caption {
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 13px;
   color: var(--ink);
 }
 
-/* A hairline of the page itself: ink for what stays, grey for what fades. */
+/* The page in one line: ink for what stays, grey for what fades. */
 .bone {
-  height: 2px;
-  margin: 10px 0 8px;
-  border-radius: 1px;
+  height: 3px;
+  margin: 12px 0 8px;
+  border-radius: 2px;
   background: var(--grey);
   overflow: hidden;
   transition: opacity var(--t);
@@ -162,7 +169,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 14px;
+  padding-top: 16px;
   border-top: 1px solid var(--line);
   transition: opacity var(--t);
 }
@@ -174,7 +181,7 @@ body {
 
 /* Nothing judged on this page: the slider and the reveal have nothing to move, and look it. */
 .row-slider:has(input:disabled),
-.text-btn:disabled {
+.row-reveal:has(button:disabled) {
   opacity: 0.4;
   pointer-events: none;
 }
@@ -205,6 +212,26 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* The reveal and the key that does the same thing, side by side: the hint names the configured key. */
+.row-reveal {
+  min-height: 28px;
+}
+
+.hint {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.hint kbd {
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
 /* ---- footer ----------------------------------------------------------- */
 
 .foot {
@@ -216,17 +243,15 @@ body {
   font-size: 12px;
 }
 
-.foot a {
-  margin-left: auto;
+/* The tagline, signed small in the corner. */
+.sign {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 13px;
 }
 
-.foot kbd {
-  font: inherit;
-  font-size: 11px;
-  color: var(--ink);
-  padding: 0 5px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+.foot a {
+  margin-left: auto;
 }
 
 /* Enter: the whole card settles, like a sentence on the page. */

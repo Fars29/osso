@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { FromBackground, Settings, TabState, ToBackground } from "../src/shared/types.ts";
-import { DEFAULT_SETTINGS } from "../src/shared/constants.ts";
+import { DEFAULT_SETTINGS, MAX_RULES } from "../src/shared/constants.ts";
 import { getSettings, sendToBackground, sendToTab } from "../src/ui/messaging.ts";
 
 type ChromeMock = ReturnType<typeof import("./setup.ts").installChromeMock>;
@@ -34,6 +34,7 @@ const done: TabState = {
   inputTokens: 28_000,
   cached: false,
   revealed: false,
+  ruleHits: {},
 };
 
 function scriptBackground(settings: Settings, state: TabState | null) {
@@ -69,6 +70,13 @@ async function openOptions() {
 }
 
 const text = (id: string) => document.getElementById(id)?.textContent?.trim();
+/** The chips as the reader sees them: "prices · 3", one per rule, in order. */
+const chipsShown = () =>
+  Array.from(document.querySelectorAll("#rule-list .rule")).map((li) =>
+    `${li.querySelector(".rule-text")?.textContent ?? ""} ${li.querySelector<HTMLElement>(".rule-count")?.hidden ? "" : li.querySelector(".rule-count")?.textContent ?? ""}`.trim(),
+  );
+const keydown = (el: HTMLElement, key: string) => el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+const patches = () => runtimeSend().mock.calls.map(([m]) => m as ToBackground).filter((m): m is Extract<ToBackground, { type: "setSettings" }> => m.type === "setSettings");
 const visible = (id: string) => !document.getElementById(id)?.hidden;
 const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 const settle = async () => {
@@ -262,5 +270,132 @@ describe("options", () => {
     await settle();
     expect(getSettingsCalls()).toBe(before + 1);
     added.mockRestore();
+  });
+});
+
+describe("popup rules", () => {
+  const judged = { ...done, ruleHits: { prices: 3, deadlines: 0 } };
+
+  it("shows the field and the chips with their counts on a judged page, and focuses the field", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices", "deadlines", "allergens"] }, judged);
+    await openPopup();
+    expect(visible("rules")).toBe(true);
+    expect(chipsShown()).toEqual(["prices · 3", "deadlines · 0", "allergens · …"]);
+    const counts = Array.from(document.querySelectorAll<HTMLElement>("#rule-list .rule-count"));
+    expect(counts.map((c) => c.classList.contains("muted"))).toEqual([false, true, true]);
+    expect(document.activeElement?.id).toBe("rule");
+    expect(input("rule").placeholder).toBe("prices");
+    expect(input("rule").maxLength).toBe(80);
+    expect(input("rule").disabled).toBe(false);
+    // A rule with no count yet keeps the popup asking the page.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    window.dispatchEvent(new Event("pagehide"));
+  });
+
+  it("Enter adds a rule: the chip pops at once with an ellipsis, the list is saved, × removes it and saves again", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices"] }, { ...done, ruleHits: { prices: 2 } });
+    await openPopup();
+    const field = input("rule");
+    field.value = "  Names of  people ";
+    keydown(field, "Enter");
+    await settle();
+    expect(field.value).toBe("");
+    expect(chipsShown()).toEqual(["prices · 2", "Names of people · …"]);
+    expect(document.querySelector('#rule-list .rule[data-rule="Names of people"]')?.classList.contains("pop")).toBe(true);
+    expect(patches().at(-1)).toEqual({ type: "setSettings", patch: { rules: ["prices", "Names of people"] } });
+
+    // A duplicate, however spelled, adds nothing and points at the chip that is already there.
+    field.value = "PRICES";
+    keydown(field, "Enter");
+    await settle();
+    expect(chipsShown()).toEqual(["prices · 2", "Names of people · …"]);
+    expect(document.querySelector('#rule-list .rule[data-rule="prices"]')?.classList.contains("flash")).toBe(true);
+    expect(patches()).toHaveLength(1);
+
+    // Escape clears an entry and keeps the popup open; on an empty field it is left to the browser.
+    field.value = "half a th";
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    field.dispatchEvent(escape);
+    expect(field.value).toBe("");
+    expect(escape.defaultPrevented).toBe(true);
+    const escapeEmpty = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    field.dispatchEvent(escapeEmpty);
+    expect(escapeEmpty.defaultPrevented).toBe(false);
+
+    (document.querySelector('#rule-list .rule[data-rule="prices"] .rule-x') as HTMLButtonElement).click();
+    await settle();
+    expect(chipsShown()).toEqual(["Names of people · …"]);
+    expect(patches().at(-1)).toEqual({ type: "setSettings", patch: { rules: ["Names of people"] } });
+    window.dispatchEvent(new Event("pagehide"));
+  });
+
+  it("disables the field with the hint once the list is full", async () => {
+    const full = Array.from({ length: MAX_RULES }, (_, i) => `rule ${i}`);
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: full }, done);
+    await openPopup();
+    expect(input("rule").disabled).toBe(true);
+    expect(input("rule").placeholder).toBe(`${MAX_RULES} is plenty`);
+    expect(chipsShown()).toHaveLength(MAX_RULES);
+    expect(document.activeElement?.id).not.toBe("rule");
+    (document.querySelector("#rule-list .rule .rule-x") as HTMLButtonElement).click();
+    await settle();
+    expect(input("rule").disabled).toBe(false);
+    expect(input("rule").placeholder).toBe("prices");
+    window.dispatchEvent(new Event("pagehide"));
+  });
+
+  it("keeps the field without counts where there is nothing to count, hides it without a key, and does not steal focus before the page is judged", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices"] }, { ...done, status: "skipped", reason: "too little text" });
+    await openPopup();
+    expect(visible("rules")).toBe(true);
+    expect(chipsShown()).toEqual(["prices"]);
+    expect(document.activeElement?.id).not.toBe("rule");
+
+    scriptBackground({ ...DEFAULT_SETTINGS, rules: ["prices"] }, null);
+    await openPopup();
+    expect(visible("rules")).toBe(false);
+
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices"] }, { ...done, status: "judging" });
+    await openPopup();
+    expect(visible("rules")).toBe(true);
+    expect(chipsShown()).toEqual(["prices · …"]);
+    expect(document.activeElement?.id).not.toBe("rule");
+    window.dispatchEvent(new Event("pagehide"));
+  });
+
+  it("puts the list back as it really is when nobody saved it", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: [] }, done);
+    await openPopup();
+    runtimeSend().mockImplementation(async (...args: unknown[]) => {
+      const msg = args[0] as ToBackground;
+      if (msg.type === "setSettings") return { type: "error", error: "storage refused" } satisfies FromBackground;
+      if (msg.type === "getSettings") return { type: "settings", settings: { ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: [] } } satisfies FromBackground;
+      return { type: "tabState", state: done } satisfies FromBackground;
+    });
+    input("rule").value = "prices";
+    keydown(input("rule"), "Enter");
+    await settle();
+    expect(chipsShown()).toEqual([]);
+    window.dispatchEvent(new Event("pagehide"));
+  });
+});
+
+describe("options rules", () => {
+  it("lists the rules under Behaviour, adds on Enter and removes with ×, saving each time", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices"] }, null);
+    await openOptions();
+    expect(document.querySelector("#s-behaviour #rule")).not.toBeNull();
+    expect(chipsShown()).toEqual(["prices"]);
+    input("rule").value = "deadlines";
+    keydown(input("rule"), "Enter");
+    await settle();
+    expect(chipsShown()).toEqual(["prices", "deadlines"]);
+    expect(patches().at(-1)).toEqual({ type: "setSettings", patch: { rules: ["prices", "deadlines"] } });
+    expect(document.getElementById("behaviour-saved")?.classList.contains("on")).toBe(true);
+    (document.querySelector('#rule-list .rule[data-rule="prices"] .rule-x') as HTMLButtonElement).click();
+    await settle();
+    expect(chipsShown()).toEqual(["deadlines"]);
+    expect(patches().at(-1)).toEqual({ type: "setSettings", patch: { rules: ["deadlines"] } });
+    window.dispatchEvent(new Event("pagehide"));
   });
 });

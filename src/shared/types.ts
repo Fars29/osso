@@ -44,7 +44,16 @@ export interface PageJudgment {
   cached: boolean;
   /** Ids of sentences whose chunk failed; they stay untouched on the page. */
   failedIds: number[];
+  /**
+   * The user's rules judged on this page: rule text → sentence id → p(hit). May be partial (a
+   * rule added later joins the record when it is judged) and absent on records stored before
+   * rules existed.
+   */
+  rules?: RuleResults;
 }
+
+/** Rule text → sentence id → probability that the sentence carries what the rule asks for. */
+export type RuleResults = Record<string, Record<number, number>>;
 
 /** Everything the content script knows about a page before judging it; packs route on this. */
 export interface PageMeta {
@@ -84,6 +93,8 @@ export interface Settings {
   /** Hosts the user explicitly re-enabled, overriding the default deny list. */
   allowedHosts: string[];
   maxSentencesPerRequest: number;
+  /** What the reader must always keep, in their own words: ≤ MAX_RULES, each trimmed, ≤ MAX_RULE_LENGTH, unique ignoring case. Global. */
+  rules: string[];
 }
 
 export interface Stats {
@@ -112,6 +123,8 @@ export interface TabState {
   inputTokens: number;
   cached: boolean;
   revealed: boolean;
+  /** Rule text → number of sentences it keeps on this page. A rule missing here has not been judged yet. */
+  ruleHits: Record<string, number>;
 }
 
 /** Messages the content script (or UI pages) send to the background. */
@@ -122,6 +135,8 @@ export type ToBackground =
   | { type: "isHostEnabled"; host: string }
   | { type: "setHostEnabled"; host: string; enabled: boolean }
   | { type: "judge"; req: JudgeRequest }
+  /** Judge only these rules on the page last judged with this hash; the background still has its sentences. */
+  | { type: "judgeRules"; contentHash: string; rules: string[] }
   | { type: "tabState"; state: TabState }
   | { type: "getTabState"; tabId: number }
   | { type: "testKey"; apiKey: string }
@@ -132,10 +147,11 @@ export type FromBackground =
   | { type: "stats"; stats: Stats }
   | { type: "hostEnabled"; enabled: boolean }
   | { type: "judgment"; judgment: PageJudgment }
+  | { type: "ruleJudgment"; contentHash: string; rules: RuleResults }
   | { type: "tabState"; state: TabState | null }
   | { type: "keyTest"; ok: boolean; error?: string; ms?: number }
   | { type: "ok" }
-  | { type: "error"; error: string; code?: "no-key" | "invalid-key" | "rate-limited" | "network" | "server" };
+  | { type: "error"; error: string; code?: "no-key" | "invalid-key" | "rate-limited" | "network" | "server" | "unknown-page" };
 
 /** Messages the background or popup send to a page's content script. */
 export type ToContent =
@@ -143,6 +159,8 @@ export type ToContent =
   | { type: "setThreshold"; value: number }
   | { type: "reveal"; on: boolean }
   | { type: "setEnabledHere"; enabled: boolean }
+  /** The rules changed (added, removed, or both); the page judges the new ones and drops the rest at once. */
+  | { type: "rulesChanged"; rules: string[] }
   | { type: "getTabState" };
 
 export type FromContent = { type: "tabState"; state: TabState } | { type: "ok" };

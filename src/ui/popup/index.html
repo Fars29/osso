@@ -13,6 +13,15 @@
         <span class="chip" id="chip" hidden></span>
       </header>
 
+      <!-- The one place the reader talks to the model: what to always keep, in their own words. -->
+      <section class="rules" id="rules" hidden>
+        <label class="rule-field" for="rule">
+          <span class="rule-prefix muted">keep</span>
+          <input class="rule-input" id="rule" type="text" placeholder="prices" aria-label="Always keep sentences about" />
+        </label>
+        <ul class="rule-list" id="rule-list" hidden></ul>
+      </section>
+
       <section class="hero" aria-live="polite">
         <div class="count" id="v-count">
           <p class="figure">
@@ -48,13 +57,14 @@
           </div>
         </div>
 
-        <div class="row">
-          <button class="text-btn" id="reveal" type="button">Reveal all</button>
+        <div class="row row-reveal">
+          <button class="btn btn-small" id="reveal" type="button">Reveal all</button>
+          <span class="hint muted" id="hint">Hold <kbd>Shift</kbd> to peek</span>
         </div>
       </section>
 
       <footer class="foot muted">
-        <span id="hint">Hold Shift to peek</span>
+        <span class="sign">Solo l'osso.</span>
         <a href="#" id="settings">Settings</a>
       </footer>
     </main>

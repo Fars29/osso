@@ -1,198 +1,94 @@
 # Osso
 
-**Solo l'osso.** — Just the bones.
+**Solo l'osso.** Just the bones.
 
-A Chrome extension. Every page you open arrives with its filler faded to a quiet grey and
-its substance left in the author's own ink. It never hides anything, never rewrites a word,
-never summarises: the story about the grandmother's kitchen is still there, in grey, right
-above the ingredients, in black. It is always on. Hold **Shift** and the whole page comes
-back; let go and it fades again. Judgments come from [Jev](https://docs.typesafe.ai),
-TypeSafe's System One model, through your own API key. Open source, GPL-3.0.
+Every page you open arrives with its filler faded to grey and its substance left in the author's own words. Nothing is hidden, nothing is rewritten, nothing is summarised: the story is still there, in grey, right above the recipe, in ink.
 
-![The recipe page after Osso: the story in grey, the ingredients and the method in ink](docs/recipe-faded.png)
+![A recipe page with the story faded and the recipe in ink](docs/screenshots/page-faded.png)
+
+How it looks:
+
+- Hold **Shift** to peek at everything; let go and the grey comes back.
+- The slider in the popup sets how strict it is, from gentle to bare.
+- Type a rule like *prices* and every sentence about prices comes back to ink, on every page.
 
 ## Install
 
-There is no store listing yet.
+Chrome, Edge or Brave. There is no store listing yet.
 
-1. `npm install && npm run build`
-2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, pick `dist/`.
-3. Osso opens its settings page on install; paste your key there and open any article. Later:
-   click the icon → **Add key**.
+1. Download a release zip and unpack it, or clone this repo and run `npm install && npm run build`.
+2. Open `chrome://extensions`.
+3. Turn on **Developer mode** (top right).
+4. Click **Load unpacked** and pick the `dist/` folder.
 
-Works in Chrome and Chromium-based browsers (Edge, Brave, Arc, Vivaldi). The manifest
-carries a `gecko` id and Firefox 128+ reads Manifest V3, but Firefox is not tested yet and
-the background worker may need to become an event page there.
-
-## Why it works
-
-The whole product rests on one question. Before writing any of it, `scripts/calibrate.ts`
-asked that question about 78 hand-labelled sentences from seven synthetic-but-realistic pages
-(recipe blog, corporate statement, terms of service, LinkedIn post, news article; English and
-Italian) plus one page of bland narrative as a noise floor. Probe of 2026-09-20:
-
-| measure | value |
-|---|---|
-| AUC substance vs filler, one generic question, all pages | **0.999** (1.000 on every page) |
-| mean p(keep): substance / filler / noise floor | 0.94 / 0.16 / 0.11 |
-| best single threshold | 0.5–0.8 (acc ≥ 0.987) |
-| 24–42 questions per request | 350–500 ms |
-| 258 questions, one request, all pages | 1.26 s, 49.7k tokens, $0.0021 |
-| repeat of the same request | max Δp = 0.010 |
-
-The question, verbatim, one per sentence, with the page's text as state:
-
-> Consider this sentence from the page: «S». If this sentence were deleted, would a reader
-> who came to this page for its practical content lose information that the rest of the page
-> does not already give them?
->
-> **true:** Yes: the sentence states a fact, figure, date, step, condition, cost, obligation,
-> decision or warning that the reader needs and that is not stated elsewhere on the page.
-> **false:** No: the sentence is a story, opinion, greeting, thanks, reassurance, navigation
-> hint, promotion, or it restates something the page already says; deleting it loses nothing
-> practical.
-
-Three things the probe settled. The generic wording separates well on every page kind, so
-routing by page kind tunes the wording but is not load-bearing. Embedding the sentence in the
-question with the whole page as state works: the model attends to the one sentence and still
-sees what the rest of the page already says. And batching is the cost model: sixty sentences
-in one request cost about what one sentence would, and the answers do not drift when you ask
-again.
+Firefox: the manifest carries a `gecko` id for Firefox 128+, but it is untested there and the background worker may need to become an event page.
 
 ## Your key
 
-Get one at [typesafe.ai](https://typesafe.ai). Osso stores it in `chrome.storage.local` on
-your machine; there is no server of ours, and the content script that runs inside pages never
-sees it, only the background worker does.
+Osso asks a model, [Jev](https://docs.typesafe.ai) by TypeSafe, one question per sentence, with your own key. Get one at [typesafe.ai](https://typesafe.ai). Osso opens its Options page on first install; paste the key there, press **Test**, then **Save**.
 
-What leaves your machine, and only to `api.typesafe.ai`: the page title, its language, a
-page-kind hint and the main text of the page. No URL is sent. Nothing is sent for pages Osso
-skips. Nothing is logged, not even when the API rejects a request.
+What leaves your machine, and only to `api.typesafe.ai`: the page title, its language, a page-kind hint and the main text of the page, never the URL. Cost is small: the ten pages of the [calibration run](docs/calibration.md) cost $0.0024 together, and a page you have already read is served from the cache. The key is stored in this browser only; the script that runs inside pages never sees it.
 
-Permissions: `storage` for the key and the cache, `unlimitedStorage` so a full cache is never
-the reason a page fails, `activeTab` so the popup knows which site it is looking at, and host
-access to `https://api.typesafe.ai/*` only. The content script is injected by the manifest's
-`content_scripts` rule, which needs no host permission of its own, and the worker has no
-cross-origin privileges anywhere else.
+## Using it
 
-What it costs: Jev bills input tokens at $0.042 per million, output is free. A long page is
-40–60 sentences, one or two requests, roughly 25–50k tokens: about **$0.001–0.002**. The
-popup keeps a running total. Results are cached by content hash, so reading the same page
-twice costs once.
+Click the icon. The popup shows how many sentences were kept, the page kind, and the controls.
+
+![The popup after a page is judged](docs/screenshots/popup-done.png)
+
+**Rules.** The field at the top of the popup is the one place you talk to the model. Type what you always want to keep, in your own words (*prices*, *deadlines*, *allergens*, *what I have to do*), press Enter, and the sentences it catches come back to ink with a brief underline. The chip shows how many it kept on this page; `×` removes it instantly. Rules apply on every page, up to 8.
+
+![A rule bringing the sponsor sentence back to ink](docs/screenshots/page-rule.png)
+
+**Per site.** The **On this site** switch in the popup turns Osso off for the current host; the keyboard shortcut **Alt+Shift+O** does the same. Osso is off by default where the page is your workspace rather than someone's writing: mail, docs, chat, code hosting, search, video and social feeds (the list is in Options under Sites). To use it there anyway, flip the switch on that site or add the host to *Always on these sites*.
+
+**Hover** a grey sentence to see what it was judged to be (story, promo, opinion) and how much of it is worth keeping. **Click** a grey sentence to pin it back for this visit.
+
+![The options page](docs/screenshots/options.png)
 
 ## How it decides
 
-1. **Segment.** Find the main content, collect the text blocks, split them into sentences, wrap
-   each in an `<osso-s class="osso-s">` around the original text nodes so inline links and
-   emphasis survive untouched (a custom element, so no site stylesheet written against
-   `p span` ever matches it). Fewer than 8 sentences: stop, the page is not worth a request.
-   Switching Osso off puts the page's own text nodes back exactly as they were, so a framework
-   that holds a reference to a node still holds the node that is on the page.
-2. **Route.** Heuristics on JSON-LD `@type`, URL, `og:type`, title and a text sample pick a
-   pack: recipe, article, legal, corporate, social, product, docs. Unsure: generic.
-3. **Pack.** The pack supplies the page-kind hint and may append hints to the question's
-   criteria. The question itself does not change.
-4. **Ask.** One batched request per ~60 sentences, up to four in flight, each carrying its
-   own chunk of text as state and two questions per sentence: keep (a probability) and kind
-   (fact, figure, step, condition, opinion, story, filler, promo). The first chunk also asks
-   what kind of page this is.
-5. **Fade.** Sentences with p(keep) below the threshold (default 0.5) get a colour change.
-   Only a colour change: the grey is chosen per block for its background, about `#b9b9b9` on
-   white, so nothing moves and nothing reflows. Kept sentences are not touched at all.
-6. **Cache.** Probabilities are stored per page. Moving the threshold slider in the popup
-   re-renders from the cache in 0 ms; no request is made. Hover a sentence to see its kind
-   and its p(keep). Click a faded sentence to pin it back for this view.
+1. The main text of the page is split into sentences; headings, tables, code, navigation and forms are never touched.
+2. Sentences go to the model in batches of about 60, in parallel, with the page's own text as context.
+3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
+4. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
+5. Probabilities are cached per page, so the slider and rule removal re-render instantly with no request.
+6. Pages that change under you (infinite scroll, client-side navigation) are watched; only new sentences are judged.
 
-Pages that change under you (infinite scroll, client-side navigation) are watched with a
-debounced `MutationObserver`; only the new sentences are judged, in a small request of their
-own that is never cached, and the result is merged into the page's judgment.
+The question, verbatim:
 
-## What it never touches
+> Consider this sentence from the page: «S». Does this sentence itself carry practical content the reader came to this page for?
+>
+> **true:** Yes: the sentence states a fact, figure, date, quantity, ingredient, step, condition, cost, obligation, decision or warning that the reader needs, even if the page says it again elsewhere.
+> **false:** No: the sentence is a story, memory, opinion, greeting, thanks, reassurance, navigation hint or promotion; a reader looking for the practical content would skip it.
 
-Headings. Tables. `pre` and `code`. `nav`, `header`, `footer`, `aside`. Forms, inputs and
-anything `contenteditable`. Anything `aria-hidden`. Anything under three words. Images and
-figures (captions are judged). Pages that are really apps: a large editable region, or inputs
-that dominate the document.
+On 99 hand-labelled sentences from ten pages in English and Italian, this question separates substance from filler with an AUC of 0.998 (mean p(keep) 0.94 for substance, 0.12 for filler), and a batch of 15–29 sentences answers in 610–1330 ms. Full numbers, per-page table and the redundancy trap in [docs/calibration.md](docs/calibration.md); the design in [docs/design/](docs/design/).
 
-And a deny list, on by default, where the page is your workspace rather than someone's
-writing: Gmail, Google Docs, Drive, Calendar, Meet, Outlook, Office, Notion, Slack, Discord,
-WhatsApp, Telegram, Teams, GitHub, GitLab, Bitbucket, Stack Overflow, Google, Bing,
-DuckDuckGo, YouTube, Netflix, X, Facebook, Instagram, TikTok, LinkedIn, Reddit, Figma, Canva,
-ChatGPT, Claude, typesafe.ai, and localhost. Any of these can be re-enabled per site from the
-popup, and any other site can be added to the list.
+## Honest limits
 
-## Honest limitations
-
-It is a judgment, not a guarantee. An AUC of 0.999 on 78 sentences is a promising probe, not
-a proof; the model will sometimes grey a sentence you needed. That is why the grey text is
-still there, still readable, and Shift brings it all back. Read the grey when it matters.
-
-The noise floor is not zero. Bland sentences on a page with no practical content scored a
-mean p(keep) of 0.11, not 0.00, so on a page that is entirely narrative a few sentences stay
-in ink for no reason the reader can see.
-
-On pages of pure substance (a spec, a good news article) little or nothing fades, and that is
-correct behaviour, not a bug.
-
-The default threshold of 0.5 is one choice inside a wide plateau (0.5–0.8 all scored above
-0.987 on the probe). It is a slider because the right value depends on how much you trust the
-author.
-
-It is off by default on the sites listed above. Nothing is judged on a page until you have
-saved a key.
+- It is a judgment, not a guarantee. The model will sometimes grey a sentence you needed. Grey text is still there, still readable and selectable; hold Shift when it matters.
+- Pages built from `div`s or unusual markup, and pages with fewer than 8 sentences of main text, may be skipped. The popup says why.
+- It never runs in editors, mail, chat, code hosting and social feeds by default, and never on a page until you have saved a key.
+- The requests are made with your key; the cost is yours. The popup keeps a running total in Options under Usage.
 
 ## Development
 
-```
-npm install
-npm run build        # esbuild → dist/
-npm run dev          # watch
-npm test             # vitest, jsdom, mocked chrome.*; never calls the API
-npm run typecheck    # tsc --noEmit
-npm run calibrate    # the probe, live API, needs TYPESAFE_API_KEY in .env
-npm run e2e          # Playwright loads dist/ into Chromium, live API, needs the key
-npm run icons        # icons/icon.svg → icons/{16,32,48,128}.png
-npm run zip          # dist/ → release/osso-<version>.zip
-```
+Node 20 or newer. TypeScript strict, no frameworks, no runtime dependencies: vanilla DOM and `fetch`. The key for the live scripts goes in `.env` as `TYPESAFE_API_KEY`.
 
-Node 20 or newer. TypeScript strict, no frameworks, no runtime dependencies: the extension
-is vanilla DOM and `fetch`.
+| command | what it does |
+|---|---|
+| `npm run build` | esbuild → `dist/` |
+| `npm run dev` | build and watch |
+| `npm test` | vitest, jsdom, mocked `chrome.*`; never calls the API |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run calibrate` | the probe behind `docs/calibration.md`; live API, about a quarter of a cent |
+| `npm run e2e` | Playwright loads `dist/` into Chromium against the live API; screenshots in `e2e/screenshots/` |
+| `node --env-file=.env e2e/screens.mjs --docs` | every screen as a picture; `--docs` refreshes `docs/screenshots/` |
+| `npm run icons` | `icons/icon.svg` → the PNG sizes |
+| `npm run zip` | `dist/` → `release/osso-<version>.zip` |
 
-The e2e serves three fixtures on `127.0.0.1` (a recipe blog, a terms page and a three-sentence
-page that must be skipped), saves the key through the options page, and asserts that the
-recipe has at least five faded and five kept sentences, that an ingredient stays in ink, that
-nothing inside `nav` or `footer` was touched, that Shift reveals, that the auto-renewal clause
-of the terms is kept, and that the blank page is left alone. It writes screenshots to
-`e2e/screenshots/` and prints a table with the time to first fade.
+Layout: `src/shared/` (types and constants, the contracts), `src/content/` (segment, render, orchestrator: runs inside the page), `src/background/` (settings, cache, api: the only code that holds the key), `src/packs/` (page kinds), `src/ui/` (popup and options), `test/`, `e2e/`, `scripts/`.
 
-```
-src/shared/       types and constants: the contracts every module builds against
-src/content/      segment, render, orchestrator, osso.css — runs inside the page
-src/background/   settings, cache, api, orchestrator — the only code that holds the key
-src/packs/        page-kind routing and question hints
-src/ui/           popup and options
-scripts/          calibrate, icons, zip
-e2e/              Playwright smoke and fixtures
-```
-
-## Modules
-
-Packs live in `src/packs/`, one file per page kind, exported through `src/packs/index.ts`:
-
-- `recipe.ts` — JSON-LD `Recipe`, ingredient and step vocabulary; hints that quantities and timings are substance.
-- `article.ts` — `og:type=article`, news and blog URLs; scene-setting and reaction are filler.
-- `legal.ts` — terms, privacy, licence; every clause that binds is substance, boilerplate about headings is not.
-- `corporate.ts` — announcements and customer notices; dates, prices and decisions over gratitude.
-- `social.ts` — posts and threads; the one line with the job link is the bone.
-- `product.ts` — features, specs, pricing.
-- `docs.ts` — guides and manuals.
-- `generic.ts` — the fallback; the probe's question, unchanged.
-
-A pack is a `Pack`: an id, a `match(meta)` score over `PageMeta`, and optional hint strings
-appended to the keep criteria. To add one, create the file, export it, and add it to the list
-in `index.ts`; `route(meta)` picks the highest score above its floor and falls back to
-`generic`. Routing tunes wording, it is not load-bearing: a wrong pack still gets a good
-answer.
+Page kinds live in `src/packs/`, one file each. A pack is an id, a `stateHint` sent to the model, optional one-sentence hints appended to the keep criteria, and a `match(meta)` score computed from JSON-LD, URL, `og:type`, title and a text sample. To add one: copy `recipe.ts`, add the id to `PageKind` in `src/shared/types.ts` and its label in `PAGE_KINDS`, and add the pack to `PACKS` in `src/packs/index.ts`. Routing only tunes wording; a wrong pack still gets a good answer.
 
 ## License
 

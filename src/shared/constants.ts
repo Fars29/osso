@@ -25,6 +25,13 @@ export const REVEAL_HOLD_MS = 120;
 export const THRESHOLD_MIN = 0.2;
 export const THRESHOLD_MAX = 0.9;
 
+/** A sentence with p(hit) at or above this on any active rule is kept, whatever the slider says. */
+export const RULE_THRESHOLD = 0.5;
+export const MAX_RULES = 8;
+export const MAX_RULE_LENGTH = 80;
+/** Judge requests the background remembers by content hash, so a rule added later can be judged without the page resending its text. */
+export const RECENT_REQUESTS = 50;
+
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
   apiKeyInvalid: false,
@@ -35,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   deniedHosts: [],
   allowedHosts: [],
   maxSentencesPerRequest: MAX_SENTENCES_PER_REQUEST,
+  rules: [],
 };
 
 /**
@@ -137,14 +145,20 @@ export const PAGE_KINDS: Record<PageKind, { label: string; description: string }
   other: { label: "Page", description: "None of the above." },
 };
 
-/** The generic keep question. Packs may append kind-specific hints to the criteria. */
+/**
+ * The generic keep question. Packs may append kind-specific hints to the criteria. It asks about
+ * the sentence itself, not about what the rest of the page already says: an earlier wording
+ * ("would the reader lose information the page does not give elsewhere?") let two sentences that
+ * state the same fact eliminate each other, so a recipe step repeated in the faded introduction
+ * faded too. The wording is what `scripts/calibrate.ts` measures; see docs/calibration.md.
+ */
 export const KEEP_QUESTION = {
   instructions: (sentence: string) =>
-    `Consider this sentence from the page: «${sentence}». If this sentence were deleted, would a reader who came to this page for its practical content lose information that the rest of the page does not already give them?`,
+    `Consider this sentence from the page: «${sentence}». Does this sentence itself carry practical content the reader came to this page for?`,
   criteriaTrue:
-    "Yes: the sentence states a fact, figure, date, step, condition, cost, obligation, decision or warning that the reader needs and that is not stated elsewhere on the page.",
+    "Yes: the sentence states a fact, figure, date, quantity, ingredient, step, condition, cost, obligation, decision or warning that the reader needs, even if the page says it again elsewhere.",
   criteriaFalse:
-    "No: the sentence is a story, opinion, greeting, thanks, reassurance, navigation hint, promotion, or it restates something the page already says; deleting it loses nothing practical.",
+    "No: the sentence is a story, memory, opinion, greeting, thanks, reassurance, navigation hint or promotion; a reader looking for the practical content would skip it.",
 } as const;
 
 export const KIND_QUESTION = {
@@ -153,4 +167,13 @@ export const KIND_QUESTION = {
 
 export const PAGE_KIND_QUESTION = {
   instructions: "What kind of page is this?",
+} as const;
+
+/** The user's rule, asked of one sentence. The rule is quoted in every part so the model has no room to generalise it. */
+export const RULE_QUESTION = {
+  instructions: (sentence: string, rule: string) =>
+    `Consider this sentence from the page: «${sentence}». Does it carry information that a reader who cares about «${rule}» would want to keep?`,
+  criteriaTrue: (rule: string) =>
+    `Yes: the sentence states something concrete about «${rule}», or a fact, figure, condition or step that matters for it.`,
+  criteriaFalse: (rule: string) => `No: it is unrelated to «${rule}», or only mentions it in passing with nothing to keep.`,
 } as const;

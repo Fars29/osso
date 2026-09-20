@@ -4,7 +4,7 @@
  * rest of the code did not plan for: the worst case is a field falling back to its default.
  */
 import type { RevealKey, Settings, Stats } from "../shared/types.ts";
-import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, THRESHOLD_MAX, THRESHOLD_MIN } from "../shared/constants.ts";
+import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, MAX_RULE_LENGTH, MAX_RULES, THRESHOLD_MAX, THRESHOLD_MIN } from "../shared/constants.ts";
 
 export const SETTINGS_KEY = "osso:settings";
 export const STATS_KEY = "osso:stats";
@@ -51,6 +51,31 @@ function hostList(value: unknown): string[] {
   return [...seen];
 }
 
+/**
+ * One rule, as it is stored and as it keys the judgment maps: trimmed, inner runs of whitespace
+ * collapsed (a double space typed by accident is not a second rule), cut at MAX_RULE_LENGTH.
+ * Empty when nothing is left.
+ */
+export function normalizeRule(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, MAX_RULE_LENGTH).trim();
+}
+
+/** The rule list as stored: normalised, unique ignoring case (first spelling wins), at most MAX_RULES. */
+export function normalizeRules(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of value) {
+    if (typeof v !== "string" || out.length >= MAX_RULES) continue;
+    const rule = normalizeRule(v);
+    const key = rule.toLowerCase();
+    if (!rule || seen.has(key)) continue;
+    seen.add(key);
+    out.push(rule);
+  }
+  return out;
+}
+
 export function validate(raw: unknown): Settings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
@@ -66,6 +91,7 @@ export function validate(raw: unknown): Settings {
     maxSentencesPerRequest: Math.round(
       clamp(finiteOr(r.maxSentencesPerRequest, d.maxSentencesPerRequest), SENTENCES_MIN, SENTENCES_MAX),
     ),
+    rules: normalizeRules(r.rules),
   };
 }
 

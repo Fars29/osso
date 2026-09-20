@@ -3,10 +3,12 @@
  * and none of them touches layout. The fade is a colour transition on inline spans; nothing else.
  */
 
+/* The settle: 900 ms per sentence on a curve that starts gently, so the page is seen to settle rather
+   than snap; the renderer staggers the delays down the page (render.ts SETTLE_MS matches). */
 .osso-s {
   transition-property: color;
-  transition-duration: var(--osso-dur, 550ms);
-  transition-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-duration: var(--osso-dur, 900ms);
+  transition-timing-function: cubic-bezier(0.4, 0.05, 0.2, 1);
   transition-delay: var(--osso-delay, 0ms);
 }
 
@@ -15,9 +17,20 @@ html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin) {
   color: var(--osso-grey, #b9b9b9) !important;
 }
 
-/* Links inside faded text take the grey too; text-decoration is left alone so a link still reads as a
-   link, and the author's hover colour comes back for as long as the pointer is on it. */
-html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin) a:not(:hover) {
+/* A link in faded text: its words sit inside the wrapper and go grey with the sentence, but the
+   underline is the link's own and would stay in the author's blue, so it takes the grey too. The
+   line is still there, so a link still reads as a link; while the pointer is on it the author's
+   colour comes back, words and line. The transition rides the settle and is dropped once settled,
+   so the author's own transitions on links are only ever overridden for that second and a half. */
+html.osso-on:not(.osso-reveal) a:has(.osso-fade:not(.osso-pin)):not(:hover) {
+  text-decoration-color: var(--osso-grey, #b9b9b9) !important;
+}
+
+html.osso-on:not(.osso-settled):not(.osso-still) a:has(.osso-fade:not(.osso-pin)) {
+  transition: text-decoration-color var(--osso-dur, 900ms) cubic-bezier(0.4, 0.05, 0.2, 1);
+}
+
+html.osso-on:not(.osso-reveal) a:hover .osso-fade:not(.osso-pin) {
   color: inherit !important;
 }
 
@@ -51,42 +64,151 @@ html.osso-still .osso-s {
   transition-delay: 0ms !important;
 }
 
-/* Hover chip: one element, reused, positioned by the renderer above the sentence's first line box. */
+/* A rule's catch: an accent underline that draws in from the left over 240 ms, then fades over
+   1.2 s. The one place the accent colour ever touches a page. The stripe is a background on the
+   inline wrapper, so a sentence broken over several lines draws in reading order and nothing
+   moves; the alpha is a registered property so the fade is a real fade. */
+@property --osso-hit-a {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@keyframes osso-rule-hit-draw {
+  from {
+    background-size: 0% 2px;
+  }
+  to {
+    background-size: 100% 2px;
+  }
+}
+
+@keyframes osso-rule-hit-fade {
+  from {
+    --osso-hit-a: 1;
+  }
+  to {
+    --osso-hit-a: 0;
+  }
+}
+
+html.osso-on .osso-rule-hit {
+  --osso-hit-a: 1;
+  --osso-accent-rgb: 217 93 57;
+  background-image: linear-gradient(rgb(var(--osso-accent-rgb) / var(--osso-hit-a)), rgb(var(--osso-accent-rgb) / var(--osso-hit-a))) !important;
+  background-repeat: no-repeat !important;
+  background-position: 0 100% !important;
+  background-size: 100% 2px !important;
+  animation: osso-rule-hit-draw 240ms cubic-bezier(0.2, 0.7, 0.2, 1) both, osso-rule-hit-fade 1200ms ease-out 240ms both;
+}
+
+html.osso-on .osso-dark .osso-rule-hit {
+  --osso-accent-rgb: 232 114 79;
+}
+
+/* Hover chip: one element, reused, set by the renderer beside the line under the pointer, in the
+   nearer margin, like a note in the margin of a book (above the line only when there is no margin).
+   Paper and ink, the same card as the popup's chips, so it reads as Osso's and not the site's. */
 .osso-chip {
   position: fixed;
   left: 0;
   top: 0;
   z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   box-sizing: border-box;
   margin: 0;
-  padding: 3px 7px;
-  border: 0;
-  border-radius: 6px;
-  background: #161616;
-  color: #f2f0ea;
-  font: 11px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 4px 9px;
+  border: 1px solid rgba(22, 22, 22, 0.14);
+  border-radius: 999px;
+  background: #fbfaf7;
+  color: #161616;
+  font: 500 12px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
   text-transform: none;
   white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.06), 0 4px 14px rgba(22, 22, 22, 0.1);
   opacity: 0;
-  transform: translateY(2px) scale(0.98);
-  transition: opacity 120ms ease-out, transform 120ms ease-out;
+  transform: translate(var(--osso-chip-dx, 0), var(--osso-chip-dy, 0));
+  transition: opacity 140ms ease-out, transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
   pointer-events: none;
   user-select: none;
 }
 
-.osso-chip.osso-chip-show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
+/* It slides out of the text into the margin it sits in. */
+.osso-chip-left {
+  --osso-chip-dx: 5px;
 }
 
-/* On a dark block the chip flips so it still reads as a small card sitting on the page. */
-.osso-chip.osso-chip-light {
-  background: #f2f0ea;
-  color: #161616;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+.osso-chip-right {
+  --osso-chip-dx: -5px;
+}
+
+.osso-chip-above {
+  --osso-chip-dy: 3px;
+}
+
+/* The chip's children are set explicitly, so a site's own rules for span and i never reach them. */
+.osso-chip-label,
+.osso-chip-rule,
+.osso-chip-pin {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.osso-chip-rule,
+.osso-chip-pin {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* p(keep) as five dots lit from the left: what "worth keeping" looks like without a number. */
+.osso-chip-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+}
+
+.osso-chip-meter i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.22;
+  font-style: normal;
+}
+
+.osso-chip-meter i.osso-lit {
+  opacity: 1;
+}
+
+.osso-chip.osso-chip-show {
+  opacity: 1;
+  transform: none;
+}
+
+/* On a dark block the card is dark too, so it still reads as a card sitting on the page. */
+.osso-chip.osso-chip-on-dark {
+  border-color: rgba(242, 240, 234, 0.16);
+  background: #1e1e1e;
+  color: #f2f0ea;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+/* Animations off, or reduced motion: the underline still says what the rule caught, without moving. */
+html.osso-still .osso-rule-hit {
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -96,5 +218,8 @@ html.osso-still .osso-s {
   }
   .osso-chip {
     transition: none;
+  }
+  html.osso-on .osso-rule-hit {
+    animation: none;
   }
 }

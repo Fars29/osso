@@ -9,15 +9,26 @@
  * MV3 delivers a reply through `sendResponse` after the listener returns `true`; every handler
  * here is a promise, so the listener always returns true and answers when the promise settles.
  */
-import type { FromBackground, JudgeRequest, PageJudgment, Settings, TabState, ToBackground, ToContent } from "../shared/types.ts";
+import type {
+  FromBackground,
+  JudgeRequest,
+  PageJudgment,
+  RuleResults,
+  Settings,
+  TabState,
+  ToBackground,
+  ToContent,
+} from "../shared/types.ts";
+import { RECENT_REQUESTS } from "../shared/constants.ts";
 import { getPack } from "../packs/index.ts";
-import { ApiError, judgePage, testKey, type ApiErrorCode, type JudgeResult } from "./api.ts";
-import { clearCache, getCached, putCached } from "./cache.ts";
+import { ApiError, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeResult } from "./api.ts";
+import { clearCache, getCached, mergeRules, putCached } from "./cache.ts";
 import {
   addStats,
   getSettings,
   getStats,
   isHostEnabled,
+  normalizeRules,
   onSettingsChanged,
   resetStats,
   setHostEnabled,
@@ -44,11 +55,33 @@ const KEY_PRESENT = "•";
  * clearing the cache, reading another tab's state) belongs to our own pages; only our content
  * script can reach this listener today, so this is depth, not a door being closed.
  */
-const PAGE_MAY_SEND = new Set<string>(["getSettings", "isHostEnabled", "judge", "tabState"]);
+const PAGE_MAY_SEND = new Set<string>(["getSettings", "isHostEnabled", "judge", "judgeRules", "tabState"]);
 
 const tabStates = new Map<number, TabState>();
 /** The quota warning is worth one line, not one per page. */
 let storageWarned = false;
+
+/**
+ * The last pages judged, by content hash, with the rule results known for each. A rule added
+ * from the popup is judged over the remembered sentences, so the page never resends its text;
+ * the rules here mirror what the cache holds (or will hold, once the page's record is written),
+ * so a rule the page already carries is answered without a request. Insertion order is the LRU
+ * order: a hash asked for again moves to the end.
+ */
+const recent = new Map<string, { req: JudgeRequest; rules: RuleResults }>();
+
+function remember(req: JudgeRequest): { req: JudgeRequest; rules: RuleResults } {
+  const known = recent.get(req.contentHash);
+  recent.delete(req.contentHash);
+  const entry = { req, rules: known?.rules ?? {} };
+  recent.set(req.contentHash, entry);
+  while (recent.size > RECENT_REQUESTS) {
+    const oldest = recent.keys().next().value;
+    if (oldest === undefined) break;
+    recent.delete(oldest);
+  }
+  return entry;
+}
 
 function isMessage(x: unknown): x is { type: string } {
   return typeof x === "object" && x !== null && typeof (x as { type?: unknown }).type === "string";
@@ -120,16 +153,21 @@ async function setBadge(tabId: number, state: TabState | null): Promise<void> {
  * are looked up and stored, since a partial keyed by its own hash would never be asked for again.
  * Only a complete judgment is stored: a page with a failed chunk is judged afresh next time
  * rather than served with a hole for as long as the cache remembers it.
+ *
+ * The request is remembered before anything is awaited, so a `judgeRules` the page sends in the
+ * same breath (it does, on load) finds it whatever the order the two settle in.
  */
 async function judge(req: JudgeRequest): Promise<FromBackground> {
+  const entry = remember(req);
   const settings = await getSettings();
   if (!settings.apiKey) return { type: "error", code: "no-key", error: "No API key" };
   const fullPage = req.sentences[0]?.id === 0;
   if (fullPage) {
     const hit = await getCached(req.contentHash);
     if (hit) {
+      entry.rules = { ...hit.rules, ...entry.rules };
       await addStats({ cacheHits: 1 }).catch(() => undefined);
-      return { type: "judgment", judgment: hit };
+      return { type: "judgment", judgment: { ...hit, rules: entry.rules } };
     }
   }
   let result: JudgeResult;
@@ -148,36 +186,95 @@ async function judge(req: JudgeRequest): Promise<FromBackground> {
     const first = chunkErrors[0]!;
     return { type: "error", code: relayCode(first.code), error: first.message };
   }
-  const stored: PageJudgment = judgment;
+  // Rules judged while the model was thinking (they run in parallel on first load) ride along.
+  const stored: PageJudgment = { ...judgment, rules: entry.rules };
   // The model has answered and the user has paid for it: a full cache or a failed counter write
-  // must not turn that into an error on the page.
-  try {
-    if (fullPage && stored.failedIds.length === 0) await putCached(req.contentHash, stored);
-    await addStats({
+  // must not turn that into an error on the page, and one refusal must not cost the other write.
+  if (fullPage && stored.failedIds.length === 0) await bestEffort(() => putCached(req.contentHash, stored));
+  await bestEffort(() =>
+    addStats({
       pagesJudged: fullPage ? 1 : 0,
       sentencesJudged: stored.sentences.length,
       inputTokens: stored.inputTokens,
       ms: fullPage ? stored.ms : 0,
-    });
-  } catch (err) {
-    if (!storageWarned) {
-      storageWarned = true;
-      console.warn("[osso] could not write to storage; the judgment was served but not cached", err);
-    }
-  }
+    }),
+  );
   return { type: "judgment", judgment: stored };
+}
+
+/**
+ * Judge rules over a page already judged. Rules the page's record already carries are answered
+ * from memory; only the rest go to the model, in one batched request. What comes back joins the
+ * remembered entry and, for a whole page with no failed chunk, the cache, so removing and
+ * re-adding a rule never costs a second request.
+ */
+async function judgeRulesFor(contentHash: string, asked: string[]): Promise<FromBackground> {
+  const entry = recent.get(contentHash);
+  if (!entry) return { type: "error", code: "unknown-page", error: "This page has not been judged yet" };
+  const rules = normalizeRules(asked);
+  const missing = rules.filter((r) => !Object.prototype.hasOwnProperty.call(entry.rules, r));
+  if (missing.length > 0) {
+    const settings = await getSettings();
+    if (!settings.apiKey) return { type: "error", code: "no-key", error: "No API key" };
+    let result;
+    try {
+      result = await judgeRules(entry.req, getPack(entry.req.packId), missing, {
+        apiKey: settings.apiKey,
+        maxSentencesPerRequest: settings.maxSentencesPerRequest,
+      });
+    } catch (err) {
+      const e = err instanceof ApiError ? err : new ApiError("server", err instanceof Error ? err.message : String(err));
+      if (e.code === "invalid-key") await setSettings({ apiKeyInvalid: true });
+      return { type: "error", code: relayCode(e.code), error: e.message };
+    }
+    if (result.failedIds.length === entry.req.sentences.length && result.chunkErrors.length > 0) {
+      const first = result.chunkErrors[0]!;
+      return { type: "error", code: relayCode(first.code), error: first.message };
+    }
+    Object.assign(entry.rules, result.rules);
+    // A partial answer serves this page view but is not remembered: the next load asks again.
+    const fullPage = entry.req.sentences[0]?.id === 0;
+    if (fullPage && result.failedIds.length === 0) await bestEffort(() => mergeRules(contentHash, result.rules));
+    await bestEffort(() => addStats({ inputTokens: result.inputTokens }));
+  }
+  const out: RuleResults = {};
+  for (const r of rules) {
+    const byId = entry.rules[r];
+    if (byId) out[r] = byId;
+  }
+  return { type: "ruleJudgment", contentHash, rules: out };
+}
+
+/** A storage write that may fail without consequence for the caller; the first failure is said once. */
+async function bestEffort(write: () => Promise<unknown>): Promise<void> {
+  try {
+    await write();
+  } catch (err) {
+    if (storageWarned) return;
+    storageWarned = true;
+    console.warn("[osso] could not write to storage; the judgment was served but not remembered", err);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Router
+
+function sameRules(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((r, i) => r === b[i]);
+}
 
 async function handle(msg: Inbound, sender: chrome.runtime.MessageSender): Promise<FromBackground> {
   if (fromPage(sender) && !PAGE_MAY_SEND.has(msg.type)) return { type: "error", error: "Not allowed from a page" };
   switch (msg.type) {
     case "getSettings":
       return { type: "settings", settings: settingsFor(sender, await getSettings()) };
-    case "setSettings":
-      return { type: "settings", settings: settingsFor(sender, await setSettings(msg.patch)) };
+    case "setSettings": {
+      const before = await getSettings();
+      const after = await setSettings(msg.patch);
+      // Rules are the one setting a page acts on at once, with a request; the rest ride the storage broadcast.
+      if (!sameRules(before.rules, after.rules)) void toAllTabs({ type: "rulesChanged", rules: after.rules });
+      return { type: "settings", settings: settingsFor(sender, after) };
+    }
     case "getStats":
       return { type: "stats", stats: await getStats() };
     case "resetStats":
@@ -191,6 +288,8 @@ async function handle(msg: Inbound, sender: chrome.runtime.MessageSender): Promi
     }
     case "judge":
       return judge(msg.req);
+    case "judgeRules":
+      return judgeRulesFor(msg.contentHash, Array.isArray(msg.rules) ? msg.rules : []);
     case "tabState": {
       const tabId = sender.tab?.id;
       if (tabId !== undefined) {
@@ -224,15 +323,17 @@ chrome.runtime.onMessage.addListener((msg: unknown, sender, sendResponse: (reply
 // ---------------------------------------------------------------------------------------------
 // Settings broadcast, tabs, command, install
 
-/** Every change to settings, whoever made it, reaches every page; tabs without a content script simply reject. */
+/** Every tab gets the message; tabs without a content script simply reject, and that is fine. */
+async function toAllTabs(msg: ToContent): Promise<void> {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(
+    tabs.map((tab) => (tab.id === undefined ? undefined : chrome.tabs.sendMessage(tab.id, msg).catch(() => undefined))),
+  );
+}
+
+/** Every change to settings, whoever made it, reaches every page, key redacted. */
 onSettingsChanged((settings) => {
-  void (async () => {
-    const msg: ToContent = { type: "settingsChanged", settings: forTab(settings) };
-    const tabs = await chrome.tabs.query({});
-    await Promise.all(
-      tabs.map((tab) => (tab.id === undefined ? undefined : chrome.tabs.sendMessage(tab.id, msg).catch(() => undefined))),
-    );
-  })();
+  void toAllTabs({ type: "settingsChanged", settings: forTab(settings) });
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
