@@ -165,11 +165,11 @@ describe("settings and the key", () => {
     for (const msg of refused) expect(await send(msg, PAGE), msg.type).toMatchObject({ type: "error", error: "Not allowed from a page" });
     // None of them did anything: no probe went out, the deny list is as it was, the tab state is still there.
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(await send({ type: "isHostEnabled", host: "github.com" }, PAGE)).toEqual({ type: "hostEnabled", enabled: false });
+    expect(await send({ type: "isHostEnabled", host: "github.com" }, PAGE)).toMatchObject({ type: "hostEnabled", enabled: false });
     expect(await send({ type: "getTabState", tabId: 7 }, POPUP)).toMatchObject({ state: { status: "done" } });
     // What a page may send still answers.
     expect(await send({ type: "getSettings" }, PAGE)).toMatchObject({ type: "settings" });
-    expect(await send({ type: "isHostEnabled", host: "example.com" }, PAGE)).toEqual({ type: "hostEnabled", enabled: true });
+    expect(await send({ type: "isHostEnabled", host: "example.com" }, PAGE)).toMatchObject({ type: "hostEnabled", enabled: true });
     expect(await send({ type: "tabState", state: state({ kept: 3 }) }, PAGE)).toEqual({ type: "ok" });
     expect((await send({ type: "judge", req: request(sents(12)) }, PAGE)).type).toBe("judgment");
   });
@@ -184,11 +184,11 @@ describe("settings and the key", () => {
   });
 
   it("answers isHostEnabled and setHostEnabled from the merged deny list", async () => {
-    expect(await send({ type: "isHostEnabled", host: "github.com" })).toEqual({ type: "hostEnabled", enabled: false });
-    expect(await send({ type: "isHostEnabled", host: "example.com" })).toEqual({ type: "hostEnabled", enabled: true });
-    expect(await send({ type: "setHostEnabled", host: "github.com", enabled: true })).toEqual({ type: "hostEnabled", enabled: true });
-    expect(await send({ type: "isHostEnabled", host: "gist.github.com" })).toEqual({ type: "hostEnabled", enabled: true });
-    expect(await send({ type: "setHostEnabled", host: "example.com", enabled: false })).toEqual({ type: "hostEnabled", enabled: false });
+    expect(await send({ type: "isHostEnabled", host: "github.com" })).toMatchObject({ type: "hostEnabled", enabled: false });
+    expect(await send({ type: "isHostEnabled", host: "example.com" })).toMatchObject({ type: "hostEnabled", enabled: true });
+    expect(await send({ type: "setHostEnabled", host: "github.com", enabled: true })).toMatchObject({ type: "hostEnabled", enabled: true });
+    expect(await send({ type: "isHostEnabled", host: "gist.github.com" })).toMatchObject({ type: "hostEnabled", enabled: true });
+    expect(await send({ type: "setHostEnabled", host: "example.com", enabled: false })).toMatchObject({ type: "hostEnabled", enabled: false });
   });
 
   it("serves stats, resets them, clears the cache, and names an unknown message", async () => {
@@ -357,13 +357,13 @@ describe("command and install", () => {
     onCommand("toggle-site");
     await flush();
     await flush();
-    expect(await send({ type: "isHostEnabled", host: "example.com" })).toEqual({ type: "hostEnabled", enabled: false });
+    expect(await send({ type: "isHostEnabled", host: "example.com" })).toMatchObject({ type: "hostEnabled", enabled: false });
     expect(asMock(mock().tabs.sendMessage)).toHaveBeenCalledWith(1, { type: "setEnabledHere", enabled: false });
 
     onCommand("toggle-site");
     await flush();
     await flush();
-    expect(await send({ type: "isHostEnabled", host: "example.com" })).toEqual({ type: "hostEnabled", enabled: true });
+    expect(await send({ type: "isHostEnabled", host: "example.com" })).toMatchObject({ type: "hostEnabled", enabled: true });
     expect(asMock(mock().tabs.sendMessage)).toHaveBeenLastCalledWith(1, { type: "setEnabledHere", enabled: true });
 
     // Each toggle also broadcasts settingsChanged; only the toggles themselves are counted here.
@@ -374,18 +374,36 @@ describe("command and install", () => {
     expect(toggles()).toHaveLength(2);
   });
 
-  it("writes the settings record on install and opens the options page only when there is no key", async () => {
+  it("writes the settings record on install and opens the welcome only when there is no key", async () => {
     onInstalled({ reason: "install" });
     await flush();
     await flush();
-    expect(mock().__store.get(SETTINGS_KEY)).toMatchObject({ apiKey: "", threshold: DEFAULT_SETTINGS.threshold });
-    expect(asMock(mock().runtime.openOptionsPage)).toHaveBeenCalledTimes(1);
+    expect(mock().__store.get(SETTINGS_KEY)).toMatchObject({ apiKey: "", threshold: DEFAULT_SETTINGS.threshold, mode: "auto" });
+    const created = asMock((mock().tabs as unknown as { create: unknown }).create);
+    expect(created).toHaveBeenCalledTimes(1);
+    expect(String((created.mock.calls[0]![0] as { url: string }).url)).toContain("welcome.html");
 
     await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
     onInstalled({ reason: "update" });
     await flush();
     await flush();
-    expect(asMock(mock().runtime.openOptionsPage)).toHaveBeenCalledTimes(1);
+    expect(created).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the reader's own list of sites where Osso reads without being asked", async () => {
+    expect(await send({ type: "setHostAlways", host: "www.Example.com", always: true })).toEqual({ type: "hostEnabled", enabled: true, always: true });
+    expect(await send({ type: "isHostEnabled", host: "example.com" })).toMatchObject({ always: true });
+    expect(await send({ type: "isHostEnabled", host: "other.org" })).toMatchObject({ enabled: true, always: false });
+    // A site Osso skips by default becomes readable by being put on the list, and goes back when taken off it.
+    expect(await send({ type: "setHostAlways", host: "github.com", always: true })).toEqual({ type: "hostEnabled", enabled: true, always: true });
+    expect(await send({ type: "setHostAlways", host: "github.com", always: false })).toEqual({ type: "hostEnabled", enabled: false, always: false });
+  });
+
+  it("takes a run mode of auto or click and nothing else", async () => {
+    await send({ type: "setSettings", patch: { mode: "click" } });
+    expect(mock().__store.get(SETTINGS_KEY)).toMatchObject({ mode: "click" });
+    await send({ type: "setSettings", patch: { mode: "sometimes" as never } });
+    expect(mock().__store.get(SETTINGS_KEY)).toMatchObject({ mode: "auto" });
   });
 });
 

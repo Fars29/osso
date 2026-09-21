@@ -329,6 +329,88 @@ try {
   rows.push({ page: "recipe.html (reload)", ...again, ms: firstFadeMs });
   console.log(`[osso e2e] time to first fade on reload: ${firstFadeMs} ms`);
 
+  const ctl = await context.newPage();
+  await ctl.goto(`chrome-extension://${launched.id}/options.html`);
+  await page.bringToFront();
+  // The popup, pointed at the fixture's tab the way Chrome points it at the tab it is opened on.
+  const stateOf = (host) =>
+    ctl.evaluate(async (host) => {
+      for (const t of await chrome.tabs.query({})) {
+        const r = await chrome.runtime.sendMessage({ type: "getTabState", tabId: t.id });
+        if (r?.state?.host === host) return r.state;
+      }
+      return null;
+    }, host);
+  const popupOn = async (needle, host = FIXTURE_HOST) => {
+    // Without the tabs permission a tab has no url here: the fixture's tab is the one whose content script answers for the fixture host.
+    const id = await ctl.evaluate(async (host) => {
+      for (const t of await chrome.tabs.query({})) {
+        const r = await chrome.runtime.sendMessage({ type: "getTabState", tabId: t.id });
+        if (r?.state?.host === host) return t.id;
+      }
+      return null;
+    }, host);
+    const tab = id === null ? null : { id, url: page.url() };
+    assert(tab, `no tab for ${needle}`);
+    const popup = await context.newPage();
+    await popup.addInitScript((tab) => {
+      const query = chrome.tabs.query.bind(chrome.tabs);
+      chrome.tabs.query = (q) => (q && q.active ? Promise.resolve([tab]) : query(q));
+    }, tab);
+    await popup.goto(`chrome-extension://${launched.id}/popup.html`);
+    return popup;
+  };
+  const untouched = () => page.evaluate(() => document.querySelectorAll(".osso-s").length === 0 && !document.documentElement.classList.contains("osso-on"));
+
+  // A page whose address is somebody's account: nothing is read and nothing is sent; the popup says
+  // why, and reads it once when the reader says so.
+  await page.goto(`${server.url}/account/orders.html`);
+  await sleep(2500);
+  const heldBack = await fixtureTabState(ctl);
+  assert(heldBack?.status === "held" && heldBack.reason === "private-path:account", `account: expected Osso to hold back, got ${JSON.stringify(heldBack)}`);
+  assert(await untouched(), "account: a held page was wrapped");
+  let popup = await popupOn("/account/orders.html");
+  await popup.getByText("Osso held back here").waitFor({ timeout: 5000 });
+  await popup.screenshot({ path: join(shots, "popup-held.png") });
+  await popup.getByRole("button", { name: "Read this page once" }).click();
+  await page.bringToFront();
+  await waitJudged(page);
+  const account = await page.evaluate(countSentences);
+  rows.push({ page: "account/orders.html (asked)", ...account, ms: 0 });
+  assert(account.total >= 8, `account: asked for, the page should have been read, got ${JSON.stringify(account)}`);
+  await popup.close();
+
+  // Run mode "click": a page is left alone until the reader opens Osso on it, and opening it is the
+  // asking. The fixtures' host cannot show this (the e2e has to put 127.0.0.1 on the "always" list to
+  // run there at all, and "always" sites are read as they load), so it is shown on a host nobody listed.
+  await ctl.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { mode: "click" } }));
+  await page.goto("https://example.com/", { waitUntil: "domcontentloaded" });
+  await sleep(2000);
+  const ready = await stateOf("example.com");
+  assert(ready?.status === "ready", `click mode: expected the page to wait, got ${JSON.stringify(ready)}`);
+  assert(await untouched(), "click mode: the page was touched before anyone asked");
+  popup = await popupOn("example.com", "example.com");
+  // Asked, Osso looks at the page: this one is too short to strip, and saying so is the proof it looked.
+  let looked = null;
+  for (let i = 0; i < 40 && (!looked || looked.status === "ready" || looked.status === "idle"); i++) {
+    await sleep(150);
+    looked = await stateOf("example.com");
+  }
+  assert(looked?.status === "skipped" && looked.reason === "too little text", `click mode: opening the popup should have started Osso, got ${JSON.stringify(looked)}`);
+  await popup.close();
+  await ctl.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { mode: "auto" } }));
+
+  // And on a site the reader marked "always", click mode reads as the page loads.
+  await ctl.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { mode: "click" } }));
+  await page.goto(`${server.url}/tos.html`);
+  await waitJudged(page);
+  const always = await page.evaluate(countSentences);
+  rows.push({ page: "tos.html (click mode, always)", ...always, ms: 0 });
+  assert(always.faded >= 2, `click mode: a site on the always list should be read as it loads, got ${JSON.stringify(always)}`);
+  await ctl.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { mode: "auto" } }));
+  await ctl.close();
+  console.log("[osso e2e] held back on /account/, read when asked; click mode waited for the popup");
+
   await page.close();
 } catch (err) {
   exitCode = 1;

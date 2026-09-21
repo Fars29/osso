@@ -50,6 +50,7 @@ export function installChromeMock() {
     tabs: {
       query: vi.fn(async () => [{ id: 1, url: "https://example.com/", active: true }]),
       sendMessage: vi.fn(async () => undefined),
+      create: vi.fn(async () => ({ id: 2 })),
       onRemoved: { addListener: vi.fn() },
       onUpdated: { addListener: vi.fn() },
     },

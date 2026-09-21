@@ -33,7 +33,7 @@ Just the bone. Strikes the filler out of every page you read and leaves what you
 > Osso is free and open source, and it runs on your own TypeSafe key (typesafe.ai). TypeSafe bills usage to your account: a typical page costs about $0.001, a page you have already read costs nothing. Osso does nothing until you have saved a key.
 >
 > WHAT IS SENT, AND WHERE
-> To judge a page, Osso sends its title, its language and its main text to api.typesafe.ai over HTTPS, with your key. Never the page's address. Never a page that shows a password or card field. Nothing is sent to the developer or to anyone else; there is no account, no server and no analytics. Off by default on mail, documents, chat, code hosting, search, video and social sites, and one switch turns it off on any site.
+> To judge a page, Osso sends its title, its language and its main text to api.typesafe.ai over HTTPS, with your key. Never the page's address. Never a page that shows a password or card field; on pages that look like the inside of an account it holds back and asks first; a sentence with an IBAN or a card number is never sent. At install you choose whether Osso reads every page as it loads or only when you click its icon. Nothing is sent to the developer or to anyone else; there is no account, no server and no analytics. Off by default on mail, documents, chat, code hosting, search, video and social sites, and one switch turns it off on any site.
 >
 > Source code and privacy statement: https://github.com/Fars29/osso
 >
@@ -72,7 +72,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 
 ## Test instructions (for the reviewer)
 
-> 1. After install, the Options page opens. Paste this key in "TypeSafe API key", press Test, then Save: `<the reviewers' key>`
+> 1. After install, a welcome page opens. Paste this key and press "Save key" (it is tested first): `<the reviewers' key>`. Leave "Every page, as it loads" selected.
 > 2. Open any long article, recipe or terms-of-service page (for example a Wikipedia article). Within a second or two the filler sentences turn grey and are struck through.
 > 3. Hold Shift to see everything in ink again; click the toolbar icon for the counts, the strictness slider and the per-site switch.
 > The key is a limited one made for this review.
@@ -84,7 +84,8 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 | Single purpose, minimum functionality | One narrow purpose; works on any page of prose. |
 | Privacy policy | `PRIVACY.md`, linked in the dashboard and from Options → About. Names the one party data is shared with (TypeSafe). |
 | Limited Use | Page text goes only to TypeSafe and only to provide the feature. No ads, no brokers, no analytics, no human reads it on our side: we never receive it. |
-| Web browsing activity | Used only for the user-facing feature, which is described in the listing and in the UI (Options → Key says what is sent, next to the Save button). Nothing is sent before the user saves a key. |
+| Web browsing activity | Used only for the user-facing feature, which is described in the listing and in the UI: the welcome page says what is sent next to the Save button, and asks the user to choose between reading every page and reading only on a click. Nothing is sent before the user saves a key; in click mode nothing is sent before the user opens Osso on that page. |
+| Sensitive pages | Never on a page showing a password, card or one-time-code field. Held back, with the reason shown and a one-time override, on pages that look like an account area (path segment, personal-details form, noindex with a sign-out link, several validated account numbers). Sentences carrying a validated IBAN or card number, a tax code or an SSN are never transmitted. |
 | Secure handling | HTTPS only; the key lives in `chrome.storage.local` and only the background worker reads it; the script inside pages never sees it. |
 | Narrowest permissions | `storage`, `activeTab`, one API host. No `tabs`, no `scripting`, no `<all_urls>` host permission, no `unlimitedStorage`. |
 | Remotely hosted code, obfuscation | None. Minified by esbuild; source public. |

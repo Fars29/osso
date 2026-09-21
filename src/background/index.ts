@@ -27,7 +27,7 @@ import {
   addStats,
   getSettings,
   getStats,
-  isHostEnabled,
+  isHostAlways, isHostEnabled, setHostAlways,
   normalizeRules,
   onSettingsChanged,
   resetStats,
@@ -288,11 +288,17 @@ async function handle(msg: Inbound, sender: chrome.runtime.MessageSender): Promi
     case "resetStats":
       await resetStats();
       return { type: "ok" };
-    case "isHostEnabled":
-      return { type: "hostEnabled", enabled: isHostEnabled(msg.host, await getSettings()) };
+    case "isHostEnabled": {
+      const settings = await getSettings();
+      return { type: "hostEnabled", enabled: isHostEnabled(msg.host, settings), always: isHostAlways(msg.host, settings) };
+    }
     case "setHostEnabled": {
       const settings = await setHostEnabled(msg.host, msg.enabled);
-      return { type: "hostEnabled", enabled: isHostEnabled(msg.host, settings) };
+      return { type: "hostEnabled", enabled: isHostEnabled(msg.host, settings), always: isHostAlways(msg.host, settings) };
+    }
+    case "setHostAlways": {
+      const settings = await setHostAlways(msg.host, msg.always === true);
+      return { type: "hostEnabled", enabled: isHostEnabled(msg.host, settings), always: isHostAlways(msg.host, settings) };
     }
     case "judge":
       return judge(msg.req, sender.tab?.id);
@@ -374,6 +380,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   void (async () => {
     // Writing the validated settings back makes sure the record exists with every field.
     const settings = await setSettings({});
-    if (details.reason === "install" && !settings.apiKey) await chrome.runtime.openOptionsPage();
+    // The welcome asks for the key and, with it, for the one decision that is the reader's alone: every page, or only when asked.
+    if (details.reason === "install" && !settings.apiKey) await chrome.tabs.create({ url: chrome.runtime.getURL("welcome.html") });
   })();
 });

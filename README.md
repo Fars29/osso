@@ -26,7 +26,7 @@ Chrome, Edge or Brave. Two minutes, no store listing yet.
 
 1. Download the [latest release](https://github.com/Fars29/osso/releases/latest) zip and unpack it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the folder.
-3. Osso opens its Options page: paste your [TypeSafe key](https://typesafe.ai), press **Test**, then **Save**.
+3. Osso opens a welcome page: paste your [TypeSafe key](https://typesafe.ai), then choose when it should read a page: **every page as it loads**, or **only when you click its icon**.
 
 That's it. Open any article.
 
@@ -34,7 +34,7 @@ That's it. Open any article.
 
 ## Using it
 
-Osso is always on. There is nothing to press.
+If you chose *every page*, there is nothing to press: pages arrive already stripped. If you chose *only when I click*, open Osso on a page and it starts; its switch then reads *Always on this site*, for the sites you trust.
 
 | | |
 |---|---|
@@ -48,6 +48,8 @@ Osso is always on. There is nothing to press.
 ![The popup after a page is judged](docs/screenshots/popup-done.png)
 
 Osso stays out of the way where the page is your workspace rather than someone's writing (mail, docs, chat, code, search, video, social feeds), and it leaves reviews and comments alone: there, the opinion is the point.
+
+**Private pages.** Osso never reads a page that shows a password or card field. On a page that looks like the inside of an account (its address, a form asking for your details, a page hidden from search engines with a sign-out link) it holds back, tells you why, and reads it only if you say so. It decides by how a page is made, never by what it talks about: an article about banks is an article. And a sentence that carries an IBAN, a card number or a tax code is never sent, on any page.
 
 ![A rule bringing the sponsor's discount code back to ink](docs/screenshots/page-rule.png)
 

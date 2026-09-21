@@ -81,7 +81,7 @@ function scriptBackground(patch: Partial<Script> = {}) {
       case "getSettings":
         return { type: "settings", settings: script.settings } satisfies FromBackground;
       case "isHostEnabled":
-        return { type: "hostEnabled", enabled: script.hostEnabled } satisfies FromBackground;
+        return { type: "hostEnabled", enabled: script.hostEnabled, always: false } satisfies FromBackground;
       case "judge":
         judged.push(msg.req);
         return script.judge(msg.req);
@@ -611,5 +611,69 @@ describe("rules", () => {
     tell({ type: "setEnabledHere", enabled: false });
     expect(last()?.ruleHits).toEqual({});
     expect(document.querySelectorAll(".osso-rule-hit")).toHaveLength(0);
+  });
+});
+
+describe("when Osso reads a page: the reader's choice, and the page's privacy", () => {
+  it("in run mode click it reads nothing and sends nothing until the reader asks on that page", async () => {
+    scriptBackground({ settings: { ...withKey, mode: "click" } });
+    await boot();
+    await untilStatus("ready");
+    expect(judged).toHaveLength(0);
+    expect(spans()).toHaveLength(0);
+    tell({ type: "run" });
+    await untilDone();
+    expect(judged).toHaveLength(1);
+    expect(on()).toBe(true);
+  });
+
+  it("holds back on a page whose address is a private area, says why, and reads it once if asked", async () => {
+    history.replaceState({}, "", "/my-account/orders");
+    await boot();
+    await untilStatus("held");
+    expect(last()?.reason).toBe("private-path:my-account");
+    expect(judged).toHaveLength(0);
+    expect(spans()).toHaveLength(0);
+    tell({ type: "run" });
+    await untilDone();
+    expect(judged).toHaveLength(1);
+  });
+
+  it("never reads a page that shows a password field, asked or not", async () => {
+    await boot();
+    await untilDone();
+    tell({ type: "setEnabledHere", enabled: false });
+    judged.length = 0;
+    document.body.insertAdjacentHTML("beforeend", `<form><input type="password" name="pw"></form>`);
+    tell({ type: "setEnabledHere", enabled: true });
+    await untilStatus("skipped");
+    expect(last()?.reason).toBe("sign-in or payment page");
+    tell({ type: "run" });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(judged).toHaveLength(0);
+    expect(spans()).toHaveLength(0);
+  });
+
+  it("never sends a sentence that carries an account number, and treats a page full of them as a statement", async () => {
+    await boot();
+    await untilDone();
+    tell({ type: "setEnabledHere", enabled: false });
+    judged.length = 0;
+    const main = document.querySelector("article, main") ?? document.body;
+    main.insertAdjacentHTML("beforeend", `<p id="iban">Please send the deposit for the cooking class to IT60 X054 2811 1010 0000 0123 456 before Friday.</p>`);
+    tell({ type: "setEnabledHere", enabled: true });
+    await untilDone();
+    expect(judged).toHaveLength(1);
+    expect(judged[0]!.sentences.some((s) => /IT60/.test(s.text))).toBe(false);
+    expect(judged[0]!.sentences.length).toBeGreaterThan(8);
+
+    tell({ type: "setEnabledHere", enabled: false });
+    judged.length = 0;
+    main.insertAdjacentHTML("beforeend", `<p>Second instalment goes to DE89 3704 0044 0532 0130 00 by the end of the month.</p><p>The card on file for the class is 4111 1111 1111 1111, charged on the first.</p>`);
+    tell({ type: "setEnabledHere", enabled: true });
+    await untilStatus("held");
+    expect(last()?.reason).toBe("account-numbers");
+    expect(judged).toHaveLength(0);
+    expect(spans()).toHaveLength(0);
   });
 });

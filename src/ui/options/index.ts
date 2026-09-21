@@ -5,7 +5,7 @@
  * the defaults and says so once, quietly.
  */
 import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
-import type { FromBackground, RevealKey, Settings, Stats, ToBackground } from "../../shared/types.ts";
+import type { FromBackground, RevealKey, RunMode, Settings, Stats, ToBackground } from "../../shared/types.ts";
 import { getSettings, getStats, patchSettings, sendToBackground } from "../messaging.ts";
 import { SETTINGS_KEY } from "../../background/settings.ts";
 import { ruleField, ruleList } from "../rules.ts";
@@ -38,6 +38,7 @@ const ui = {
   threshold: el<HTMLInputElement>("threshold"),
   thresholdValue: el<HTMLOutputElement>("threshold-value"),
   revealKey: el<HTMLElement>("reveal-key"),
+  mode: el<HTMLElement>("mode"),
   animations: el<HTMLInputElement>("animations"),
   strike: el<HTMLInputElement>("strike"),
   rule: el<HTMLInputElement>("rule"),
@@ -144,6 +145,7 @@ function renderSettings() {
   ui.threshold.value = String(settings.threshold);
   renderThreshold();
   for (const radio of ui.revealKey.querySelectorAll<HTMLInputElement>("input[type=radio]")) radio.checked = radio.value === settings.revealKey;
+  for (const radio of ui.mode.querySelectorAll<HTMLInputElement>("input[type=radio]")) radio.checked = radio.value === settings.mode;
   ui.animations.checked = settings.animations;
   ui.strike.checked = settings.strike;
   ui.denied.value = settings.deniedHosts.join("\n");
@@ -286,6 +288,10 @@ function wire() {
   ui.enabled.addEventListener("change", () => void save({ enabled: ui.enabled.checked }, ui.behaviourSaved));
   ui.threshold.addEventListener("input", renderThreshold);
   ui.threshold.addEventListener("change", () => void save({ threshold: Number(ui.threshold.value) }, ui.behaviourSaved));
+  ui.mode.addEventListener("change", () => {
+    const chosen = ui.mode.querySelector<HTMLInputElement>("input[type=radio]:checked");
+    if (chosen) void save({ mode: chosen.value as RunMode }, ui.behaviourSaved);
+  });
   ui.revealKey.addEventListener("change", () => {
     const chosen = ui.revealKey.querySelector<HTMLInputElement>("input[type=radio]:checked");
     if (chosen) void save({ revealKey: chosen.value as RevealKey }, ui.behaviourSaved);

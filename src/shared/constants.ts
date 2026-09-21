@@ -58,6 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
   enabled: true,
   threshold: DEFAULT_THRESHOLD,
   revealKey: "Shift",
+  mode: "auto",
   animations: true,
   strike: true,
   deniedHosts: [],

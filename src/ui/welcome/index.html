@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome to Osso</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <link rel="stylesheet" href="./welcome.css" />
+  </head>
+  <body>
+    <main class="welcome" id="welcome" data-step="1">
+      <header class="hello">
+        <h1 class="wordmark">osso</h1>
+        <p class="motto">Just the bone.</p>
+        <p class="lede">
+          Most of what you read online is <span class="struck" id="demo">filler</span>. Osso strikes it out, on every
+          page, and leaves what you came for. Two choices, and you are done.
+        </p>
+      </header>
+
+      <ol class="steps">
+        <li class="step" id="step-key" data-n="1">
+          <h2>Your TypeSafe key</h2>
+          <p class="muted">
+            Osso asks a model, Jev, about every sentence of a page. It runs on a key of your own: no account with us, no
+            server of ours. <a href="https://typesafe.ai" target="_blank" rel="noopener">Get a key at typesafe.ai</a>
+          </p>
+          <div class="keyrow">
+            <input id="apiKey" type="password" placeholder="Paste your key" autocomplete="off" spellcheck="false" aria-label="TypeSafe API key" />
+            <button class="btn btn-primary" id="saveKey" type="button">Save key</button>
+          </div>
+          <p class="feedback" id="key-feedback" aria-live="polite"></p>
+          <p class="privacy muted">
+            Saving a key turns Osso on. When it reads a page, what leaves this machine is the page's title, its language
+            and its main text, sent to api.typesafe.ai only, over your key. Never the page's address. The key stays in this
+            browser.
+          </p>
+        </li>
+
+        <li class="step" id="step-mode" data-n="2">
+          <h2>When should Osso read a page?</h2>
+          <div class="choices" id="mode" role="radiogroup" aria-label="When Osso reads a page">
+            <label class="choice">
+              <input type="radio" name="mode" value="auto" checked />
+              <span class="choice-title">Every page, as it loads <em class="tag">recommended</em></span>
+              <span class="choice-sub muted">Pages arrive already stripped. About $0.001 a page on your key; a page you have read before is free.</span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="mode" value="click" />
+              <span class="choice-title">Only when I click</span>
+              <span class="choice-sub muted">Nothing is read or sent until you open Osso on a page. From there you can mark a site <em>always</em>.</span>
+            </label>
+          </div>
+          <ul class="never muted">
+            <li><strong>Never</strong> on a page that shows a password or a card field.</li>
+            <li><strong>Asks first</strong> on a page that looks like the inside of an account: by how it is made, never by what it talks about. An article about banks is an article.</li>
+            <li><strong>Off</strong> on mail, documents, chat, code, search, video and social sites. <a href="#" id="edit-sites">Edit the list</a></li>
+          </ul>
+        </li>
+
+        <li class="step" id="step-go" data-n="3">
+          <h2>Read something</h2>
+          <ul class="tips">
+            <li><kbd>Shift</kbd> <span>Hold it and everything comes back to ink.</span></li>
+            <li><kbd>click</kbd> <span>A struck sentence, to pin it back. Hover it to see why it went.</span></li>
+            <li><kbd>keep …</kbd> <span>In the popup, type what you always want kept: <em>prices</em>, <em>deadlines</em>, <em>allergens</em>.</span></li>
+          </ul>
+          <div class="actions">
+            <a class="btn btn-primary" id="try" href="https://en.wikipedia.org/wiki/Sourdough" target="_blank" rel="noopener">Try it on an article</a>
+            <a class="btn" id="settings" href="#">All settings</a>
+          </div>
+        </li>
+      </ol>
+    </main>
+    <script type="module" src="./welcome.js"></script>
+  </body>
+</html>

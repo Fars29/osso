@@ -9,6 +9,16 @@
 
 Everything Osso says to the model is in English, whatever the language of the page.
 
+## When it reads, and when it holds back
+
+The reader chooses at the welcome: every page as it loads, or only a page they open Osso on (`mode`, `auto` or `click`). Before anything is segmented, `content/privacy.ts` looks at how the page is made:
+
+- a visible password, card or one-time-code field: **never** read, asked or not;
+- a private area in the address (whole path segments: `/account`, `/checkout`, `/settings`…), a form with three or more personal-detail fields, or `noindex` together with a sign-out link: **held back**; the popup says why and offers to read the page once;
+- after segmentation, a sentence carrying an IBAN or card number that passes its checksum (mod-97, Luhn), an Italian tax code or a US SSN is **never sent**; three or more make the page a statement, and it is held back.
+
+None of these looks at what the page talks about. An article on banking says "bank", "password" and "checkout" and trips none of them (`test/privacy.test.ts` holds that line).
+
 ## The question, verbatim
 
 > Consider this sentence from the page: «S». Does this sentence itself carry practical content the reader came to this page for?

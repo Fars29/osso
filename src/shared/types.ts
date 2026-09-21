@@ -79,6 +79,12 @@ export interface JudgeRequest {
 
 export type RevealKey = "Shift" | "Alt" | "Control";
 
+/**
+ * When Osso reads a page: `auto` on every page it is allowed on, as it loads; `click` only when the
+ * reader opens the popup on that page, or on the sites they marked "always". Chosen at the welcome.
+ */
+export type RunMode = "auto" | "click";
+
 export interface Settings {
   apiKey: string;
   /** Set by the background after a 401; cleared when the key changes. */
@@ -87,6 +93,7 @@ export interface Settings {
   /** Sentences with p(keep) below this are faded. 0.2–0.9. */
   threshold: number;
   revealKey: RevealKey;
+  mode: RunMode;
   animations: boolean;
   /** A hairline through what is faded, as well as the grey. */
   strike: boolean;
@@ -110,7 +117,11 @@ export interface Stats {
   cacheHits: number;
 }
 
-export type TabStatus = "idle" | "judging" | "done" | "skipped" | "error" | "no-key" | "disabled";
+/**
+ * `ready`: nothing read and nothing sent, waiting for the reader to ask (run mode `click`).
+ * `held`: the page looks private (see content/privacy.ts); nothing sent unless the reader says so.
+ */
+export type TabStatus = "idle" | "judging" | "done" | "skipped" | "error" | "no-key" | "disabled" | "ready" | "held";
 
 /** What the popup shows. Produced by the content script, held by the background per tab id. */
 export interface TabState {
@@ -129,6 +140,8 @@ export interface TabState {
   revealed: boolean;
   /** Rule text → number of sentences it keeps on this page. A rule missing here has not been judged yet. */
   ruleHits: Record<string, number>;
+  /** The reader marked this site "always": in run mode `click` it is read as it loads. */
+  always?: boolean;
   /** The page is longer than MAX_SENTENCES_PER_PAGE: only its beginning was judged, the rest is left in ink. */
   capped?: boolean;
 }
@@ -140,6 +153,7 @@ export type ToBackground =
   | { type: "getStats" }
   | { type: "isHostEnabled"; host: string }
   | { type: "setHostEnabled"; host: string; enabled: boolean }
+  | { type: "setHostAlways"; host: string; always: boolean }
   | { type: "judge"; req: JudgeRequest }
   /** Judge only these rules on the page last judged with this hash; the background still has its sentences. */
   | { type: "judgeRules"; contentHash: string; rules: string[] }
@@ -151,7 +165,7 @@ export type ToBackground =
 export type FromBackground =
   | { type: "settings"; settings: Settings }
   | { type: "stats"; stats: Stats }
-  | { type: "hostEnabled"; enabled: boolean }
+  | { type: "hostEnabled"; enabled: boolean; always: boolean }
   | { type: "judgment"; judgment: PageJudgment }
   | { type: "ruleJudgment"; contentHash: string; rules: RuleResults }
   | { type: "tabState"; state: TabState | null }
@@ -169,6 +183,8 @@ export type ToContent =
   | { type: "rulesChanged"; rules: string[] }
   /** One chunk of a judge request the page is waiting on, as soon as the model answers it: the page paints it at once. */
   | { type: "judgmentChunk"; contentHash: string; sentences: SentenceJudgment[]; failedIds: number[] }
+  /** The reader asked for this page: read it now, whatever the run mode, unless it is a page Osso never reads. */
+  | { type: "run" }
   | { type: "getTabState" };
 
 export type FromContent = { type: "tabState"; state: TabState } | { type: "ok" };

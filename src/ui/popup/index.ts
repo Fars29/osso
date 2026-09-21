@@ -9,7 +9,7 @@ import type { Settings, TabState } from "../../shared/types.ts";
 import { getSettings, getTabStateFromBackground, getTabStateFromTab, patchSettings, sendToBackground, sendToTab } from "../messaging.ts";
 import { ruleField, ruleList, type RuleCount } from "../rules.ts";
 
-type View = "loading" | "cannot" | "no-key" | "invalid-key" | "disabled" | "off" | "skipped" | "error" | "judging" | "idle" | "done";
+type View = "loading" | "cannot" | "no-key" | "invalid-key" | "disabled" | "off" | "skipped" | "error" | "judging" | "idle" | "done" | "ready" | "held";
 
 const POLL_MS = 500;
 /** An "idle" tab may never start judging (content script waiting on a page that never settles); stop asking after this. */
@@ -20,7 +20,16 @@ const RULE_POLL_LIMIT = 60;
 const SKIP_REASONS: Record<string, string> = {
   "too little text": `Fewer than ${MIN_SENTENCES} sentences of body text.`,
   "looks like an app": "This page is an app, not something to read.",
+  "sign-in or payment page": "It shows a password or card field. Osso never reads these.",
 };
+/** Why Osso held back on a page that looks private (content/privacy.ts): how the page is made, never what it is about. */
+function heldReason(reason: string | undefined): string {
+  if (reason?.startsWith("private-path:")) return `Its address is a private area (/${reason.slice("private-path:".length)}). Nothing was sent.`;
+  if (reason === "personal-form") return "It asks for your personal details. Nothing was sent.";
+  if (reason === "signed-in") return "It looks like the inside of an account. Nothing was sent.";
+  if (reason === "account-numbers") return "It lists account numbers, like a statement. Nothing was sent.";
+  return "It looks private. Nothing was sent.";
+}
 /** Views with nothing for a rule to count: the field still works (rules are global), the chips show no number. */
 const NO_RULES_VIEWS: readonly View[] = ["loading", "cannot", "no-key", "invalid-key"];
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -49,6 +58,7 @@ const ui = {
   noteAction: el<HTMLButtonElement>("note-action"),
   controls: el<HTMLElement>("controls"),
   site: el<HTMLInputElement>("site"),
+  siteLabel: el<HTMLElement>("site-label"),
   threshold: el<HTMLInputElement>("threshold"),
   reveal: el<HTMLButtonElement>("reveal"),
   hint: el<HTMLSpanElement>("hint"),
@@ -173,8 +183,10 @@ function renderRules(view: View) {
   }
 }
 
-function note(title: string, sub = "", action?: { label: string; primary?: boolean; onClick: () => void }, soft = false) {
+function note(title: string, sub = "", action?: { label: string; primary?: boolean; onClick: () => void }, soft = false, wrap = false) {
   ui.noteTitle.textContent = title;
+  // A reason the reader has to be able to read whole (why Osso held back) runs onto a second line; the rest stay on one.
+  ui.noteSub.classList.toggle("wrap", wrap);
   ui.noteTitle.classList.toggle("soft", soft);
   ui.noteSub.textContent = sub;
   ui.noteSub.hidden = sub === "";
@@ -206,7 +218,10 @@ function render() {
   const s = model.state;
   const settings = model.settings;
   renderChip(s);
-  ui.site.checked = !(s?.status === "disabled") && settings.enabled;
+  // In run mode "click" the switch says where Osso reads without being asked; otherwise, where it reads at all.
+  const click = settings.mode === "click";
+  ui.siteLabel.textContent = click ? "Always on this site" : "On this site";
+  ui.site.checked = click ? s?.always === true && s.status !== "disabled" && settings.enabled : !(s?.status === "disabled") && settings.enabled;
   // With Osso off everywhere the site switch would only snap back; the note offers the switch that matters.
   ui.site.disabled = !settings.enabled;
   ui.reveal.textContent = model.revealed ? "Fade again" : "Reveal all";
@@ -242,7 +257,16 @@ function render() {
       return;
     case "skipped":
       show("skipped");
-      note("Nothing to strip here", SKIP_REASONS[s.reason ?? ""] ?? s.reason ?? "", undefined, true);
+      note("Nothing to strip here", SKIP_REASONS[s.reason ?? ""] ?? s.reason ?? "", undefined, true, true);
+      return;
+    case "ready":
+      // The reader opened the popup on this page: that is the asking. It starts at once (see init).
+      show("ready");
+      note("Reading this page…", "", undefined, true);
+      return;
+    case "held":
+      show("held");
+      note("Osso held back here", heldReason(s.reason), { label: "Read this page once", onClick: () => void runHere() }, false, true);
       return;
     case "error":
       show("error");
@@ -309,6 +333,7 @@ function rulesPending(): boolean {
 function wantsPolling(): boolean {
   const st = model.state?.status;
   if (st === "judging") return true;
+  if (st === "ready") return model.idlePolls++ < IDLE_POLL_LIMIT;
   if (st === "idle") return model.idlePolls++ < IDLE_POLL_LIMIT;
   if (rulesPending()) return model.rulePolls++ < RULE_POLL_LIMIT;
   return false;
@@ -340,6 +365,14 @@ function stopPolling() {
 
 function openOptions() {
   void chrome.runtime.openOptionsPage();
+}
+
+/** The reader asks for this page. Nothing else starts a page in run mode "click", or one Osso held back on. */
+async function runHere() {
+  if (model.tabId === null) return;
+  await sendToTab(model.tabId, { type: "run" }).catch(() => null);
+  model.idlePolls = 0;
+  await refresh();
 }
 
 async function retry() {
@@ -390,6 +423,14 @@ function setSliderFill() {
 }
 
 async function onSiteToggle() {
+  if (model.settings.mode === "click") {
+    const always = ui.site.checked;
+    if (model.host) await sendToBackground({ type: "setHostAlways", host: model.host, always }).catch(() => null);
+    if (model.state) model.state = { ...model.state, always };
+    if (always) await runHere();
+    else render();
+    return;
+  }
   const enabled = ui.site.checked;
   if (model.state && !enabled) {
     // Optimistic: the switch answers before the page does.
@@ -472,6 +513,7 @@ async function main() {
   setSliderFill();
 
   await refresh();
+  if (model.state?.status === "ready") await runHere();
 }
 
 void main();

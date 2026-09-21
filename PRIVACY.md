@@ -26,9 +26,18 @@ Stored with `chrome.storage.local`, on this device only:
 
 Removing the extension removes all of it.
 
+## When Osso reads a page
+
+You choose, at the welcome and any time in Options: **every page as it loads**, or **only when you open Osso on a page**. In the second mode nothing is read and nothing is sent until you ask, except on the sites you put on the *always* list yourself.
+
 ## Where Osso does not run
 
-By default it stays off on mail, documents, chat, code hosting, search, video and social sites (the list is in Options → Sites), on any page that is showing a password or card-number field (a sign-in, an account, a checkout), on pages that look like an app rather than something to read, and everywhere until you have saved a key. The switch in the popup turns it off for any site.
+- **Never**, asked or not, on a page that is showing a password, card-number or one-time-code field (a sign-in, a checkout).
+- **Not without asking** on a page that looks like the inside of an account: a private area in its address (`/account`, `/checkout`, `/settings`…, whole path segments only), a form asking for several personal details, or a page hidden from search engines that has a way to sign out. Osso holds back, the popup says why, and the page is read once only if you press the button. These signs are about how the page is made, never about its subject: an article about banking is read like any article.
+- **Never a sentence that carries an account number**: an IBAN or card number that passes its checksum, an Italian tax code, a US social security number. Such a sentence is left out of what is sent, on every page; a page with three or more is treated as a statement and held back.
+- **Off by default** on mail, documents, chat, code hosting, search, video and social sites (the list is in Options → Sites), on pages that look like an app rather than something to read, and everywhere until you have saved a key. The switch in the popup turns it off for any site.
+
+No check of this kind is perfect. If a page matters, turn Osso off on that site.
 
 ## Permissions
 

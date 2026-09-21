@@ -65,6 +65,15 @@
           </div>
 
           <div class="row">
+            <span class="row-label" id="mode-label">Read pages<small class="muted">As they load, or only when you open Osso on a page. Sites under <em>Always on these sites</em> are read either way.</small></span>
+            <div class="segmented segmented-2" id="mode" role="radiogroup" aria-labelledby="mode-label">
+              <i class="segmented-thumb" aria-hidden="true"></i>
+              <label><input type="radio" name="mode" value="auto" /><span>Automatically</span></label>
+              <label><input type="radio" name="mode" value="click" /><span>When I click</span></label>
+            </div>
+          </div>
+
+          <div class="row">
             <span class="row-label" id="reveal-key-label">Reveal key<small class="muted">Hold it to read everything; release to fade again.</small></span>
             <div class="segmented" id="reveal-key" role="radiogroup" aria-labelledby="reveal-key-label">
               <i class="segmented-thumb" aria-hidden="true"></i>

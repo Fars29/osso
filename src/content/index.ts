@@ -35,7 +35,8 @@ import {
   setThreshold,
   type Counts,
 } from "./render.ts";
-import { isAppLikePage, isPrivatePage, segmentNewBlocks, segmentPage, textLength, unwrapAll, unwrapBlock } from "./segment.ts";
+import { isAppLikePage, segmentNewBlocks, segmentPage, textLength, unwrapAll, unwrapBlock } from "./segment.ts";
+import { ACCOUNT_NUMBERS_FOR_A_STATEMENT, assessPrivacy, carriesAccountNumber } from "./privacy.ts";
 
 /** What the popup says for each failure the background can report. */
 const REASONS: Record<string, string> = {
@@ -195,7 +196,12 @@ function interactions(s: Settings): () => void {
 // ---------------------------------------------------------------------------------------------
 // The flow
 
-async function start(): Promise<void> {
+/**
+ * `asked`: the reader opened the popup on this page and wants it read now. That is what lifts the
+ * two things Osso otherwise waits for: run mode `click`, and a page that looks private (`ask`).
+ * It lifts nothing else: a page showing a password or a card field is never read.
+ */
+async function start(asked = false): Promise<void> {
   if (mounted || starting) return;
   const gen = ++generation;
   const live = () => gen === generation;
@@ -217,13 +223,27 @@ async function start(): Promise<void> {
       report({ status: "disabled" }, "Off on this site");
       return;
     }
+    state = { ...state, always: allowed.always };
     if (!settings.apiKey) {
       report({ status: "no-key" });
       return;
     }
-    if (isPrivatePage(document)) {
-      report({ status: "skipped" }, "sign-in or payment page");
+    const privacy = assessPrivacy(document, location);
+    if (privacy?.level === "never") {
+      report({ status: "skipped" }, privacy.reason);
       return;
+    }
+    if (!asked) {
+      // Nothing is read and nothing is sent until the reader asks: by their choice of run mode, or
+      // because the page looks like theirs rather than the world's.
+      if (privacy?.level === "ask") {
+        report({ status: "held" }, privacy.reason);
+        return;
+      }
+      if (settings.mode === "click" && !allowed.always) {
+        report({ status: "ready" });
+        return;
+      }
     }
     if (isAppLikePage(document)) {
       report({ status: "skipped" }, "looks like an app");
@@ -235,11 +255,19 @@ async function start(): Promise<void> {
       report({ status: "skipped" }, TOO_LITTLE_TEXT);
       return;
     }
+    // A sentence that carries an account number is never sent, on any page; a page with several is
+    // a statement, and is the reader's to offer.
+    const sendable = seg.sentences.filter((s) => !carriesAccountNumber(s.text));
+    if (!asked && seg.sentences.length - sendable.length >= ACCOUNT_NUMBERS_FOR_A_STATEMENT) {
+      wrapped(() => unwrapAll(document));
+      report({ status: "held" }, "account-numbers");
+      return;
+    }
     const packId = route(seg.meta);
     // A page longer than the cap: what was wrapped is its beginning, and the popup says so.
     const capped = seg.sentences.length >= MAX_SENTENCES_PER_PAGE;
-    report({ status: "judging", packId, pageKind: null, total: seg.sentences.length, kept: 0, faded: 0, ruleHits: {}, capped });
-    const req: JudgeRequest = { meta: seg.meta, packId, contentHash: seg.contentHash, sentences: seg.sentences };
+    report({ status: "judging", packId, pageKind: null, total: sendable.length, kept: 0, faded: 0, ruleHits: {}, capped });
+    const req: JudgeRequest = { meta: seg.meta, packId, contentHash: seg.contentHash, sentences: sendable };
     // Chunks of this request are painted as they land (see onChunk); anything else is ignored.
     inflight = { contentHash: req.contentHash, gen, packId };
     // Rules go out beside the keep question, not after it, so they never hold the settle up; the
@@ -575,7 +603,7 @@ async function onSettled(): Promise<void> {
       return segmentNewBlocks(document, m.container, m.nextId);
     });
     m.nextId += added.length;
-    pending.push(...added);
+    pending.push(...added.filter((s) => !carriesAccountNumber(s.text)));
     if (pending.length === 0 || mutationRequests >= MAX_MUTATION_REQUESTS) {
       // Nothing to ask, or nothing more we will ask on this view: the counts the popup shows may still have moved.
       pending = [];
@@ -703,6 +731,12 @@ function onMessage(msg: ToContent): FromContent {
         }
       } else {
         stop("Off on this site");
+      }
+      return { type: "tabState", state };
+    case "run":
+      if (!mounted && !starting) {
+        growthRetries = 0;
+        void start(true);
       }
       return { type: "tabState", state };
     case "rulesChanged":

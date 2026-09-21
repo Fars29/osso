@@ -181,7 +181,10 @@ textarea {
 .segmented {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(48px, 1fr));
+  /* As many equal columns as there are options, each as wide as the longest label; the row must not squeeze it. */
+  flex: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(48px, 1fr);
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
@@ -195,12 +198,16 @@ textarea {
   top: 3px;
   bottom: 3px;
   left: 3px;
-  width: calc((100% - 6px) / 3);
+  width: calc((100% - 6px) / var(--n, 3));
   border-radius: 6px;
   background: var(--paper);
   box-shadow: var(--shadow-chip);
   transform: translateX(calc(var(--at, 0) * 100%));
   transition: transform var(--t-settle);
+}
+
+.segmented-2 {
+  --n: 2;
 }
 
 .segmented:has(label:nth-of-type(2) input:checked) {
@@ -212,9 +219,10 @@ textarea {
 }
 
 .segmented label {
-  padding: 6px 8px;
+  padding: 6px 10px;
   border-radius: 6px;
   color: var(--muted);
+  white-space: nowrap;
   font-size: 13px;
   line-height: 1.4;
   text-align: center;

@@ -1,0 +1,360 @@
+/*
+ * The welcome: the key, the one decision that is the reader's alone (every page, or only when
+ * asked), and what to do next. Paper, ink and the grey of the fade, like the rest of Osso; a step
+ * comes forward when the one before it is done.
+ */
+
+body {
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.welcome {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 72px 24px 96px;
+}
+
+.hello {
+  margin-bottom: 44px;
+  animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.hello .wordmark {
+  font-size: 34px;
+}
+
+.motto {
+  margin: 6px 0 22px;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 19px;
+}
+
+.lede {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.45;
+}
+
+/* The product, in one word: the pen crosses it and the ink drains behind the pen. */
+@property --pen {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
+.struck {
+  color: transparent;
+  background-image: linear-gradient(var(--grey), var(--grey)), linear-gradient(90deg, var(--grey) calc(var(--pen) * 1.1 - 10%), var(--ink) calc(var(--pen) * 1.1));
+  background-repeat: no-repeat;
+  background-position: 0 58%, 0 0;
+  background-size: var(--pen) 1.5px, 100% 100%;
+  -webkit-background-clip: border-box, text;
+  background-clip: border-box, text;
+  animation: pen 900ms cubic-bezier(0.65, 0, 0.35, 1) 1100ms both;
+}
+
+@keyframes pen {
+  to {
+    --pen: 100%;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ---- steps -------------------------------------------------------------- */
+
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.step {
+  position: relative;
+  padding: 28px 0 30px 52px;
+  border-top: 1px solid var(--line);
+  counter-increment: step;
+  transition: opacity 500ms ease, filter 500ms ease;
+  animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.step:nth-child(1) { animation-delay: 120ms; }
+.step:nth-child(2) { animation-delay: 200ms; }
+.step:nth-child(3) { animation-delay: 280ms; }
+
+.step::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 27px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 15px;
+  transition: background var(--t-settle), color var(--t-settle), border-color var(--t-settle);
+}
+
+/* A step that is done wears ink; the ones not reached yet wait, dimmed and out of reach. */
+.step.done::before {
+  content: "✓";
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.step.waiting {
+  opacity: 0.38;
+  filter: saturate(0);
+  pointer-events: none;
+  user-select: none;
+}
+
+.step h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+}
+
+.step p {
+  margin: 0 0 14px;
+}
+
+.step a:not(.btn) {
+  color: inherit;
+  text-decoration-color: var(--grey);
+  text-underline-offset: 3px;
+}
+
+.step a:not(.btn):hover {
+  text-decoration-color: var(--ink);
+}
+
+/* ---- key ---------------------------------------------------------------- */
+
+.keyrow {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+
+.keyrow input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  transition: border-color var(--t);
+}
+
+.keyrow input:hover {
+  border-color: var(--ink-3);
+}
+
+.keyrow input:focus {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.keyrow .btn {
+  min-height: 40px;
+  padding-inline: 18px;
+}
+
+.feedback {
+  min-height: 1.5em;
+  margin: 0 0 10px !important;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.feedback.ok {
+  color: var(--ink);
+}
+
+.feedback.bad {
+  color: var(--accent);
+}
+
+.privacy {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ---- the choice --------------------------------------------------------- */
+
+.choices {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 18px;
+}
+
+.choice {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px 14px 46px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: border-color var(--t), background var(--t), box-shadow var(--t-settle), transform var(--t-settle);
+}
+
+.choice:hover {
+  border-color: var(--ink-3);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--ink-2);
+  box-shadow: var(--shadow-chip);
+}
+
+.choice:has(input:focus-visible) {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The radio, drawn: a ring that fills with ink. */
+.choice::before,
+.choice::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 17px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.choice::before {
+  border: 1px solid var(--grey);
+  transition: border-color var(--t);
+}
+
+.choice::after {
+  background: var(--ink);
+  transform: scale(0);
+  transition: transform var(--t-settle);
+}
+
+.choice:has(input:checked)::before {
+  border-color: var(--ink);
+}
+
+.choice:has(input:checked)::after {
+  transform: scale(0.5);
+}
+
+.choice-title {
+  font-weight: 600;
+}
+
+.tag {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.choice-sub {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.never {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.never strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---- go ----------------------------------------------------------------- */
+
+.tips {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.tips li {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.tips kbd {
+  justify-self: start;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--ink-2);
+  font: 500 12px/1.5 var(--font-ui);
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions .btn {
+  min-height: 40px;
+  padding-inline: 18px;
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hello,
+  .step,
+  .struck {
+    animation: none;
+  }
+  .struck {
+    --pen: 100%;
+  }
+}

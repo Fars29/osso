@@ -91,6 +91,7 @@ export function validate(raw: unknown): Settings {
         : clamp(finiteOr(r.threshold, d.threshold), THRESHOLD_MIN, THRESHOLD_MAX),
     thresholdRev: d.thresholdRev,
     revealKey: REVEAL_KEYS.includes(r.revealKey as RevealKey) ? (r.revealKey as RevealKey) : d.revealKey,
+    mode: r.mode === "click" || r.mode === "auto" ? r.mode : d.mode,
     animations: boolOr(r.animations, d.animations),
     strike: boolOr(r.strike, d.strike),
     deniedHosts: hostList(r.deniedHosts),
@@ -144,6 +145,25 @@ export function isHostEnabled(host: string, settings: Settings): boolean {
   if (!h) return false;
   if (matchesRule(h, settings.allowedHosts)) return true;
   return !matchesRule(h, settings.deniedHosts) && !matchesRule(h, DEFAULT_DENIED_HOSTS);
+}
+
+/** The reader put this site on "Always on these sites" themselves. */
+export function isHostAlways(host: string, settings: Settings): boolean {
+  const h = normalizeHost(host);
+  return !!h && matchesRule(h, settings.allowedHosts);
+}
+
+/** Puts a site on the reader's "always" list, or takes it off; the list that in run mode `click` says where Osso reads as the page loads. */
+export function setHostAlways(host: string, always: boolean): Promise<Settings> {
+  const h = normalizeHost(host);
+  return serialized(async () => {
+    const current = await getSettings();
+    if (!h) return current;
+    const rest = current.allowedHosts.filter((x) => x !== h);
+    const next = validate({ ...current, allowedHosts: always ? [...rest, h] : rest, deniedHosts: always ? current.deniedHosts.filter((x) => x !== h) : current.deniedHosts });
+    await chrome.storage.local.set({ [SETTINGS_KEY]: next });
+    return next;
+  });
 }
 
 /**

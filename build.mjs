@@ -23,6 +23,7 @@ const contexts = await Promise.all([
   esbuild.context({ ...common, entryPoints: ["src/background/index.ts"], outfile: `${out}/background.js`, format: "esm" }),
   esbuild.context({ ...common, entryPoints: ["src/ui/popup/index.ts"], outfile: `${out}/popup.js`, format: "esm" }),
   esbuild.context({ ...common, entryPoints: ["src/ui/options/index.ts"], outfile: `${out}/options.js`, format: "esm" }),
+  esbuild.context({ ...common, entryPoints: ["src/ui/welcome/index.ts"], outfile: `${out}/welcome.js`, format: "esm" }),
 ]);
 
 function copyStatic() {
@@ -33,6 +34,8 @@ function copyStatic() {
   cpSync("src/ui/popup/popup.css", `${out}/popup.css`);
   cpSync("src/ui/options/index.html", `${out}/options.html`);
   cpSync("src/ui/options/options.css", `${out}/options.css`);
+  cpSync("src/ui/welcome/index.html", `${out}/welcome.html`);
+  cpSync("src/ui/welcome/welcome.css", `${out}/welcome.css`);
   if (existsSync("icons")) cpSync("icons", `${out}/icons`, { recursive: true });
 }
 
