@@ -1,0 +1,35 @@
+# Every push and pull request: types, tests, a build, and the zip it would ship, kept for two weeks
+# so any commit can be loaded unpacked and tried. Never calls the API: no key is needed here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/sync-version.mjs --check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osso-${{ github.sha }}
+          path: release/*.zip
+          retention-days: 14

@@ -1,97 +1,78 @@
 # Osso
 
-**Solo l'osso.** Just the bones.
+**Just the bone.**
 
-Every page you open arrives with its filler faded to grey and struck through with a hairline, and its substance left in the author's own words. Nothing is hidden, nothing is rewritten, nothing is summarised: the story is still there, in grey, right above the recipe, in ink.
+![Osso striking the filler out of a recipe, a company statement and a terms page](docs/demo.gif)
 
-![A recipe page with the story faded and the recipe in ink](docs/screenshots/page-faded.png)
+Most of what you read online is filler. Osso is a browser extension that strikes it out, on every page, as you read, and leaves what you came for.
 
-How it looks:
+- The life story fades; **the recipe stays**.
+- "We value your trust" fades; **"prices go up 20% on Monday" stays**.
+- Forty paragraphs of legalese fade; **"renews automatically, no refunds" stays**.
 
-- Hold **Shift** to peek at everything; let go and the grey comes back.
-- The slider in the popup sets how strict it is, from gentle to bare.
-- Type a rule like *prices* and every sentence about prices comes back to ink, on every page.
+Nothing is hidden, rewritten or summarised. The filler is still there, greyed and struck through, in the author's own words. Hold **Shift** and it all comes back.
+
+## Why
+
+Everything we read every day is padded: the story before the recipe, the apology before the price rise, the thanks, the teasers, the "as always, we're here for you". I only ever wanted the part that matters.
+
+[Jev](https://docs.typesafe.ai) made that possible. Jev is a model by TypeSafe that does not chat: you ask it a question and it answers with a judgment, a yes or a no with a probability. It is fast and cheap enough to ask about *every single sentence* of a page: **"is this what the reader came for?"** Thirty sentences come back in about half a second, a whole article in a second or two, for about a tenth of a cent.
+
+So Osso asks, sentence by sentence, and strikes out the rest. Read what matters. Skip the rest.
 
 ## Install
 
-Chrome, Edge or Brave. There is no store listing yet.
+Chrome, Edge or Brave. Two minutes, no store listing yet.
 
-1. Download a release zip and unpack it, or clone this repo and run `npm install && npm run build`.
-2. Open `chrome://extensions`.
-3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and pick the `dist/` folder.
+1. Download the latest release zip and unpack it.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the folder.
+3. Osso opens its Options page: paste your [TypeSafe key](https://typesafe.ai), press **Test**, then **Save**.
 
-Firefox: the manifest carries a `gecko` id for Firefox 128+, but it is untested there and the background worker may need to become an event page.
+That's it. Open any article.
 
-## Your key
-
-Osso asks a model, [Jev](https://docs.typesafe.ai) by TypeSafe, one question per sentence, with your own key. Get one at [typesafe.ai](https://typesafe.ai). Osso opens its Options page on first install; paste the key there, press **Test**, then **Save**.
-
-What leaves your machine, and only to `api.typesafe.ai`: the page title, its language, a page-kind hint and the main text of the page, never the URL. Cost is small: the ten pages of the [calibration run](docs/calibration.md) cost $0.0024 together, and a page you have already read is served from the cache. The key is stored in this browser only; the script that runs inside pages never sees it.
+**Your key, your data.** Osso is free and open source, and runs on your own key, so there is no account, no server and no tracking. The page's title and main text go to `api.typesafe.ai` and nowhere else; never the URL. The key stays in your browser. A typical page costs about $0.001, and a page you have already read is free.
 
 ## Using it
 
-Click the icon. The popup shows how many sentences were kept, the page kind, and the controls.
+Osso is always on. There is nothing to press.
+
+| | |
+|---|---|
+| **Hold Shift** | Everything comes back to ink. Let go and it fades again. |
+| **Hover** a struck sentence | One word says why: *story*, *promo*, *opinion*, *filler*, *aside*. |
+| **Click** a struck sentence | Pins it back for this visit. |
+| **The slider** in the popup | How strict, from gentle to bare. Instant, no new request. |
+| **Rules** in the popup | Type what you always want to keep, in your own words (*prices*, *deadlines*, *allergens*) and those sentences stay in ink on every page. |
+| **On this site** | Turns Osso off for a site. **Alt+Shift+O** does the same. |
 
 ![The popup after a page is judged](docs/screenshots/popup-done.png)
 
-**Rules.** The field at the top of the popup is the one place you talk to the model. Type what you always want to keep, in your own words (*prices*, *deadlines*, *allergens*, *what I have to do*), press Enter, and the sentences it catches come back to ink with a brief underline. The chip shows how many it kept on this page; `×` removes it instantly. Rules apply on every page, up to 8.
+Osso stays out of the way where the page is your workspace rather than someone's writing (mail, docs, chat, code, search, video, social feeds), and it leaves reviews and comments alone: there, the opinion is the point.
 
-![A rule bringing the sponsor sentence back to ink](docs/screenshots/page-rule.png)
-
-**Per site.** The **On this site** switch in the popup turns Osso off for the current host; the keyboard shortcut **Alt+Shift+O** does the same. Osso is off by default where the page is your workspace rather than someone's writing: mail, docs, chat, code hosting, search, video and social feeds (the list is in Options under Sites). To use it there anyway, flip the switch on that site or add the host to *Always on these sites*.
-
-**Hover** a grey sentence to see why it is grey, in one word (story, promo, opinion, or *aside* for a fact that is beside the point). **Click** a grey sentence to pin it back for this visit.
-
-![The options page](docs/screenshots/options.png)
+![A rule bringing the sponsor's discount code back to ink](docs/screenshots/page-rule.png)
 
 ## How it decides
 
-1. The main text of the page is split into sentences. Structure is never touched: headings (including the ones written as a bold paragraph), tables, code, navigation, forms, captions, bibliographies, the question that heads an FAQ answer, a sentence that introduces a list, and the bold label that opens a list item ("**Milk:** …").
-2. Sentences go to the model in batches of about 30, in parallel, with their own text as context.
-3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
-4. Each batch is painted the moment it comes back: a soft front of light comes down the page and the text is washed as it passes; a hairline draws itself through each sentence that goes. Further down, nothing happens behind your back: a sentence waits in ink until you scroll to it, and goes grey in front of you. Reviews and comments under a page are left alone: there the opinion is the content. Sentences below the slider are faded: a colour and a line, so nothing moves and links still work. The line can be switched off in Options.
-5. Probabilities are cached per page, so the slider and rule removal re-render instantly with no request.
-6. Pages that change under you (infinite scroll, client-side navigation) are watched; only new sentences are judged.
+The page's main text is split into sentences; headings, lists' labels, tables, code and navigation are never touched. Each sentence goes to Jev with its neighbours as context, and comes back with the probability that it carries what the reader came for. Below the slider, it fades. Each batch is painted the moment it arrives, and what is further down waits until you scroll to it, so you see it go.
 
-The question, verbatim:
-
-> Consider this sentence from the page: «S». Does this sentence itself carry practical content the reader came to this page for?
->
-> **true:** Yes: the sentence states a fact, figure, date, quantity, ingredient, step, condition, cost, obligation, decision or warning that the reader needs, even if the page says it again elsewhere.
-> **false:** No: the sentence is a story, memory, opinion, greeting, thanks, reassurance, navigation hint or promotion; a reader looking for the practical content would skip it.
-
-On 99 hand-labelled sentences from ten pages in English and Italian, this question separates substance from filler with an AUC of 0.998 (mean p(keep) 0.94 for substance, 0.12 for filler), and a batch of 15–29 sentences answers in 610–1330 ms. Full numbers, per-page table and the redundancy trap in [docs/calibration.md](docs/calibration.md); the design in [docs/design/](docs/design/).
+On 99 hand-labelled sentences in English and Italian the question separates substance from filler with an AUC of 0.998. The question itself, the numbers and what we learned on real pages: [how it works](docs/how-it-works.md) · [calibration](docs/calibration.md).
 
 ## Honest limits
 
-- It is a judgment, not a guarantee. The model will sometimes grey a sentence you needed. Grey text is still there, still readable and selectable; hold Shift when it matters.
-- Pages built from `div`s or unusual markup, and pages with fewer than 8 sentences of main text, may be skipped. The popup says why.
-- It never runs in editors, mail, chat, code hosting and social feeds by default, and never on a page until you have saved a key.
-- The requests are made with your key; the cost is yours. The popup keeps a running total in Options under Usage.
+- It is a judgment, not a guarantee. Sometimes it will strike a sentence you needed. It is still there and still readable: hold Shift when it matters.
+- Pages with very little text, or built from unusual markup, may be skipped. The popup says why.
+- The requests are made with your key, so the cost is yours. Options keeps a running total.
+- Firefox is untested.
 
 ## Development
 
-Node 20 or newer. TypeScript strict, no frameworks, no runtime dependencies: vanilla DOM and `fetch`. The key for the live scripts goes in `.env` as `TYPESAFE_API_KEY`.
+```
+npm install
+npm run build     # → dist/
+npm test          # unit tests, never call the API
+```
 
-| command | what it does |
-|---|---|
-| `npm run build` | esbuild → `dist/` |
-| `npm run dev` | build and watch |
-| `npm test` | vitest, jsdom, mocked `chrome.*`; never calls the API |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run calibrate` | the probe behind `docs/calibration.md`; live API, about a quarter of a cent |
-| `npm run e2e` | Playwright loads `dist/` into Chromium against the live API; screenshots in `e2e/screenshots/` |
-| `node --env-file=.env e2e/screens.mjs --docs` | every screen as a picture; `--docs` refreshes `docs/screenshots/` |
-| `node --env-file=.env e2e/review.mjs <url…> [--kept]` | what Osso did to a real page, sentence by sentence: p(keep), kind, grey or ink; the tool for judging the judgments |
-| `node --env-file=.env e2e/dump.mjs <url…>` then `npm run context` | what should the model see beside the sentence? Replays real pages with different states and prints every decision that changes |
-| `node --env-file=.env e2e/sites.mjs [url…]` | Osso on real pages: what it did on each and why (the tool for "it does nothing on site X") |
-| `npm run icons` | `icons/icon.svg` → the PNG sizes |
-| `npm run zip` | `dist/` → `release/osso-<version>.zip` |
-
-Layout: `src/shared/` (types and constants, the contracts), `src/content/` (segment, render, orchestrator: runs inside the page), `src/background/` (settings, cache, api: the only code that holds the key), `src/packs/` (page kinds), `src/ui/` (popup and options), `test/`, `e2e/`, `scripts/`.
-
-Page kinds live in `src/packs/`, one file each (recipe, article, paper, legal, corporate, product, docs, social). A pack is an id, a `stateHint` sent to the model, optional one-sentence hints appended to the keep criteria, and a `match(meta)` score computed from JSON-LD, URL, `og:type`, title and a text sample. To add one: copy `recipe.ts`, add the id to `PageKind` in `src/shared/types.ts` and its label in `PAGE_KINDS`, and add the pack to `PACKS` in `src/packs/index.ts`. Routing only tunes wording; a wrong pack still gets a good answer.
+TypeScript, no frameworks, no runtime dependencies. Everything else (the live end-to-end run, the tools for judging the judgments on real pages, how to add a page kind, how releases are cut) is in [docs/development.md](docs/development.md).
 
 ## License
 

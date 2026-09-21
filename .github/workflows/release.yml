@@ -1,0 +1,34 @@
+# A tag like v0.2.0 makes a GitHub release with the zip attached and notes written from the commits
+# since the last one. Cut one with:  npm version patch   then   git push --follow-tags
+# The tag has to say what package.json and the manifest say, and the tests have to pass, or nothing
+# is published.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/sync-version.mjs --check --tag "${{ github.ref_name }}"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run zip
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release/*.zip --title "Osso ${{ github.ref_name }}" --generate-notes

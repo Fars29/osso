@@ -11,7 +11,7 @@
     <main class="page">
       <header class="masthead">
         <h1 class="wordmark">osso</h1>
-        <p class="tagline muted">Solo l'osso. Every page arrives with its filler faded and its substance left in the author's own ink.</p>
+        <p class="tagline muted">Just the bone. Every page arrives with its filler faded and its substance left in the author's own ink.</p>
         <p class="notice muted" id="notice" hidden></p>
       </header>
 
@@ -62,14 +62,15 @@
             </div>
           </div>
 
-          <label class="row">
-            <span class="row-label">Reveal key<small class="muted">Hold it to read everything; release to fade again.</small></span>
-            <select id="reveal-key">
-              <option value="Shift">Shift</option>
-              <option value="Alt">Alt</option>
-              <option value="Control">Control</option>
-            </select>
-          </label>
+          <div class="row">
+            <span class="row-label" id="reveal-key-label">Reveal key<small class="muted">Hold it to read everything; release to fade again.</small></span>
+            <div class="segmented" id="reveal-key" role="radiogroup" aria-labelledby="reveal-key-label">
+              <i class="segmented-thumb" aria-hidden="true"></i>
+              <label><input type="radio" name="reveal-key" value="Shift" /><span>Shift</span></label>
+              <label><input type="radio" name="reveal-key" value="Alt" /><span>Alt</span></label>
+              <label><input type="radio" name="reveal-key" value="Control" /><span>Ctrl</span></label>
+            </div>
+          </div>
 
           <label class="row">
             <span class="row-label">Strike through<small class="muted">A hairline through what is faded, as well as the grey.</small></span>
@@ -134,7 +135,7 @@
       <section class="block" id="s-about">
         <h2>About</h2>
         <div class="body about muted">
-          <p>Osso 0.1.0 · GPL-3.0 · <em>Solo l'osso.</em></p>
+          <p>Osso 0.1.0 · GPL-3.0 · <em>Just the bone.</em></p>
           <p><a href="https://github.com/osso-extension/osso" target="_blank" rel="noopener">GitHub</a></p>
         </div>
       </section>

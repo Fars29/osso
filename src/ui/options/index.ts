@@ -37,7 +37,7 @@ const ui = {
   enabled: el<HTMLInputElement>("enabled"),
   threshold: el<HTMLInputElement>("threshold"),
   thresholdValue: el<HTMLOutputElement>("threshold-value"),
-  revealKey: el<HTMLSelectElement>("reveal-key"),
+  revealKey: el<HTMLElement>("reveal-key"),
   animations: el<HTMLInputElement>("animations"),
   strike: el<HTMLInputElement>("strike"),
   rule: el<HTMLInputElement>("rule"),
@@ -143,7 +143,7 @@ function renderSettings() {
   ui.enabled.checked = settings.enabled;
   ui.threshold.value = String(settings.threshold);
   renderThreshold();
-  ui.revealKey.value = settings.revealKey;
+  for (const radio of ui.revealKey.querySelectorAll<HTMLInputElement>("input[type=radio]")) radio.checked = radio.value === settings.revealKey;
   ui.animations.checked = settings.animations;
   ui.strike.checked = settings.strike;
   ui.denied.value = settings.deniedHosts.join("\n");
@@ -286,7 +286,10 @@ function wire() {
   ui.enabled.addEventListener("change", () => void save({ enabled: ui.enabled.checked }, ui.behaviourSaved));
   ui.threshold.addEventListener("input", renderThreshold);
   ui.threshold.addEventListener("change", () => void save({ threshold: Number(ui.threshold.value) }, ui.behaviourSaved));
-  ui.revealKey.addEventListener("change", () => void save({ revealKey: ui.revealKey.value as RevealKey }, ui.behaviourSaved));
+  ui.revealKey.addEventListener("change", () => {
+    const chosen = ui.revealKey.querySelector<HTMLInputElement>("input[type=radio]:checked");
+    if (chosen) void save({ revealKey: chosen.value as RevealKey }, ui.behaviourSaved);
+  });
   ui.animations.addEventListener("change", () => void save({ animations: ui.animations.checked }, ui.behaviourSaved));
   ui.strike.addEventListener("change", () => void save({ strike: ui.strike.checked }, ui.behaviourSaved));
 

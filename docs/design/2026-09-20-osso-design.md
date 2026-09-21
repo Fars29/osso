@@ -6,7 +6,7 @@
 
 A browser extension. Every page you open arrives with its filler faded to a quiet grey and its substance left in the author's own ink. It never hides anything, never rewrites a word, never summarises. It is always on; you hold a key to see everything again. Judgments come from Jev (TypeSafe's System One model) through the user's own API key. Open source, GPL-3.0.
 
-Tagline: **Solo l'osso.** ("Just the bones.")
+Tagline: **Just the bone.** (It was "Solo l'osso." until 2026-09-21; the product speaks English.)
 
 ## Evidence this works (probe, 2026-09-20, `scripts/calibrate.ts`; full results in `docs/calibration.md`)
 
