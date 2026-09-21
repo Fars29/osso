@@ -45,9 +45,6 @@ export const FRONT_SPEED_PX_PER_MS = 0.4;
 export const FRONT_MIN_MS = 900;
 export const FRONT_MAX_MS = 3200;
 export const SETTLE_MS = 700;
-/** How long the page's read-out stays once the judgment is complete. */
-const HUD_LINGER_MS = 2200;
-const HUD_COUNT_MS = 420;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
 /** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
@@ -57,10 +54,6 @@ const CHIP_DELAY_MS = 250;
 const CHIP_GAP_PX = 8;
 /** Colour glyphs, which a text-clipped gradient cannot paint. */
 const EMOJI = /\p{Extended_Pictographic}/u;
-const SVG_NS = "http://www.w3.org/2000/svg";
-/** The read-out's ring: radius and circumference of the 16 px progress circle. */
-const RING_R = 6.5;
-const RING_C = 2 * Math.PI * RING_R;
 
 /**
  * Contrast targets for the fade grey. The spec names `#b9b9b9` on white and `#5c5c5c` on near-black;
@@ -92,11 +85,6 @@ interface DocState {
   swept: HTMLElement[];
   /** Ids rendered at least once: only a sentence's first rendering gets the sweep. */
   painted: Set<number>;
-  /** The page's read-out while it is judged, the number it shows, and the timers that move and remove it. */
-  hud: HTMLElement | null;
-  hudShown: number;
-  hudRaf: number;
-  hudTimer: ReturnType<typeof setTimeout> | null;
   settleTimer: ReturnType<typeof setTimeout> | null;
   instantTimer: ReturnType<typeof setTimeout> | null;
   chip: HTMLElement | null;
@@ -125,10 +113,6 @@ function stateOf(doc: Document): DocState {
       waved: [],
       swept: [],
       painted: new Set(),
-      hud: null,
-      hudShown: 0,
-      hudRaf: 0,
-      hudTimer: null,
       settleTimer: null,
       instantTimer: null,
       chip: null,
@@ -472,100 +456,6 @@ export function applyJudgment(
   const counts = render(doc, state, wave);
   if (!wave && !state.settleTimer) root.classList.add("osso-settled");
   return counts;
-}
-
-/**
- * The page's own read-out while it is being judged: a small capsule, low and centred, with a ring
- * that fills as the chunks land and closes into a tick, the count of sentences answered for, then
- * the total and the time the model took. It is how the speed is said out loud. Only with
- * animations on; gone a moment after the judgment is complete.
- */
-export function showProgress(doc: Document, p: { judged: number; total: number; ms?: number }, animations: boolean): void {
-  if (!animations || prefersReducedMotion(doc) || !doc.body) return;
-  const state = stateOf(doc);
-  let hud = state.hud;
-  if (!hud || !hud.isConnected) {
-    hud = buildHud(doc);
-    doc.body.appendChild(hud);
-    state.hud = hud;
-    state.hudShown = 0;
-    void hud.offsetWidth;
-    hud.classList.add("osso-hud-show");
-  }
-  const done = p.ms !== undefined;
-  const n = hud.querySelector<HTMLElement>(".osso-hud-n");
-  const t = hud.querySelector<HTMLElement>(".osso-hud-t");
-  const arc = hud.querySelector<SVGElement>(".osso-hud-arc");
-  if (t) t.textContent = done ? `sentences · ${(Math.max(p.ms ?? 0, 50) / 1000).toFixed(1)} s` : `of ${p.total} sentences`;
-  const share = done || p.total <= 0 ? 1 : Math.min(1, p.judged / p.total);
-  if (arc) arc.style.strokeDashoffset = String(RING_C * (1 - share));
-  hud.classList.toggle("osso-hud-done", done);
-  if (n) countUp(doc, state, n, done ? p.total : p.judged);
-  if (state.hudTimer) clearTimeout(state.hudTimer);
-  state.hudTimer = done ? setTimeout(() => hideProgress(state), HUD_LINGER_MS) : null;
-}
-
-function buildHud(doc: Document): HTMLElement {
-  const hud = doc.createElement("div");
-  hud.className = "osso-hud";
-  // Hidden from assistive tech and from our own segmenter, which skips aria-hidden subtrees.
-  hud.setAttribute("aria-hidden", "true");
-  const ring = doc.createElementNS(SVG_NS, "svg");
-  ring.setAttribute("class", "osso-hud-ring");
-  ring.setAttribute("viewBox", "0 0 16 16");
-  const circle = (cls: string) => {
-    const c = doc.createElementNS(SVG_NS, "circle");
-    c.setAttribute("class", cls);
-    c.setAttribute("cx", "8");
-    c.setAttribute("cy", "8");
-    c.setAttribute("r", String(RING_R));
-    return c;
-  };
-  const arc = circle("osso-hud-arc");
-  arc.style.strokeDasharray = String(RING_C);
-  arc.style.strokeDashoffset = String(RING_C);
-  const tick = doc.createElementNS(SVG_NS, "path");
-  tick.setAttribute("class", "osso-hud-tick");
-  tick.setAttribute("d", "M5 8.3 L7.2 10.4 L11.2 5.9");
-  ring.append(circle("osso-hud-track"), arc, tick);
-  const n = doc.createElement("span");
-  n.className = "osso-hud-n";
-  n.textContent = "0";
-  const t = doc.createElement("span");
-  t.className = "osso-hud-t";
-  hud.append(ring, n, t);
-  return hud;
-}
-
-function countUp(doc: Document, state: DocState, el: HTMLElement, target: number) {
-  const win = doc.defaultView;
-  const raf = win && typeof win.requestAnimationFrame === "function" ? win.requestAnimationFrame.bind(win) : null;
-  if (state.hudRaf && win && typeof win.cancelAnimationFrame === "function") win.cancelAnimationFrame(state.hudRaf);
-  state.hudRaf = 0;
-  const from = state.hudShown;
-  if (!raf || from === target) {
-    state.hudShown = target;
-    el.textContent = String(target);
-    return;
-  }
-  const t0 = performance.now();
-  const step = (now: number) => {
-    const k = Math.min(1, (now - t0) / HUD_COUNT_MS);
-    const v = Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3)));
-    state.hudShown = v;
-    el.textContent = String(v);
-    state.hudRaf = k < 1 ? raf(step) : 0;
-  };
-  state.hudRaf = raf(step);
-}
-
-function hideProgress(state: DocState) {
-  state.hudTimer = null;
-  const hud = state.hud;
-  if (!hud) return;
-  state.hud = null;
-  hud.classList.add("osso-hud-leave");
-  setTimeout(() => hud.remove(), 360);
 }
 
 /** A re-render with no stagger and a short settle: the slider, and a rule coming or going. */
@@ -979,7 +869,6 @@ export function clearRender(doc: Document): void {
     if (state.settleTimer) clearTimeout(state.settleTimer);
     if (state.instantTimer) clearTimeout(state.instantTimer);
     if (state.hitTimer) clearTimeout(state.hitTimer);
-    if (state.hudTimer) clearTimeout(state.hudTimer);
     state.chip?.remove();
     states.delete(doc);
   }
@@ -994,5 +883,5 @@ export function clearRender(doc: Document): void {
     dropProperty(b, "--osso-ink");
     b.classList.remove("osso-dark");
   }
-  for (const ours of doc.querySelectorAll(".osso-chip, .osso-hud")) ours.remove();
+  for (const chip of doc.querySelectorAll(".osso-chip")) chip.remove();
 }
