@@ -588,3 +588,21 @@ describe("run-in labels", () => {
     expect(spans(doc, "#colon")[0]!.textContent!.startsWith("The result:")).toBe(true);
   });
 });
+
+describe("interface text in layout elements", () => {
+  it("leaves a short div alone (a counter, a toggle, a button's label) and still reads a div that holds a sentence", () => {
+    const doc = page(`<article>
+      <div id="reviews">16,640 Reviews</div>
+      <div id="awake">Keep Screen Awake</div>
+      <div id="app">Get the App</div>
+      <div id="prose">The test kitchen staff is a team of culinary pros who make and vet recipes using only home equipment.</div>
+      <p id="short">Serve and enjoy!</p>
+      <p>Sift the flour and the baking powder together. Make a well in the centre and pour in the milk. Mix until smooth and leave it alone.</p>
+      <p>Heat a lightly oiled griddle over medium heat. Pour a quarter cup of batter for each pancake. Flip when bubbles form at the edges.</p></article>`);
+    segmentPage(doc);
+    for (const id of ["reviews", "awake", "app"]) expect(spans(doc, `#${id}`)).toHaveLength(0);
+    expect(spans(doc, "#prose").length).toBeGreaterThan(0);
+    // A paragraph element may be as short as it likes: the rule is about layout elements only.
+    expect(spans(doc, "#short").length).toBeGreaterThan(0);
+  });
+});

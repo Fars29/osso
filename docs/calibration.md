@@ -105,3 +105,38 @@ descriptions the model reads for each option are in `src/shared/constants.ts`.
    the page as context still tells the model what "practical content" means here.
 3. Batching is the cost model: ~60 sentences × 2 questions per request costs about what one
    sentence would, answers in about a second, and does not drift between runs.
+
+## Real pages (2026-09-21, `e2e/review.mjs`)
+
+The synthetic pages have crisp labels. Two real ones, read sentence by sentence with
+`node --env-file=.env e2e/review.mjs <url> --kept`, showed what the labels could not: where the
+debatable sentences sit, and what a pack's hints can do to them.
+
+**A markets article** (milanofinanza.it, a bank's forecasts on gas, power and oil; 23 sentences). The
+figures all came back at 0.89–0.94. But the article pack's hints listed "speculation" among what does
+not count, and the piece's opening claim ("the next energy shock may come from gas before oil") came
+back at 0.41, the analyst's quotes and the sentence defining the negative scenario at 0.32–0.47: a
+sourced forecast is the substance of an analysis piece, not its colour. With the hints rewritten
+(main claim, forecasts and estimates with their source, causes and consequences count; teasers,
+bridges between topics and calls to follow do not) the opening claim rose to 0.55 and the quotes to
+0.61. What stayed low is what should: the "add us to your Google sources" line (0.05), a teaser that
+promises detail without giving it (0.13), a bridge to another topic (0.12).
+
+**A recipe page** (allrecipes.com; 72 sentences after the interface text was left out). Every
+ingredient at 0.97–0.98, every step at 0.84–0.98, storage and freezing at 0.84–0.94. Grey, rightly:
+the grandmother's recipe book (0.06), the quoted reviews (0.05–0.09), photo credits, "Gather all
+ingredients" (0.21), "Serve and enjoy!" (0.07), the nutrition boilerplate (0.13–0.26), the app promo.
+
+**The default threshold.** On both pages true filler sat at or under **0.27** and substance at or
+over **0.52**. Between 0.35 and 0.48 there was only what is debatable and useful: "Yes, you can
+freeze pancakes and pancake batter" (0.47), "Plus, it helps bind the batter together" (0.40), "In
+Italy the pressure on gas is likely to weigh on the power bill" (0.38). The first default, 0.5, cut
+through that band on the wrong side. Fading what the reader needed costs far more than leaving a
+lukewarm sentence in ink, and on the synthetic set filler above 0.3 is rare (mean 0.12), so the
+default is now **0.35**; an install still carrying an untouched 0.5 is moved once.
+
+**Interface is not prose.** The first pass on the recipe page judged, and greyed, "16,640 Reviews",
+"Keep Screen Awake", "Get the App" and an "Oops! Something went wrong." that was not even showing.
+A div, section or cell with fewer than 8 words is now left alone (a paragraph element may be as
+short as it likes), and a block the page is not showing is neither judged nor paid for until it is
+shown: 85 sentences became 72, and the tokens fell by about 15%.

@@ -93,6 +93,8 @@ export interface Settings {
   /** Hosts the user explicitly re-enabled, overriding the default deny list. */
   allowedHosts: string[];
   maxSentencesPerRequest: number;
+  /** Which default strictness this install has seen; lets a changed default reach a threshold the user never touched. */
+  thresholdRev: number;
   /** What the reader must always keep, in their own words: ≤ MAX_RULES, each trimmed, ≤ MAX_RULE_LENGTH, unique ignoring case. Global. */
   rules: string[];
 }

@@ -26,6 +26,15 @@ export const MUTATION_DEBOUNCE_MS = 800;
 /** How long the reveal key must be held before the page reveals; a tap for capitalisation does nothing. */
 export const REVEAL_HOLD_MS = 120;
 
+/**
+ * The default strictness. On real pages (a markets article, a recipe site) true filler sat at or
+ * under 0.27 and substance at or over 0.52; between 0.35 and 0.48 there was only what is debatable
+ * and useful ("Yes, you can freeze pancakes"). The first default, 0.5, cut through that band on the
+ * wrong side: fading what the reader needed costs far more than leaving a lukewarm sentence in ink.
+ */
+export const DEFAULT_THRESHOLD = 0.35;
+/** The default before that. A stored 0.5 that the user never chose is moved to the new default once. */
+export const LEGACY_DEFAULT_THRESHOLD = 0.5;
 export const THRESHOLD_MIN = 0.2;
 export const THRESHOLD_MAX = 0.9;
 
@@ -40,13 +49,14 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
   apiKeyInvalid: false,
   enabled: true,
-  threshold: 0.5,
+  threshold: DEFAULT_THRESHOLD,
   revealKey: "Shift",
   animations: true,
   deniedHosts: [],
   allowedHosts: [],
   maxSentencesPerRequest: MAX_SENTENCES_PER_REQUEST,
   rules: [],
+  thresholdRev: 2,
 };
 
 /**

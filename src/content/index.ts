@@ -733,7 +733,7 @@ function main(): void {
     characterData: true,
     // Shown and hidden: a consent wall going away, a page coming out from behind it.
     attributes: true,
-    attributeFilter: ["hidden", "aria-hidden", "style", "class"],
+    attributeFilter: ["hidden", "aria-hidden", "style", "class", "open"],
   });
   // A router that changes the URL before it touches the view is caught here; one that rebuilds
   // the view first is caught by the observer. Either way the new page gets its own judgment.

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, MAX_RULE_LENGTH, MAX_RULES, THRESHOLD_MAX, THRESHOLD_MIN } from "../src/shared/constants.ts";
+import { DEFAULT_SETTINGS, DEFAULT_THRESHOLD, LEGACY_DEFAULT_THRESHOLD, MAX_RULE_LENGTH, MAX_RULES, THRESHOLD_MAX, THRESHOLD_MIN } from "../src/shared/constants.ts";
 import {
   SETTINGS_KEY,
   STATS_KEY,
@@ -237,5 +237,24 @@ describe("rules", () => {
     expect((store().get(SETTINGS_KEY) as { rules: string[] }).rules).toEqual(["Prices", "deadlines"]);
     expect((await getSettings()).rules).toEqual(["Prices", "deadlines"]);
     expect(DEFAULT_SETTINGS.rules).toEqual([]);
+  });
+});
+
+describe("a changed default strictness", () => {
+  const store = () => (globalThis as unknown as { chrome: { __store: Map<string, unknown> } }).chrome.__store;
+
+  it("reaches a stored threshold the user never chose, once, and leaves a chosen one alone", async () => {
+    // An install from before the default moved: the old default, no revision marker.
+    store().set("osso:settings", { apiKey: "ts-x", threshold: LEGACY_DEFAULT_THRESHOLD });
+    expect((await getSettings()).threshold).toBe(DEFAULT_THRESHOLD);
+    // The same install, where the user had moved the slider: theirs, and it stays.
+    store().set("osso:settings", { apiKey: "ts-x", threshold: 0.7 });
+    expect((await getSettings()).threshold).toBe(0.7);
+    // After the move the marker is current, so choosing the old default on purpose sticks.
+    store().clear();
+    await setSettings({ apiKey: "ts-x" });
+    const chosen = await setSettings({ threshold: LEGACY_DEFAULT_THRESHOLD });
+    expect(chosen.threshold).toBe(LEGACY_DEFAULT_THRESHOLD);
+    expect((await getSettings()).threshold).toBe(LEGACY_DEFAULT_THRESHOLD);
   });
 });

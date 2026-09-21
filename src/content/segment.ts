@@ -42,6 +42,12 @@ export const SENTENCE_TAG = "osso-s";
 
 /** A list item or caption longer than this is prose, not a label, and gets split like a paragraph. */
 const UNIT_MAX_CHARS = 240;
+/**
+ * A div, section or cell holding fewer words than this is interface, not prose: "16,640 Reviews",
+ * "Keep Screen Awake", "Get the App". A paragraph element may be as short as it likes; a layout
+ * element has to read like a sentence before its text is taken for one.
+ */
+const LAYOUT_MIN_WORDS = 8;
 const SAMPLE_CHARS = 600;
 /** A block whose text is mostly link text is a menu or a tag cloud, whatever element it uses. */
 const LINK_TEXT_RATIO = 0.8;
@@ -677,6 +683,7 @@ function withoutLabel(ranges: SentenceRange[], label: number, text: string): Sen
 /** The sentence ranges to wrap in a block, or null when the block is not judged at all. */
 function rangesFor(block: Block, text: string): SentenceRange[] | null {
   if (block.layout && block.hasBlockChild) return null;
+  if (block.layout && countWords(text) < LAYOUT_MIN_WORDS) return null;
   if (block.textChars === 0) return null;
   if (block.linkChars / block.textChars >= LINK_TEXT_RATIO) return null;
   if (countWords(text) < MIN_WORDS) return null;
@@ -755,9 +762,18 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
   const fallback = container === doc.body || container === doc.documentElement;
   visit(container, null, false, blocks, { root: container, hintSkip: fallback, total: fallback ? textLength(container) : 0 });
 
+  // Blocks the page is not showing (a collapsed panel, an error message waiting for its error, a
+  // print copy of the nutrition notes) are neither judged nor paid for; when the page shows one,
+  // the observer brings it in. Every rectangle is read before the first write, so asking costs no
+  // reflow. A document with no layout at all (a test, a detached view) skips the question.
+  const laidOut = (doc.body?.getClientRects().length ?? 0) > 0;
+  const shown = laidOut ? blocks.map((b) => b.el.getClientRects().length > 0) : null;
+
   const sentences: SentenceInput[] = [];
   let id = startId;
-  for (const block of blocks) {
+  for (let n = 0; n < blocks.length; n++) {
+    const block = blocks[n]!;
+    if (shown && !shown[n]) continue;
     if (block.segments.length === 0) continue;
     const text = block.parts.join("");
     const ranges = rangesFor(block, text);

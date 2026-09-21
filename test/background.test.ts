@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { FromBackground, JudgeRequest, PageMeta, SentenceInput, TabState, ToBackground } from "../src/shared/types.ts";
+import { DEFAULT_SETTINGS } from "../src/shared/constants.ts";
 import { SETTINGS_KEY } from "../src/background/settings.ts";
 import { cacheSize } from "../src/background/cache.ts";
 import "../src/background/index.ts";
@@ -377,7 +378,7 @@ describe("command and install", () => {
     onInstalled({ reason: "install" });
     await flush();
     await flush();
-    expect(mock().__store.get(SETTINGS_KEY)).toMatchObject({ apiKey: "", threshold: 0.5 });
+    expect(mock().__store.get(SETTINGS_KEY)).toMatchObject({ apiKey: "", threshold: DEFAULT_SETTINGS.threshold });
     expect(asMock(mock().runtime.openOptionsPage)).toHaveBeenCalledTimes(1);
 
     await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
