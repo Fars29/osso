@@ -33,7 +33,7 @@ html.osso-strike .osso-s {
   background-size: var(--osso-strike) 1px;
 }
 
-html.osso-strike:not(.osso-reveal) .osso-fade:not(.osso-pin) {
+html.osso-strike:not(.osso-reveal) .osso-fade:not(.osso-pin):not(.osso-wait) {
   --osso-strike: 100%;
 }
 
@@ -103,8 +103,10 @@ html.osso-still .osso-sweep {
   -webkit-text-fill-color: currentColor;
 }
 
-/* The fade: a grey chosen per block for its background (--osso-grey is set on the block by the renderer). */
-html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin) {
+/* The fade: a grey chosen per block for its background (--osso-grey is set on the block by the renderer).
+   A sentence further down the page waits in ink (osso-wait) until the reader gets to it, and goes
+   grey in front of them (render.ts arrive()). */
+html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin):not(.osso-wait) {
   color: var(--osso-grey, #b9b9b9) !important;
 }
 
@@ -113,7 +115,7 @@ html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin) {
    line is still there, so a link still reads as a link; while the pointer is on it the author's
    colour comes back, words and line. The transition rides the settle and is dropped once settled,
    so the author's own transitions on links are only ever overridden for that second and a half. */
-html.osso-on:not(.osso-reveal) a:has(.osso-fade:not(.osso-pin)):not(:hover) {
+html.osso-on:not(.osso-reveal) a:has(.osso-fade:not(.osso-pin):not(.osso-wait)):not(:hover) {
   text-decoration-color: var(--osso-grey, #b9b9b9) !important;
 }
 
@@ -258,52 +260,6 @@ html.osso-on .osso-dark .osso-rule-hit {
   transform: none;
 }
 
-/* The reason, for a moment: as the front reaches a paragraph that loses sentences, one small word in
-   the margin beside it says why ("story", "promo"), and is gone a second and a half later. Type and
-   nothing else: no card, no colour, never over the text (render.ts only places it in an empty
-   margin). The hover chip is where the reason lives afterwards. */
-@keyframes osso-why {
-  0% {
-    opacity: 0;
-    transform: translateX(var(--osso-why-dx, 6px));
-  }
-  16% {
-    opacity: 1;
-    transform: none;
-  }
-  68% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0;
-    transform: none;
-  }
-}
-
-.osso-why {
-  position: fixed;
-  z-index: 2147483646;
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #8c8c8c;
-  font: 500 10.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  user-select: none;
-  animation: osso-why 1900ms cubic-bezier(0.32, 0.72, 0, 1) var(--osso-why-delay, 0ms) both;
-}
-
-.osso-why-right {
-  --osso-why-dx: -6px;
-}
-
 /* On a dark block the card is dark too, so it still reads as a card sitting on the page. */
 .osso-chip.osso-chip-on-dark {
   border-color: rgba(242, 240, 234, 0.16);
@@ -326,8 +282,7 @@ html.osso-still .osso-rule-hit {
     transition: none;
   }
   html.osso-on .osso-rule-hit,
-  html.osso-on .osso-sweep,
-  .osso-why {
+  html.osso-on .osso-sweep {
     animation: none;
   }
   html.osso-on .osso-sweep {

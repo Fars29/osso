@@ -91,7 +91,35 @@ const PARAGRAPH_TAGS = new Set(["p", "li", "blockquote", "dd", "dt", "figcaption
 const CHROME_TAGS = new Set(["nav", "header", "footer", "aside"]);
 /** Class or id tokens that mark page chrome on sites that do not use the semantic elements. */
 const CHROME_HINT =
-  /(^|[\s_-])(comment|comments|sidebar|side-bar|footer|menu|nav|navbar|navigation|breadcrumb|breadcrumbs|advert|ad|ads|related|widget|cookie|newsletter|popup|modal|promo|banner|toolbar|topbar|header)([\s_-]|$)/i;
+  /(^|[\s_-])(sidebar|side-bar|footer|menu|nav|navbar|navigation|breadcrumb|breadcrumbs|advert|ad|ads|related|widget|cookie|newsletter|popup|modal|promo|banner|toolbar|topbar|header)([\s_-]|$)/i;
+/**
+ * What readers wrote under the page: reviews, comments, replies. It is not the author's prose, and
+ * the keep question is wrong there by construction: in a review the opinion is the content ("it
+ * didn't disappoint", "the texture came out great"), and the question reads opinion as filler, so
+ * it greyed the verdict and kept the aside. Left alone, like a table. Names that also mean an
+ * article are not here on purpose: "review" is a critic's page, "discussion" a paper's section.
+ */
+const UGC_HINT = /(^|[\s_-])(ugc|comment|comments|reviews|feedback|disqus|replies)([\s_-]|$)/i;
+const UGC_ITEMPROP = new Set(["review", "reviews", "comment"]);
+const UGC_ITEMTYPE = /\/(Review|Comment|UserComments)$/;
+/**
+ * A recipe with two hundred reviews is mostly reviews (44% of the text on the page this was written
+ * for), so the bound is looser than for chrome; above it the readers' words are the page (a forum
+ * thread, a Q&A), and that page is read as it always was.
+ */
+const UGC_MAX_PROSE_SHARE = 0.7;
+
+function hasUgcHint(el: Element): boolean {
+  const id = el.getAttribute("id");
+  if (id && UGC_HINT.test(id)) return true;
+  const cls = el.getAttribute("class");
+  if (cls && UGC_HINT.test(cls)) return true;
+  const prop = el.getAttribute("itemprop");
+  if (prop !== null && prop.split(/\s+/).some((p) => UGC_ITEMPROP.has(p.toLowerCase()))) return true;
+  const type = el.getAttribute("itemtype");
+  return type !== null && UGC_ITEMTYPE.test(type);
+}
+
 /**
  * The list of works a page cites. It is reference material, not prose and not filler: on an
  * encyclopedia article it was 44 of the 77 sentences judged, every one at 0.08, and more than half
@@ -296,7 +324,8 @@ export function findMainContainer(doc: Document): Element | null {
     texts.push({ block, inLink, length });
   }
 
-  const hintIsChrome = (el: Element): boolean => hasChromeHint(el) && (proseUnder.get(el) ?? 0) < HINT_MAX_PROSE_SHARE * total;
+  const hintIsChrome = (el: Element): boolean =>
+    (hasChromeHint(el) && (proseUnder.get(el) ?? 0) < HINT_MAX_PROSE_SHARE * total) || (hasUgcHint(el) && (proseUnder.get(el) ?? 0) < UGC_MAX_PROSE_SHARE * total);
   const chromeMemo = new Map<Element, boolean>();
   const underChrome = (el: Element): boolean => {
     const memo = chromeMemo.get(el);
@@ -484,7 +513,12 @@ export function splitSentences(text: string): SentenceRange[] {
   const out: SentenceRange[] = [];
   let pendingStart = -1;
   for (const piece of pieces) {
-    const words = countWords(text.slice(piece.start, piece.end));
+    const pieceText = text.slice(piece.start, piece.end);
+    const words = countWords(pieceText);
+    // A tag at the end of a paragraph ("Edited", "Read more", "Sponsored") is a label: it does not
+    // end like a sentence and it is not one. Joined to the sentence before it, as a short piece
+    // otherwise is, it was greyed and struck with it and read as part of the page's words.
+    if (piece === pieces[pieces.length - 1] && out.length > 0 && words <= TAIL_LABEL_MAX_WORDS && !ENDS_SENTENCE.test(pieceText)) continue;
     if (words >= MIN_WORDS) {
       out.push({ start: pendingStart >= 0 ? pendingStart : piece.start, end: piece.end });
       pendingStart = -1;
@@ -609,7 +643,12 @@ function isWrapped(el: Element): boolean {
 function visit(el: Element, block: Block | null, inLink: boolean, out: Block[], walk: Walk): void {
   const tag = el.localName;
   const blockLevel = BLOCK_LEVEL.has(tag);
-  if (isSkipped(el) || (walk.hintSkip && el !== walk.root && hasChromeHint(el) && textLength(el) < HINT_MAX_PROSE_SHARE * walk.total)) {
+  // Chrome by name is only asked of a page with no container of its own; what readers wrote is
+  // asked everywhere, because publishers put the reviews inside the <article>.
+  const byName =
+    el !== walk.root &&
+    ((walk.hintSkip && hasChromeHint(el) && textLength(el) < HINT_MAX_PROSE_SHARE * walk.total) || (hasUgcHint(el) && textLength(el) < UGC_MAX_PROSE_SHARE * walk.total));
+  if (isSkipped(el) || byName) {
     if (blockLevel && block) {
       block.pendingBreak = true;
       block.hasBlockChild = true;
@@ -705,6 +744,7 @@ function withoutLabel(ranges: SentenceRange[], label: number, text: string): Sen
 
 /** A caption's opening: "Fig 1.", "Figure 2:", "Table 3.", "Tabella 1", "Scheme 4". */
 const CAPTION = /^\s*(fig(ure|ura)?s?|tab(le|ella)?s?|scheme|box|chart|equation|eq)\.?\s*\d+/i;
+const TAIL_LABEL_MAX_WORDS = 3;
 const ENDS_SENTENCE = /[.!?…。！？]["'”’»)\]]*\s*$/u;
 const LEAD_IN = /:\s*$/;
 /**
@@ -821,7 +861,7 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
   const reg = registryOf(doc);
   const blocks: Block[] = [];
   const fallback = container === doc.body || container === doc.documentElement;
-  visit(container, null, false, blocks, { root: container, hintSkip: fallback, total: fallback ? textLength(container) : 0 });
+  visit(container, null, false, blocks, { root: container, hintSkip: fallback, total: textLength(container) });
 
   // Blocks the page is not showing (a collapsed panel, an error message waiting for its error, a
   // print copy of the nutrition notes) are neither judged nor paid for; when the page shows one,

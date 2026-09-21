@@ -228,6 +228,19 @@ The state stays as it is. What the numbers do say: p is good to about ±0.05. On
 close to the threshold (1 sentence of 199); on an encyclopedia article, a paper or a contract about
 one in thirty does (19 of 568), which is why the fade is a colour and never a cut.
 
+## What readers wrote is not the page (2026-09-21)
+
+A recipe's reviews went through the keep question and came out backwards: "it didn't disappoint"
+and "the overall texture came out great" grey, the reviewer's aside about vanilla paste in ink. Not
+a threshold to move: in a review the opinion is the content, and the question reads opinion as
+filler, so it is wrong there by construction. Reviews, comments and replies are now structure
+(`segment.ts`, `UGC_HINT` and schema.org's Review and Comment): never wrapped, never judged, never
+paid for — on that page they were 44% of the text. The rule is asked inside an `<article>` too,
+which is where publishers put them, and gives way when the readers' words are most of the page (a
+thread, a Q&A). Names that also mean an article are left out: "review" is a critic's page,
+"discussion" a paper's section. And a tag at the end of a paragraph ("Edited", "Read more") is a
+label, not a short sentence to join to the one before it: it had been greyed and struck with it.
+
 Everything we say to the model is English, on a page in any language: only what is quoted inside
 « » (the sentence, the user's rule) and the title are the page's own. `test/prompts.test.ts` holds
 that line.

@@ -408,7 +408,7 @@ async function syncRules(): Promise<void> {
 /** Ours, not the page's: the hover chip and anything inside it. */
 function isChip(n: Node): boolean {
   const el = n.nodeType === 1 ? (n as Element) : n.parentElement;
-  return !!el && el.closest(".osso-chip, .osso-why") !== null;
+  return !!el && el.closest(".osso-chip") !== null;
 }
 
 function foreign(r: MutationRecord): boolean {
@@ -484,7 +484,7 @@ let lastBodyChars = -1;
 function ours(r: MutationRecord): boolean {
   const el = r.target.nodeType === 1 ? (r.target as Element) : r.target.parentElement;
   if (!el) return false;
-  if (el.closest(".osso-chip, .osso-why")) return true;
+  if (el.closest(".osso-chip")) return true;
   return r.type === "attributes" && el.matches(".osso-s");
 }
 

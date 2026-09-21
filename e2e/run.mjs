@@ -109,13 +109,6 @@ try {
   await probe.goto(`chrome-extension://${launched.id}/options.html`);
   await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 10 } }));
   const page = await context.newPage();
-  // The reasons in the margin are there for under two seconds: note each as it is added.
-  await page.addInitScript(() => {
-    window.__whys = [];
-    new MutationObserver((records) => {
-      for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1 && n.classList.contains("osso-why")) window.__whys.push(n.textContent);
-    }).observe(document, { childList: true, subtree: true });
-  });
   await page.bringToFront();
   let t0 = performance.now();
   const partials = [];
@@ -144,17 +137,39 @@ try {
   console.log(`[osso e2e] progressive paint: ${partials.length} partial states seen (${partials.join(" → ")} judged), front ${sweeping.front.join(" → ")} over ${sweeping.count} spans on screen`);
   await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 60 } }));
   await probe.close();
-  // The strike is drawn through what is grey and through nothing else; the reasons came and went.
-  const strike = await page.evaluate(() => {
+  // What is further down waits in ink for the reader, and goes grey in front of them as they scroll.
+  const held = await page.evaluate(() => {
     const of = (el) => (el ? getComputedStyle(el).getPropertyValue("--osso-strike").trim() : null);
-    return { grey: of(document.querySelector(".osso-fade")), ink: of(document.querySelector(".osso-s:not(.osso-fade)")), whys: window.__whys, left: document.querySelectorAll(".osso-why").length };
+    const waiting = [...document.querySelectorAll(".osso-wait")];
+    const seen = document.querySelector(".osso-fade:not(.osso-wait)");
+    return {
+      waiting: waiting.length,
+      allBelow: waiting.every((w) => w.getBoundingClientRect().top >= innerHeight || w.getBoundingClientRect().bottom <= 0),
+      waitingInk: waiting[0] ? getComputedStyle(waiting[0]).color === getComputedStyle(waiting[0].closest("[data-osso-block]")).color : null,
+      waitingStrike: of(waiting[0]),
+      grey: of(seen),
+      ink: of(document.querySelector(".osso-s:not(.osso-fade)")),
+      margin: document.querySelectorAll(".osso-why").length,
+    };
   });
-  assert(strike.grey === "100%" && strike.ink === "0%", `recipe: the strike should be drawn on grey and absent on ink, got ${JSON.stringify(strike)}`);
-  const REASON = /^(opinion|story|filler|promo|aside)( · (opinion|story|filler|promo|aside))?$/;
-  assert(strike.whys.length >= 1 && strike.whys.every((w) => REASON.test(w)), `recipe: the margin should have named a reason, got ${JSON.stringify(strike.whys)}`);
-  await sleep(2200);
-  assert((await page.evaluate(() => document.querySelectorAll(".osso-why").length)) === 0, "recipe: a reason was left in the margin");
-  console.log(`[osso e2e] strike drawn on grey only; reasons in the margin: ${strike.whys.join(", ")}`);
+  assert(held.grey === "100%" && held.ink === "0%", `recipe: the strike should be drawn on grey and absent on ink, got ${JSON.stringify(held)}`);
+  assert(held.waiting > 0 && held.allBelow, `recipe: faded sentences off screen should wait for the reader, got ${JSON.stringify(held)}`);
+  assert(held.waitingInk === true && held.waitingStrike === "0%", `recipe: a waiting sentence should still be in ink and unstruck, got ${JSON.stringify(held)}`);
+  assert(held.margin === 0, "recipe: a reason was put in the margin");
+  let swept = 0;
+  for (let y = 0, h = await page.evaluate(() => document.documentElement.scrollHeight); y < h; y += 300) {
+    await page.mouse.wheel(0, 300);
+    await sleep(120);
+    swept = Math.max(swept, await page.evaluate(() => document.querySelectorAll(".osso-sweep").length));
+  }
+  await sleep(300);
+  const after = await page.evaluate(() => ({ waiting: document.querySelectorAll(".osso-wait").length, faded: document.querySelectorAll(".osso-fade").length }));
+  assert(swept > 0, "recipe: nothing was animated while scrolling down the page");
+  assert(after.waiting === 0, `recipe: ${after.waiting} sentences still waiting after the whole page was scrolled through`);
+  console.log(`[osso e2e] scroll: ${held.waiting} spans waited in ink below the fold, all went grey as the page was scrolled (up to ${swept} mid-pass at once)`);
+  await sleep(2500);
+  await page.evaluate(() => scrollTo(0, 0));
+  await sleep(300);
   const recipe = await page.evaluate(countSentences);
   rows.push({ page: "recipe.html", ...recipe, ms: Math.round(performance.now() - t0) });
   assert(recipe.faded >= 5, `recipe: expected ≥ 5 faded sentences, got ${recipe.faded}`);

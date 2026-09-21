@@ -118,6 +118,12 @@ try {
       for (const d of kept) console.log(line(d));
     }
     if (shot) {
+      // What is below the fold waits in ink for the reader: walk the page so the picture shows it as read.
+      for (let y = 0, h = await page.evaluate(() => document.documentElement.scrollHeight); y < h; y += 600) {
+        await page.mouse.wheel(0, 600);
+        await sleep(80);
+      }
+      await sleep(3000);
       mkdirSync(join(here, "screenshots"), { recursive: true });
       await page.screenshot({ path: join(here, "screenshots", `review-${host}.png`), fullPage: true });
     }
