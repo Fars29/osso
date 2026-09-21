@@ -35,7 +35,7 @@ import {
   setThreshold,
   type Counts,
 } from "./render.ts";
-import { isAppLikePage, segmentNewBlocks, segmentPage, textLength, unwrapAll, unwrapBlock } from "./segment.ts";
+import { isAppLikePage, isPrivatePage, segmentNewBlocks, segmentPage, textLength, unwrapAll, unwrapBlock } from "./segment.ts";
 
 /** What the popup says for each failure the background can report. */
 const REASONS: Record<string, string> = {
@@ -219,6 +219,10 @@ async function start(): Promise<void> {
     }
     if (!settings.apiKey) {
       report({ status: "no-key" });
+      return;
+    }
+    if (isPrivatePage(document)) {
+      report({ status: "skipped" }, "sign-in or payment page");
       return;
     }
     if (isAppLikePage(document)) {

@@ -112,3 +112,23 @@ describe("a page too long to be read on someone's key without asking", () => {
     expect(segmentNewBlocks(doc, container, sentences.length)).toHaveLength(0);
   });
 });
+
+describe("a page that shows a password or a card field", () => {
+  it("is between the reader and that site: Osso reads nothing there", async () => {
+    const { isPrivatePage } = await import("../src/content/segment.ts");
+    expect(isPrivatePage(page(`<main>${RECIPE}<form><input type="password" name="pw"></form></main>`))).toBe(true);
+    expect(isPrivatePage(page(`<main>${RECIPE}<form><input autocomplete="cc-number"></form></main>`))).toBe(true);
+    expect(isPrivatePage(page(`<main>${RECIPE}<form><input type="email" placeholder="Newsletter"><input type="search"></form></main>`))).toBe(false);
+  });
+
+  it("a sign-in form the page is not showing (folded into the header of every article) does not count", async () => {
+    const { isPrivatePage } = await import("../src/content/segment.ts");
+    const doc = page(`<header><form hidden><input id="pw" type="password"></form></header><main>${RECIPE}</main>`);
+    // A laid-out document in which the field has no box: what a browser reports for a hidden form.
+    doc.body.getClientRects = () => [{}] as unknown as DOMRectList;
+    doc.getElementById("pw")!.getClientRects = () => [] as unknown as DOMRectList;
+    expect(isPrivatePage(doc)).toBe(false);
+    doc.getElementById("pw")!.getClientRects = () => [{}] as unknown as DOMRectList;
+    expect(isPrivatePage(doc)).toBe(true);
+  });
+});

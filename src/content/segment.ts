@@ -1079,6 +1079,21 @@ const APP_CHARS_PER_CONTROL = 150;
 const APP_ENTRY_CONTROLS =
   "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), textarea, select";
 
+/** A field for a password or for a card: what is on a page that shows one is between the reader and that site. */
+const PRIVATE_FIELDS = 'input[type="password"], input[autocomplete^="cc-"], input[autocomplete="one-time-code"]';
+
+/**
+ * A sign-in, an account page, a checkout: Osso reads nothing there and sends nothing. Only a field
+ * the page is showing counts: many sites carry a sign-in form folded away in their header on every
+ * article, and that is not what the page is. A document with no layout (a test) counts every field.
+ */
+export function isPrivatePage(doc: Document): boolean {
+  const fields = Array.from(doc.querySelectorAll(PRIVATE_FIELDS));
+  if (fields.length === 0) return false;
+  const laidOut = (doc.body?.getClientRects().length ?? 0) > 0;
+  return !laidOut || fields.some((f) => f.getClientRects().length > 0);
+}
+
 /**
  * An editor or a data-entry form is an application, not a page to read; Osso stays out. Many entry
  * controls alone do not make one: they must also outweigh the text, so an article with a long

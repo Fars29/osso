@@ -28,12 +28,12 @@ Removing the extension removes all of it.
 
 ## Where Osso does not run
 
-By default it stays off on mail, documents, chat, code hosting, search, video and social sites (the list is in Options → Sites), on pages that look like an app rather than something to read, and everywhere until you have saved a key. The switch in the popup turns it off for any site.
+By default it stays off on mail, documents, chat, code hosting, search, video and social sites (the list is in Options → Sites), on any page that is showing a password or card-number field (a sign-in, an account, a checkout), on pages that look like an app rather than something to read, and everywhere until you have saved a key. The switch in the popup turns it off for any site.
 
 ## Permissions
 
-- `storage`, `unlimitedStorage`: the settings and the cache above.
-- `activeTab`: the popup talks to the page you are on.
+- `storage`: the settings and the cache above.
+- `activeTab`: the keyboard shortcut reads which site you are on, to turn Osso on or off for it.
 - Access to `https://api.typesafe.ai/*`: the one place requests go.
 - A content script on `http` and `https` pages: it reads the page's text to split it into sentences, and changes the colour of what is judged filler. It changes nothing else, and it holds no key.
 

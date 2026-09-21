@@ -41,6 +41,10 @@ git push --follow-tags   # the tag starts the release
 
 Neither calls the API, so no secret is needed. The live end-to-end run stays local (`npm run e2e`), where the key is.
 
+## Chrome Web Store
+
+The listing text, the permission justifications, the data-usage answers and the reviewers' test instructions are in [chrome-web-store.md](chrome-web-store.md), with how Osso meets each program policy.
+
 ## Firefox
 
 The manifest carries a `gecko` id for Firefox 128+, but it is untested there and the background worker may need to become an event page.

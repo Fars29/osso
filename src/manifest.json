@@ -34,7 +34,7 @@
       "all_frames": false
     }
   ],
-  "permissions": ["storage", "activeTab", "unlimitedStorage"],
+  "permissions": ["storage", "activeTab"],
   "host_permissions": ["https://api.typesafe.ai/*"],
   "commands": {
     "toggle-site": {
