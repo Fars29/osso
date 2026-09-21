@@ -241,6 +241,8 @@ thread, a Q&A). Names that also mean an article are left out: "review" is a crit
 "discussion" a paper's section. And a tag at the end of a paragraph ("Edited", "Read more") is a
 label, not a short sentence to join to the one before it: it had been greyed and struck with it.
 
+One more of the same family, from a policy page: "The privacy policy must comprehensively disclose: (a) How your Product collects, uses and shares user data". The item is the second half of the sentence the colon left open; read alone it looks like a heading, and the model gave it 0.43 on one page and under 0.35 on another with different neighbours. An item that does not end like a sentence, in a list a colon introduces, is now structure, like the lead-in itself. On that page of 221 sentences the 17 that still go grey are mission statements, "see the FAQ" pointers and the licence footer.
+
 Everything we say to the model is English, on a page in any language: only what is quoted inside
 « » (the sentence, the user's rule) and the title are the page's own. `test/prompts.test.ts` holds
 that line.

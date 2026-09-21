@@ -771,6 +771,10 @@ function isStructure(block: Block, text: string): boolean {
   const words = countWords(text);
   if (CAPTION.test(text)) return true;
   if (tag === "figcaption" && words <= CAPTION_MAX_WORDS) return true;
+  // "The policy must disclose: (a) how your product collects, uses and shares user data": the item
+  // is the rest of the sentence the colon left open, not a sentence of its own. Read alone it looks
+  // like a heading, and the model put it at 0.43 on one page and under the threshold on another.
+  if (!ENDS_SENTENCE.test(text) && continuesLeadIn(block.el)) return true;
   if (block.unit) return false;
   // "How much does it cost?" over its answer is a heading that happens to end in a question mark.
   if (words <= QUESTION_MAX_WORDS && ONE_QUESTION.test(text)) return true;
@@ -778,6 +782,30 @@ function isStructure(block: Block, text: string): boolean {
   if (ENDS_SENTENCE.test(text)) return false;
   if (words <= HEADING_MAX_WORDS) return true;
   return words <= BOLD_HEADING_MAX_WORDS && block.segments.every((s) => isBold(s.node, block.el) || text.slice(s.start, s.end).trim() === "");
+}
+
+const colonLists = new WeakMap<Element, boolean>();
+
+/**
+ * Whether this block is an item of a list that a colon introduces: the text just before the list,
+ * in a paragraph before it or in the item the list is nested in, ends in a colon. The sentence that
+ * ends in the colon is already structure (greying it orphans what it introduces); an item that does
+ * not end like a sentence is its other half.
+ */
+function continuesLeadIn(el: Element): boolean {
+  const list = el.closest("li, dd")?.parentElement;
+  if (!list) return false;
+  const known = colonLists.get(list);
+  if (known !== undefined) return known;
+  let value = false;
+  for (let node: Node | null = list.previousSibling; node; node = node.previousSibling) {
+    const before = (node.textContent ?? "").trim();
+    if (before === "") continue;
+    value = LEAD_IN.test(before);
+    break;
+  }
+  colonLists.set(list, value);
+  return value;
 }
 
 /** The sentence ranges to wrap in a block, or null when the block is not judged at all. */

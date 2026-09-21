@@ -72,3 +72,27 @@ describe("a tag at the end of a paragraph", () => {
     expect(spans(doc, "#p").map((s) => s.textContent).join("")).toContain("Serve warm.");
   });
 });
+describe("the items of a list a colon introduces", () => {
+  const LIST = (items: string) => `<article>${RECIPE}<ol><li id="lead"><p>The privacy policy must, together with any in-Product disclosures, comprehensively disclose:</p><ol>${items}</ol></li></ol></article>`;
+
+  it("are the rest of that sentence when they do not end like one: never judged, in a paragraph of their own or not", () => {
+    const doc = page(LIST(`<li id="a"><p>How your Product collects, uses and shares user data of every kind</p></li><li id="b">How long your Product keeps the user data it has collected from them</li>`));
+    segmentPage(doc);
+    expect(spans(doc, "#a")).toHaveLength(0);
+    expect(spans(doc, "#b")).toHaveLength(0);
+    expect(spans(doc, "#method").length).toBeGreaterThan(0);
+  });
+
+  it("are judged when they are sentences, and when nothing introduces the list", () => {
+    const doc = page(LIST(`<li id="a">All parties the user data will be shared with must be named in full.</li>`).replace("</article>", `<h2>Why teams choose it</h2><ul><li id="c">Loved by more than ten thousand teams in every corner of the world</li></ul></article>`));
+    segmentPage(doc);
+    expect(spans(doc, "#a").length).toBeGreaterThan(0);
+    expect(spans(doc, "#c").length).toBeGreaterThan(0);
+  });
+
+  it("a paragraph before the list counts as its introduction too", () => {
+    const doc = page(`<article>${RECIPE}<p>For the sauce you will need these things from the shop:</p><ul><li id="i">Two unwaxed lemons and a small bunch of flat parsley from the market</li></ul></article>`);
+    segmentPage(doc);
+    expect(spans(doc, "#i")).toHaveLength(0);
+  });
+});

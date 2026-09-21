@@ -620,7 +620,9 @@ describe("structure written as prose", () => {
       <div id="cap">Table 1. Comparative skeletal sample used in the morphometric comparisons of the four species.</div>
       <p id="fig">Fig 2. The known range of the species in the central basin.</p>
       <p id="lead">We employ three types of regularization during training:</p>
-      <ul><li id="item">Freshly ground black pepper</li><li>Residual dropout applied to the output of each sub-layer, at a rate of 0.1.</li></ul>
+      <ul><li>Residual dropout applied to the output of each sub-layer, at a rate of 0.1.</li></ul>
+      <h2>Ingredients</h2>
+      <ul><li id="item">Freshly ground black pepper</li><li>One unwaxed lemon, zest and juice</li></ul>
       <p id="said">Serve and enjoy!</p></article>`);
     segmentPage(doc);
     for (const id of ["h1", "h2", "cap", "fig", "lead"]) expect(spans(doc, `#${id}`), id).toHaveLength(0);
