@@ -103,47 +103,52 @@ export const DEFAULT_DENIED_HOSTS: readonly string[] = [
   "typesafe.ai",
 ];
 
-/** Sentence kinds, with the descriptions the model sees and the label the chip shows. */
+/**
+ * Sentence kinds, with the descriptions the model sees and the label the chip shows. The
+ * descriptions are short on purpose: the kind is asked once per sentence, and at their first length
+ * these eight lines were more than half the tokens of every request (a 672-sentence paper cost
+ * 421k). The kind only names the reason on the chip; the keep question carries the judgment.
+ */
 export const SENTENCE_KINDS: Record<SentenceKind, { label: string; description: string; substantive: boolean }> = {
   fact: {
     label: "fact",
     substantive: true,
-    description: "A verifiable statement about what happened, what is, or what will happen: who, what, when, where, how much.",
+    description: "A checkable statement of what is, was or will be.",
   },
   figure_or_date: {
     label: "figure",
     substantive: true,
-    description: "A quantity, price, measurement, percentage, date, deadline or time is the point of the sentence.",
+    description: "A number, price, measure, date or time is the point.",
   },
   instruction_or_step: {
     label: "step",
     substantive: true,
-    description: "Something the reader must do or how to do it, including warnings about what not to do.",
+    description: "What to do, how, or what not to do.",
   },
   condition_or_obligation: {
     label: "condition",
     substantive: true,
-    description: "A rule, right, obligation, fee, penalty, or condition that binds the reader or the writer.",
+    description: "A rule, right, fee, penalty or condition that binds someone.",
   },
   opinion: {
     label: "opinion",
     substantive: false,
-    description: "The writer's judgment, feeling or evaluation; not checkable.",
+    description: "A judgment or feeling; not checkable.",
   },
   anecdote_or_story: {
     label: "story",
     substantive: false,
-    description: "Personal memories, stories, scene-setting, emotional colour.",
+    description: "Memories, stories, scene-setting.",
   },
   filler_or_transition: {
     label: "filler",
     substantive: false,
-    description: "Greetings, thanks, generic reassurance, navigation hints, 'scroll down', 'read carefully', throat-clearing.",
+    description: "Greetings, thanks, reassurance, signposting, credits.",
   },
   promotion_or_appeal: {
     label: "promo",
     substantive: false,
-    description: "Asks the reader to follow, share, subscribe, buy or comment, or promotes a product, brand or person.",
+    description: "Asks to follow, share, subscribe or buy; promotes something.",
   },
 };
 
@@ -151,6 +156,7 @@ export const SENTENCE_KINDS: Record<SentenceKind, { label: string; description: 
 export const PAGE_KINDS: Record<PageKind, { label: string; description: string }> = {
   recipe: { label: "Recipe", description: "A recipe page: ingredients, quantities and cooking steps, usually preceded by a personal introduction." },
   article: { label: "Article", description: "A news report, blog post, essay or long-form article." },
+  paper: { label: "Paper", description: "A scientific paper, preprint or journal article: abstract, methods, results, references." },
   legal: { label: "Legal", description: "Terms of service, privacy policy, contract, licence or other legal text." },
   corporate: { label: "Announcement", description: "A company statement, press release, customer notice or product update." },
   social: { label: "Social post", description: "A social-media post or thread." },

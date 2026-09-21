@@ -56,7 +56,17 @@ export async function launch(userDataDir, extra = {}) {
 
 export async function saveKey(context, id, key) {
   const page = await context.newPage();
-  await page.goto(`chrome-extension://${id}/options.html`);
+  // On install the extension opens its own options tab; now and then that navigation lands on top
+  // of this one and Playwright reports ours as interrupted. The page is the same either way.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await page.goto(`chrome-extension://${id}/options.html`);
+      break;
+    } catch (err) {
+      if (attempt >= 2 || !/interrupted by another navigation/.test(String(err))) throw err;
+      await sleep(300);
+    }
+  }
   const input = (await page.locator("#apiKey").count()) ? page.locator("#apiKey") : page.locator("input[type=password]").first();
   if (await input.count()) {
     await input.fill(key);

@@ -47,7 +47,7 @@ Click the icon. The popup shows how many sentences were kept, the page kind, and
 
 ## How it decides
 
-1. The main text of the page is split into sentences; headings, tables, code, navigation and forms are never touched, and neither is the bold label that opens a list item ("**Milk:** …"), which is structure, not prose.
+1. The main text of the page is split into sentences. Structure is never touched: headings (including the ones written as a bold paragraph), tables, code, navigation, forms, captions, bibliographies, the question that heads an FAQ answer, a sentence that introduces a list, and the bold label that opens a list item ("**Milk:** …").
 2. Sentences go to the model in batches of about 30, in parallel, with their own text as context.
 3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
 4. Each batch is painted the moment it comes back: a soft front of light comes down the page and the text is washed as it passes. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
@@ -90,7 +90,7 @@ Node 20 or newer. TypeScript strict, no frameworks, no runtime dependencies: van
 
 Layout: `src/shared/` (types and constants, the contracts), `src/content/` (segment, render, orchestrator: runs inside the page), `src/background/` (settings, cache, api: the only code that holds the key), `src/packs/` (page kinds), `src/ui/` (popup and options), `test/`, `e2e/`, `scripts/`.
 
-Page kinds live in `src/packs/`, one file each. A pack is an id, a `stateHint` sent to the model, optional one-sentence hints appended to the keep criteria, and a `match(meta)` score computed from JSON-LD, URL, `og:type`, title and a text sample. To add one: copy `recipe.ts`, add the id to `PageKind` in `src/shared/types.ts` and its label in `PAGE_KINDS`, and add the pack to `PACKS` in `src/packs/index.ts`. Routing only tunes wording; a wrong pack still gets a good answer.
+Page kinds live in `src/packs/`, one file each (recipe, article, paper, legal, corporate, product, docs, social). A pack is an id, a `stateHint` sent to the model, optional one-sentence hints appended to the keep criteria, and a `match(meta)` score computed from JSON-LD, URL, `og:type`, title and a text sample. To add one: copy `recipe.ts`, add the id to `PageKind` in `src/shared/types.ts` and its label in `PAGE_KINDS`, and add the pack to `PACKS` in `src/packs/index.ts`. Routing only tunes wording; a wrong pack still gets a good answer.
 
 ## License
 

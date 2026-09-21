@@ -6,6 +6,8 @@
  *
  * Run: npm run build && node --env-file=.env e2e/review.mjs <url> [url…] [--kept] [--shot]
  *   --kept  list the kept sentences too (by default only the faded ones and the borderline kept)
+ *   --brief one screen per page: the grey (cut to 120 characters, 45 at most), then the suspects
+ *           among the kept — those the model itself calls opinion, story, filler or promo
  *   --shot  save a full-page screenshot to e2e/screenshots/review-<host>.png
  */
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -17,6 +19,8 @@ const key = preflight("review.mjs");
 const urls = process.argv.slice(2).filter((a) => /^https?:/.test(a));
 const showKept = process.argv.includes("--kept");
 const shot = process.argv.includes("--shot");
+const brief = process.argv.includes("--brief");
+const SOFT_KINDS = new Set(["opinion", "anecdote_or_story", "filler_or_transition", "promotion_or_appeal"]);
 if (urls.length === 0) {
   console.error("usage: node --env-file=.env e2e/review.mjs <url> [url…] [--kept] [--shot]");
   process.exit(1);
@@ -92,12 +96,20 @@ try {
     const line = (d) => {
       const n = numbers.get(d.id);
       const p = n ? n.keep.toFixed(2) : " ?  ";
-      return `${d.faded ? "GREY" : "ink "}  p=${p}  ${(n?.kind ?? "?").padEnd(24)} <${d.block}>  ${d.text.replace(/\s+/g, " ").trim().slice(0, 170)}`;
+      return `${d.faded ? "GREY" : "ink "}  p=${p}  ${(n?.kind ?? "?").replace(/_or_.*/, "").padEnd(12)} <${d.block}>  ${d.text.replace(/\s+/g, " ").trim().slice(0, brief ? 120 : 170)}`;
     };
     const faded = dom.filter((d) => d.faded);
     const kept = dom.filter((d) => !d.faded);
     console.log(`\n--- GREY (${faded.length}) ---`);
-    for (const d of faded) console.log(line(d));
+    for (const d of brief ? faded.slice(0, 45) : faded) console.log(line(d));
+    if (brief && faded.length > 45) console.log(`     … and ${faded.length - 45} more`);
+    if (brief) {
+      // The suspects among the kept: what the model itself calls opinion, story, filler or promo.
+      const suspects = kept.filter((d) => SOFT_KINDS.has(numbers.get(d.id)?.kind));
+      console.log(`\n--- kept, though the model calls it opinion/story/filler/promo (${suspects.length}) ---`);
+      for (const d of suspects.slice(0, 25)) console.log(line(d));
+      if (suspects.length > 25) console.log(`     … and ${suspects.length - 25} more`);
+    }
     const borderline = kept.filter((d) => (numbers.get(d.id)?.keep ?? 1) < 0.75);
     console.log(`\n--- kept but borderline, p < 0.75 (${borderline.length}) ---`);
     for (const d of borderline) console.log(line(d));

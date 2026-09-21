@@ -211,3 +211,13 @@ describe("packs", () => {
     }
   });
 });
+
+describe("the paper pack", () => {
+  const meta = (over: Partial<import("../src/shared/types.ts").PageMeta>) => ({ url: "https://example.org/x", host: "example.org", title: "", lang: "en", jsonLdTypes: [], ogType: null, sample: "", sentenceCount: 40, ...over });
+  it("reads a preprint, a journal page and a declared scholarly article as papers, and a newsroom's /articles/ as news", () => {
+    expect(route(meta({ url: "https://ar5iv.labs.arxiv.org/html/1706.03762", host: "ar5iv.labs.arxiv.org" }))).toBe("paper");
+    expect(route(meta({ url: "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0349857", host: "journals.plos.org" }))).toBe("paper");
+    expect(route(meta({ jsonLdTypes: ["scholarlyarticle"] }))).toBe("paper");
+    expect(route(meta({ url: "https://www.bbc.com/news/articles/cvwyz29n0nn2o", host: "www.bbc.com", jsonLdTypes: ["newsarticle"] }))).toBe("article");
+  });
+});

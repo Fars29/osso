@@ -15,7 +15,7 @@ export type SentenceKind =
   | "promotion_or_appeal";
 
 /** What a page is. Chosen by packs' heuristics before the request; Jev's own answer is stored beside it. */
-export type PageKind = "recipe" | "article" | "legal" | "corporate" | "social" | "product" | "docs" | "other";
+export type PageKind = "recipe" | "article" | "paper" | "legal" | "corporate" | "social" | "product" | "docs" | "other";
 
 /** One judged unit of text. `id` is the document-order index assigned by segment. */
 export interface SentenceInput {

@@ -140,3 +140,45 @@ default is now **0.35**; an install still carrying an untouched 0.5 is moved onc
 A div, section or cell with fewer than 8 words is now left alone (a paragraph element may be as
 short as it likes), and a block the page is not showing is neither judged nor paid for until it is
 shown: 85 sentences became 72, and the tokens fell by about 15%.
+
+## A wider sample (2026-09-21)
+
+Sixteen live pages, found rather than chosen (news articles taken from the front pages of the day),
+each read sentence by sentence with `e2e/review.mjs --brief`: what went grey, and what stayed in
+ink although the model itself called it opinion, story, filler or promo.
+
+| page | kind | judged | grey | what went grey |
+|---|---|---|---|---|
+| ilpost.it, a German state election | article | 23 | 6 | date line, two photo captions, a related-story title, one line of praise |
+| apnews.com, drone strikes | article | 31 | 9 | "Updated…", the newsletter pitch, "Follow the AP's coverage…", a quote with nothing in it ("The enemy failed in this regard"), vague background |
+| theguardian.com, a policy explainer | article | 33 | 3 | how the investigation was put together |
+| ansa.it, a food feature | article | 30 | 8 | the rhetorical opener, PR sentences about "a dialogue between two cultures", "add us as a preferred source" |
+| milanofinanza.it, a bank's forecasts | article | 23 | 5 | the Google-sources pitch, a teaser, a bridge to another topic |
+| bbcgoodfood.com, pancakes | recipe | 27 | 4 | "Showing items 1 to 3 of 6", the app and subscription pitches, the magazine credit |
+| allrecipes.com, pancakes | recipe | 72 | 36 | grandma's recipe book, quoted reviews, photo credits, "Gather all ingredients", nutrition boilerplate |
+| giallozafferano.it, carbonara | recipe | 57 | 11 | the intro, the 1944 origin story, the pasta sponsor's paragraph, nutrition disclaimers |
+| ar5iv, "Attention Is All You Need" | paper | 231 | 75 | licence note, author contributions, affiliations, "in the following sections we…", "see Figure 2", future work, thanks |
+| journals.plos.org, a new monkey species | paper | 490 | 92 | citation line, editor, dates, licence, data availability, five sentences of funding, competing interests, map credits |
+| wikipedia.org, Focaccia | article | 21 | 1 | the pointer to Wikimedia Commons; the body is all substance and all stays |
+| spotify.com, terms of use | legal | 245 | 31 | "read these Terms carefully", cross-references, "we aim to create great experiences", severability and no-waiver |
+| apple.com, a press release | article | 150 | 20 | the executive's quote, "like never before", "designed with the environment in mind", footnote pointers |
+| notion.com, a product page | product | 54 | 16 | slogans and testimonials; concrete capabilities stay |
+
+(Two more could not be read: a recipe URL that no longer exists, and an essay behind a "checking
+your browser" wall.) Nothing that carried a quantity, a step, a price, a date, a binding clause or
+a result went grey on any page. The misses were all of one kind, and none of them was the model's:
+**structure was being read as prose.** Each became a rule in `segment.ts`, never wrapped and so
+never judged, never faded, never paid for:
+
+- a heading written as a paragraph ("Multi-Head Attention", "Ricetta risotto alla milanese con kimchi"): a paragraph of at most 8 words that does not end like a sentence, or up to 14 if it is all bold;
+- a caption ("Table 1. Comparative skeletal sample…", a short `figcaption`);
+- a sentence that ends in a colon: it introduces a list, a formula or a quotation, and greying it orphans what it introduces;
+- the question that heads its answer in an FAQ ("Quante uova servono per la carbonara?");
+- a list of works cited: on the encyclopedia article it was 44 of the 77 sentences judged, every one at 0.08, and 72% of what the page cost;
+- and the sentence splitter learned "et al.", "sp. nov.", "Fig.", "(lit. …)", which had been cutting citations and glosses in half.
+
+Papers got a pack of their own (`src/packs/paper.ts`): read as news they were fine, but their genre
+has its own filler (signposting, contributions, funding) and its own substance (a hyperparameter,
+a sample size, a limitation). The kind question's eight descriptions were cut to a quarter of
+their words: asked once per sentence, they had been more than half of every request. Together:
+the encyclopedia article 44.8k → 12.7k tokens, the long paper 421k → 277k, the recipe 44.0k → 29.7k.

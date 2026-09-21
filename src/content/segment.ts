@@ -92,6 +92,26 @@ const CHROME_TAGS = new Set(["nav", "header", "footer", "aside"]);
 /** Class or id tokens that mark page chrome on sites that do not use the semantic elements. */
 const CHROME_HINT =
   /(^|[\s_-])(comment|comments|sidebar|side-bar|footer|menu|nav|navbar|navigation|breadcrumb|breadcrumbs|advert|ad|ads|related|widget|cookie|newsletter|popup|modal|promo|banner|toolbar|topbar|header)([\s_-]|$)/i;
+/**
+ * The list of works a page cites. It is reference material, not prose and not filler: on an
+ * encyclopedia article it was 44 of the 77 sentences judged, every one at 0.08, and more than half
+ * of what the page cost. Left alone, like a table.
+ */
+const REFERENCE_HINT = /(^|[\s_-])(references|reference-list|reflist|ref-list|bibliography|bibliografia|citations|footnotes|endnotes|ltx_bibliography|mw-references-wrap)([\s_-]|$)/i;
+const REFERENCE_ROLES = new Set(["doc-bibliography", "doc-endnotes", "doc-footnote", "doc-biblioentry"]);
+
+function isReferenceList(el: Element): boolean {
+  const tag = el.localName;
+  if (tag === "cite") return true;
+  const role = el.getAttribute("role");
+  if (role !== null && REFERENCE_ROLES.has(role.toLowerCase())) return true;
+  if (tag !== "ol" && tag !== "ul" && tag !== "div" && tag !== "section" && tag !== "dl") return false;
+  const id = el.getAttribute("id");
+  if (id && REFERENCE_HINT.test(id)) return true;
+  const cls = el.getAttribute("class");
+  return !!cls && REFERENCE_HINT.test(cls);
+}
+
 /** Elements a form counts as prose when deciding whether it is the page or a widget. */
 const FORM_PROSE = "p, li, blockquote, dd, dt, figcaption";
 const FORM_CONTROLS = "input:not([type=hidden]), select, textarea, button";
@@ -163,6 +183,7 @@ function isSkipped(el: Element): boolean {
   if (SKIP_TAGS.has(tag)) return true;
   if (tag === "form" && formIsChrome(el)) return true;
   if (isHidden(el)) return true;
+  if (isReferenceList(el)) return true;
   const role = el.getAttribute("role");
   if (role !== null && role.split(/\s+/).some((r) => SKIP_ROLES.has(r.toLowerCase()))) return true;
   return false;
@@ -337,6 +358,8 @@ const ABBREVIATIONS = [
   "Co", "Jr", "Sr", "Sig", "Sig.ra", "Dott", "Ing", "Avv", "art", "n", "pag", "cfr", "ca", "min", "max",
   "ecc", "Prof.ssa", "Dott.ssa", "fig", "vol", "pp", "Corp", "Univ", "Ave", "Blvd", "Mt", "Capt", "Lt", "Sgt",
   "Gen", "Col", "Rev", "Rep", "Sen", "Gov", "Pres", "Hon", "Messrs", "Mme", "Mlle", "tel",
+  // Papers: "Hart et al. [45] and…" is one sentence, and so is "Colobus congoensis sp. nov. in…".
+  "lit", "transl", "pron", "est", "esp", "incl", "viz", "al", "Fig", "Figs", "Eq", "Eqs", "Ref", "Refs", "Tab", "Sec", "cf", "sp", "spp", "nov", "ed", "eds", "resp", "ibid",
 ];
 const CASE_SENSITIVE_ABBREVIATIONS = new Set(["No", "Gen", "Col", "Rev", "Rep", "Sen", "Gov", "Pres", "Hon"]);
 const ABBREVIATION_SET = new Set(
@@ -680,6 +703,43 @@ function withoutLabel(ranges: SentenceRange[], label: number, text: string): Sen
   });
 }
 
+/** A caption's opening: "Fig 1.", "Figure 2:", "Table 3.", "Tabella 1", "Scheme 4". */
+const CAPTION = /^\s*(fig(ure|ura)?s?|tab(le|ella)?s?|scheme|box|chart|equation|eq)\.?\s*\d+/i;
+const ENDS_SENTENCE = /[.!?…。！？]["'”’»)\]]*\s*$/u;
+const LEAD_IN = /:\s*$/;
+/**
+ * A block that is a short question and nothing else: the heading of the answer under it, in an FAQ.
+ * "How much does it cost? (and what are credits)?" is still one heading, so what is ruled out is a
+ * statement anywhere in the block, not a second question mark.
+ */
+const QUESTION_MAX_WORDS = 18;
+const ONE_QUESTION = /^[^.!]*\?["'”’»)\]]*\s*$/u;
+const HEADING_MAX_WORDS = 8;
+const BOLD_HEADING_MAX_WORDS = 14;
+const CAPTION_MAX_WORDS = 14;
+
+/**
+ * Text that is structure, not prose, whatever element it sits in: a heading written as a paragraph
+ * ("Multi-Head Attention", "Ricetta risotto alla milanese con kimchi"), a caption ("Table 1.
+ * Comparative skeletal sample…"), a short figcaption, the question that heads its answer in an FAQ
+ * ("Quante uova servono per la carbonara?"). Like a real heading it names what follows,
+ * so it is never wrapped and can never fade. List items are left out of the first rule: an
+ * ingredient is four words with no full stop and is exactly what the reader came for.
+ */
+function isStructure(block: Block, text: string): boolean {
+  const tag = block.el.localName;
+  const words = countWords(text);
+  if (CAPTION.test(text)) return true;
+  if (tag === "figcaption" && words <= CAPTION_MAX_WORDS) return true;
+  if (block.unit) return false;
+  // "How much does it cost?" over its answer is a heading that happens to end in a question mark.
+  if (words <= QUESTION_MAX_WORDS && ONE_QUESTION.test(text)) return true;
+  // A heading does not end like a sentence; a bold sentence with its full stop is emphasis, not a heading.
+  if (ENDS_SENTENCE.test(text)) return false;
+  if (words <= HEADING_MAX_WORDS) return true;
+  return words <= BOLD_HEADING_MAX_WORDS && block.segments.every((s) => isBold(s.node, block.el) || text.slice(s.start, s.end).trim() === "");
+}
+
 /** The sentence ranges to wrap in a block, or null when the block is not judged at all. */
 function rangesFor(block: Block, text: string): SentenceRange[] | null {
   if (block.layout && block.hasBlockChild) return null;
@@ -687,6 +747,7 @@ function rangesFor(block: Block, text: string): SentenceRange[] | null {
   if (block.textChars === 0) return null;
   if (block.linkChars / block.textChars >= LINK_TEXT_RATIO) return null;
   if (countWords(text) < MIN_WORDS) return null;
+  if (isStructure(block, text)) return null;
   if (block.unit) {
     let s = 0;
     let e = text.length;
@@ -776,8 +837,12 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
     if (shown && !shown[n]) continue;
     if (block.segments.length === 0) continue;
     const text = block.parts.join("");
-    const ranges = rangesFor(block, text);
-    if (!ranges) continue;
+    const all = rangesFor(block, text);
+    if (!all) continue;
+    // A sentence that ends in a colon introduces what follows it (a list, a formula, a quotation):
+    // greying it would orphan the thing it introduces, so it is structure and is left out.
+    const ranges = all.filter((r) => !LEAD_IN.test(text.slice(r.start, r.end)));
+    if (ranges.length === 0) continue;
     for (let i = 0; i < ranges.length; i++) {
       const range = ranges[i]!;
       sentences.push({ id: id + i, text: cleanText(text.slice(range.start, range.end)) });

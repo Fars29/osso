@@ -12,6 +12,7 @@ import { legal } from "./legal.ts";
 import { corporate } from "./corporate.ts";
 import { product } from "./product.ts";
 import { docs } from "./docs.ts";
+import { paper } from "./paper.ts";
 import { article } from "./article.ts";
 import { social } from "./social.ts";
 
@@ -33,10 +34,11 @@ export const ROUTE_THRESHOLD = 0.5;
 
 /**
  * Order breaks ties. Corporate sits before article so "/blog/company" lands on the press pack
- * rather than the blog one; the generic pack is last and never matches, so it is only reached
+ * rather than the blog one, and paper before article so a journal that also declares itself an
+ * Article is read as a paper; the generic pack is last and never matches, so it is only reached
  * when nothing else does.
  */
-export const PACKS: Pack[] = [recipe, legal, corporate, product, docs, article, social, generic];
+export const PACKS: Pack[] = [recipe, legal, corporate, product, docs, paper, article, social, generic];
 
 export function getPack(id: PageKind): Pack {
   return PACKS.find((p) => p.id === id) ?? generic;

@@ -282,7 +282,7 @@ describe("terms fixture", () => {
 });
 
 describe("mixed fixture", () => {
-  it("routes around code, pre, tables and figures but judges captions, quotes and text-only divs", () => {
+  it("routes around code, pre, tables, figures and their short captions but judges quotes and text-only divs", () => {
     const doc = fixture("mixed");
     const seg = segmentPage(doc);
     expect(seg.container.localName).toBe("article");
@@ -293,12 +293,13 @@ describe("mixed fixture", () => {
     expect(spans(doc, "table")).toHaveLength(0);
     expect(spans(doc, "header")).toHaveLength(0);
     expect(spans(doc, "footer")).toHaveLength(0);
-    expect(spans(doc, "figcaption").length).toBeGreaterThan(0);
+    // A short caption names its figure the way a heading names a section: structure, never wrapped.
+    expect(spans(doc, "figcaption")).toHaveLength(0);
     expect(spans(doc, "blockquote").length).toBeGreaterThan(0);
     expect(spans(doc, "div.note").length).toBeGreaterThan(0);
 
     const texts = seg.sentences.map((s) => s.text);
-    expect(texts).toContain("Queue depth during the migration window, sampled every 30 seconds.");
+    expect(texts).not.toContain("Queue depth during the migration window, sampled every 30 seconds.");
     expect(texts).toContain("Run first and read the plan it prints.");
     expect(doc.querySelector("#inline-code code")?.textContent).toBe("npm run migrate --dry");
   });
@@ -604,5 +605,74 @@ describe("interface text in layout elements", () => {
     expect(spans(doc, "#prose").length).toBeGreaterThan(0);
     // A paragraph element may be as short as it likes: the rule is about layout elements only.
     expect(spans(doc, "#short").length).toBeGreaterThan(0);
+  });
+});
+
+describe("structure written as prose", () => {
+  const body = `<p>First sentence of the body of the article, which is long enough to count. Second sentence of the body here. Third one too.</p>
+    <p>Fourth sentence of the body of the article. Fifth sentence of the body here. Sixth one, and then we stop for a while.</p>
+    <p>Seventh sentence of the body. Eighth sentence of the body here. Ninth sentence, and that is the page.</p>`;
+
+  it("never wraps a heading written as a paragraph, a caption, or a sentence that introduces a list", () => {
+    const doc = page(`<article>${body}
+      <p id="h1">Multi-Head Attention</p>
+      <p id="h2"><strong>Ricetta risotto alla milanese con kimchi e una salsa di accompagnamento</strong></p>
+      <div id="cap">Table 1. Comparative skeletal sample used in the morphometric comparisons of the four species.</div>
+      <p id="fig">Fig 2. The known range of the species in the central basin.</p>
+      <p id="lead">We employ three types of regularization during training:</p>
+      <ul><li id="item">Freshly ground black pepper</li><li>Residual dropout applied to the output of each sub-layer, at a rate of 0.1.</li></ul>
+      <p id="said">Serve and enjoy!</p></article>`);
+    segmentPage(doc);
+    for (const id of ["h1", "h2", "cap", "fig", "lead"]) expect(spans(doc, `#${id}`), id).toHaveLength(0);
+    // An ingredient is four words with no full stop, and it is what the reader came for.
+    expect(spans(doc, "#item").length).toBeGreaterThan(0);
+    // A short sentence that ends like one is a sentence.
+    expect(spans(doc, "#said").length).toBeGreaterThan(0);
+  });
+
+  it("keeps a citation and a species name inside their sentence", () => {
+    const text = "The calibration follows Hart et al. [45] and was later used by Roos and Zinner. Colobus congoensis sp. nov. is described from the central basin. See Fig. 3 for the range.";
+    expect(pieces(text)).toEqual([
+      "The calibration follows Hart et al. [45] and was later used by Roos and Zinner.",
+      "Colobus congoensis sp. nov. is described from the central basin.",
+      "See Fig. 3 for the range.",
+    ]);
+  });
+});
+
+describe("questions that head an answer, and lists of works cited", () => {
+  const body = `<p>First sentence of the body of the article, which is long enough to count. Second sentence of the body here. Third one too.</p>
+    <p>Fourth sentence of the body of the article. Fifth sentence of the body here. Sixth one, and then we stop for a while.</p>
+    <p>Seventh sentence of the body. Eighth sentence of the body here. Ninth sentence, and that is the page.</p>`;
+
+  it("leaves an FAQ's question alone and judges its answer; a question inside a paragraph is still a sentence", () => {
+    const doc = page(`<article>${body}
+      <div id="q">Quante uova servono per la carbonara per 2 persone?</div>
+      <div id="a">Per due persone servono tre tuorli, e un uovo intero se la si vuole più morbida.</div>
+      <p id="q2">How much does Notion AI cost? (and what are Notion credits)?</p>
+      <p id="inline">Volete la vera carbonara? In questa ricetta vi spieghiamo passo dopo passo come ottenerla a casa.</p></article>`);
+    segmentPage(doc);
+    expect(spans(doc, "#q")).toHaveLength(0);
+    expect(spans(doc, "#q2")).toHaveLength(0);
+    expect(spans(doc, "#a").length).toBeGreaterThan(0);
+    expect(spans(doc, "#inline").length).toBeGreaterThan(0);
+  });
+
+  it("never enters a bibliography, whatever it is built from", () => {
+    const doc = page(`<article>${body}
+      <ol class="references"><li id="r1">Riolo, A. (2012). The Mediterranean Diabetes Cookbook. American Diabetes Association. p. 260.</li></ol>
+      <section class="ltx_bibliography"><ul><li id="r2">Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. Layer normalization. arXiv preprint, 2016.</li></ul></section>
+      <div role="doc-bibliography"><p id="r3">Hart JA, Amboko JD, Arenson JL. A new species of Colobus monkey. PLoS One 21(7), 2026.</p></div>
+      <p id="prose">The references section of a style guide explains how works are cited, in a full sentence of prose.</p></article>`);
+    segmentPage(doc);
+    for (const id of ["r1", "r2", "r3"]) expect(spans(doc, `#${id}`), id).toHaveLength(0);
+    expect(spans(doc, "#prose").length).toBeGreaterThan(0);
+  });
+
+  it("keeps a gloss inside its sentence", () => {
+    expect(pieces("It is similar to a flatbread called pizza bianca (lit. 'white pizza') in Roman cuisine. It is eaten warm.")).toEqual([
+      "It is similar to a flatbread called pizza bianca (lit. 'white pizza') in Roman cuisine.",
+      "It is eaten warm.",
+    ]);
   });
 });
