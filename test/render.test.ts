@@ -6,10 +6,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageJudgment, SentenceJudgment } from "../src/shared/types.ts";
 import {
+  FRONT_LEAD_PX,
+  FRONT_MAX_MS,
+  FRONT_MIN_MS,
+  FRONT_SPEED_PX_PER_MS,
+  FRONT_TRAIL_PX,
   RULE_HIT_MS,
   SETTLE_MS,
-  WAVE_MAX_MS,
-  WAVE_STEP_MS,
   applyJudgment,
   applyRules,
   clearRender,
@@ -95,7 +98,7 @@ describe("applyJudgment", () => {
     // Failed chunk: untouched and not counted, not even swept.
     for (const s of spans(5)) expect(s.className).toBe("osso-s");
     // Settled: kept is the author's ink, no class beyond osso-s, no inline style.
-    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
+    vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + 100);
     for (const id of [0, 2, 4]) for (const s of spans(id)) {
       expect(s.className).toBe("osso-s");
       expect(s.getAttribute("style") || "").toBe("");
@@ -112,53 +115,93 @@ describe("applyJudgment", () => {
     expect(fadedIds()).toEqual([1, 3]);
   });
 
-  it("staggers the first fade down the page and drops the delays once settled", () => {
+  /** Gives each sentence's spans a rectangle, as layout would: `tops[id]` is where its line starts, in window pixels. */
+  function layOut(tops: Record<number, number>, innerHeight = 800) {
+    Object.defineProperty(window, "innerHeight", { value: innerHeight, configurable: true });
+    for (const [id, top] of Object.entries(tops)) {
+      for (const s of spans(Number(id))) {
+        s.getBoundingClientRect = () => ({ top, bottom: top + 24, left: 0, right: 600, width: 600, height: 24, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      }
+    }
+  }
+
+  it("sends one front down the sentences on screen, top to bottom, and drops it once it has passed", () => {
     vi.useFakeTimers();
+    layOut({ 0: 100, 1: 130, 2: 300, 3: 330, 4: 500 });
     applyJudgment(document, judgment(), { threshold: 0.95, animations: true });
-    // Faded in document order: 0, 1, 2, 3 → one step each; all spans of a sentence share its delay.
-    expect(spans(0)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
-    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
-    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${2 * WAVE_STEP_MS}ms`);
-    for (const s of spans(3)) expect(s.style.getPropertyValue("--osso-delay")).toBe(`${3 * WAVE_STEP_MS}ms`);
-    // The kept sentence takes the next step too: the sweep passes over it on its turn.
-    expect(spans(4)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${4 * WAVE_STEP_MS}ms`);
+    // One front for the whole pass: every span carries the same start, end and duration.
+    const front = (id: number) => ["--osso-y0", "--osso-y1", "--osso-front-ms"].map((n) => spans(id)[0]!.style.getPropertyValue(n));
+    expect(front(0)).toEqual(["60px", "804px", `${Math.round((804 - 60) / FRONT_SPEED_PX_PER_MS)}ms`]);
+    for (const id of [1, 2, 3, 4]) expect(front(id)).toEqual(front(0));
+    // It starts just above the first line and ends well past the last, so nothing of it is left on the text.
+    expect(60).toBe(100 - FRONT_LEAD_PX);
+    expect(804).toBe(500 + 24 + FRONT_TRAIL_PX);
+    // The plain transition's delay is when the front gets to each line: later the lower the line.
+    const delay = (id: number) => parseInt(spans(id)[0]!.style.getPropertyValue("--osso-delay"), 10);
+    expect(delay(0)).toBeLessThan(delay(1));
+    expect(delay(1)).toBeLessThan(delay(2));
+    expect(delay(2)).toBeLessThan(delay(3));
+    expect(delay(3)).toBeLessThan(delay(4));
+    for (const s of spans(3)) expect(parseInt(s.style.getPropertyValue("--osso-delay"), 10)).toBe(delay(3));
+    // Where the grey falls, no ink is known here (jsdom reports no colours), so no wipe; kept and faded alike get the front.
+    for (const id of [0, 1, 2, 3, 4]) expect(spans(id)[0]!.classList.contains("osso-sweep")).toBe(true);
     expect(root().classList.contains("osso-settled")).toBe(false);
-    vi.advanceTimersByTime(4 * WAVE_STEP_MS + SETTLE_MS + 50);
+    vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + 100);
     expect(root().classList.contains("osso-settled")).toBe(true);
-    for (const id of [0, 1, 2, 3, 4]) for (const s of spans(id)) expect(s.style.getPropertyValue("--osso-delay")).toBe("");
+    for (const id of [0, 1, 2, 3, 4]) for (const s of spans(id)) {
+      expect(s.classList.contains("osso-sweep")).toBe(false);
+      expect(s.getAttribute("style") || "").toBe("");
+    }
   });
 
-  it("paints chunks as they land: each gets its own wave, and nothing is swept twice", () => {
+  it("does not animate what is off screen: below the fold it is simply grey when the reader gets there", () => {
     vi.useFakeTimers();
+    layOut({ 0: 100, 1: 130, 2: 300, 3: 1200, 4: 1500 }, 800);
+    applyJudgment(document, judgment(), { threshold: 0.95, animations: true });
+    for (const id of [0, 1, 2]) expect(spans(id)[0]!.classList.contains("osso-sweep")).toBe(true);
+    for (const id of [3, 4]) for (const s of spans(id)) {
+      expect(s.classList.contains("osso-sweep")).toBe(false);
+      expect(s.getAttribute("style") || "").toBe("");
+    }
+    // Sentence 3 is below the fold and below the threshold: already faded, with nothing to wait for.
+    expect(spans(3)[0]!.classList.contains("osso-fade")).toBe(true);
+    // The front stops at the window's edge, not at the last line on the page.
+    expect(spans(0)[0]!.style.getPropertyValue("--osso-y1")).toBe(`${300 + 24 + FRONT_TRAIL_PX}px`);
+  });
+
+  it("keeps a front between its shortest and longest, whatever the distance", () => {
+    layOut({ 0: 100, 1: 110 });
+    applyJudgment(document, judgment({ sentences: [S(0, 0.1, "filler_or_transition"), S(1, 0.1, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    expect(spans(0)[0]!.style.getPropertyValue("--osso-front-ms")).toBe(`${FRONT_MIN_MS}ms`);
+    clearRender(document);
+    layOut({ 0: 0, 1: 3000 }, 4000);
+    applyJudgment(document, judgment({ sentences: [S(0, 0.1, "filler_or_transition"), S(1, 0.1, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    expect(spans(0)[0]!.style.getPropertyValue("--osso-front-ms")).toBe(`${FRONT_MAX_MS}ms`);
+  });
+
+  it("paints chunks as they land: each brings its own front, and nothing is swept twice", () => {
+    vi.useFakeTimers();
+    layOut({ 0: 100, 1: 130, 2: 300, 3: 330, 4: 500 });
     const all = judgment();
     const first = { ...all, sentences: all.sentences.filter((s) => s.id <= 1), failedIds: [] };
     const rest = { ...all, sentences: all.sentences.filter((s) => s.id >= 2) };
     applyJudgment(document, first, { threshold: 0.95, animations: true });
-    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
+    expect(spans(1)[0]!.style.getPropertyValue("--osso-y0")).toBe("60px");
     expect(spans(2)[0]!.classList.contains("osso-sweep")).toBe(false);
     vi.advanceTimersByTime(100);
     applyJudgment(document, rest, { threshold: 0.95, animations: true });
-    // The second chunk starts its own wave at zero; the first chunk's spans are left as they were.
-    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
+    // The second chunk's front starts above its own first line; the first chunk's is left as it was.
+    expect(spans(2)[0]!.style.getPropertyValue("--osso-y0")).toBe(`${300 - FRONT_LEAD_PX}px`);
     expect(spans(2)[0]!.classList.contains("osso-sweep")).toBe(true);
-    expect(spans(1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_STEP_MS}ms`);
-    // The whole judgment that follows the chunks re-sweeps nothing and re-delays nothing.
+    expect(spans(1)[0]!.style.getPropertyValue("--osso-y0")).toBe("60px");
+    // The whole judgment that follows the chunks re-sweeps nothing.
     applyJudgment(document, all, { threshold: 0.95, animations: true });
-    expect(spans(0)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
-    expect(spans(2)[0]!.style.getPropertyValue("--osso-delay")).toBe("0ms");
-    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
+    expect(spans(0)[0]!.style.getPropertyValue("--osso-y0")).toBe("60px");
+    expect(spans(2)[0]!.style.getPropertyValue("--osso-y0")).toBe(`${300 - FRONT_LEAD_PX}px`);
+    vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + 100);
     for (const id of [0, 1, 2, 3, 4]) for (const s of spans(id)) expect(s.classList.contains("osso-sweep")).toBe(false);
   });
 
-  it("caps the wave so a long page still settles", () => {
-    document.body.innerHTML = `<p data-osso-block="">${Array.from({ length: 60 }, (_, i) => `<span class="osso-s" data-osso="${i}">s${i}.</span>`).join(" ")}</p>`;
-    const sentences = Array.from({ length: 60 }, (_, i) => S(i, 0.1, "filler_or_transition"));
-    applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.5, animations: true });
-    const last = Math.floor(WAVE_MAX_MS / WAVE_STEP_MS);
-    expect(spans(last - 1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${(last - 1) * WAVE_STEP_MS}ms`);
-    expect(spans(last + 1)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_MAX_MS}ms`);
-    expect(spans(59)[0]!.style.getPropertyValue("--osso-delay")).toBe(`${WAVE_MAX_MS}ms`);
-  });
 
   it("uses no delay with animations off, and marks the root still", () => {
     applyJudgment(document, judgment(), { threshold: 0.5, animations: false });
@@ -190,7 +233,7 @@ describe("setThreshold", () => {
   it("re-renders from the stored judgment with no delay and marks the change instant", () => {
     vi.useFakeTimers();
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
-    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
+    vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + 100);
     expect(setThreshold(document, 0.95)).toEqual({ total: 5, kept: 1, faded: 4 });
     expect(fadedIds()).toEqual([0, 1, 2, 3]);
     expect(spans(0)[0]!.style.getPropertyValue("--osso-delay")).toBe("");
@@ -668,7 +711,7 @@ describe("applyRules", () => {
     applyRules(document, { prices: { 1: 0.8 } }, ["prices"]);
     expect(root().classList.contains("osso-instant")).toBe(false);
     expect(root().classList.contains("osso-settled")).toBe(false);
-    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
+    vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + 100);
     expect(root().classList.contains("osso-settled")).toBe(true);
     applyRules(document, { deadlines: { 3: 0.9 } }, ["prices", "deadlines"]);
     expect(root().classList.contains("osso-instant")).toBe(true);

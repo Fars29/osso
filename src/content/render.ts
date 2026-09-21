@@ -25,21 +25,26 @@ const SPAN = ".osso-s";
 const BLOCK = "[data-osso-block]";
 
 /**
- * Settle: a wave down the page, one sentence after another, capped so a long chunk still settles in
- * about a second and a half. Each sentence judged in a pass, kept or not, gets the sweep on its
- * delay, and the sweep is made of light, not paint: the glyphs are painted through a text-clipped
- * gradient whose feathered front travels along the sentence. On a sentence the grey falls on, the
- * ink is washed out behind the front (the wipe); on a kept one a veil of light crosses and it is
- * ink again. Inside a link, without the block's ink, or over an emoji (a colour glyph cannot be
- * painted through a gradient) the grey falls back to the SETTLE_MS colour transition. Chunks land
- * one after another and each brings its own wave, so the page is seen being read from the top
- * down at the speed the model answers.
+ * The front: one horizontal line of light that comes down the page, and the text is washed as it
+ * passes. It is a single vertical gradient anchored to the window (`background-attachment: fixed`)
+ * and painted through the glyphs, so it runs unbroken across lines, sentences and paragraphs: above
+ * it, a sentence the grey falls on has lost its ink over a feathering FRONT_FEATHER_PX tall; on a
+ * kept sentence a veil of light passes and it is ink again. Each chunk the model answers brings
+ * its own front, starting just above the chunk's first line on screen and ending far enough past
+ * its last that nothing of the pass is left on the text, at a constant speed whatever the distance.
+ * What is off screen is not animated at all: it is simply grey when the reader gets there. Inside a
+ * link, without the block's ink, or over an emoji (a colour glyph cannot be painted through a
+ * gradient) the grey falls back to a SETTLE_MS colour transition that starts when the front
+ * arrives at that line.
  */
-export const WAVE_STEP_MS = 45;
-export const WAVE_MAX_MS = 1300;
-export const SETTLE_MS = 1800;
-/** The sweep's length (osso.css matches); shorter than SETTLE_MS, so the settle timer covers it. */
-export const SWEEP_MS = 1800;
+export const FRONT_FEATHER_PX = 160;
+/** The front starts this far above the first line and ends this far below the last, so the veil and the feathering both clear the text. */
+export const FRONT_LEAD_PX = 40;
+export const FRONT_TRAIL_PX = 280;
+export const FRONT_SPEED_PX_PER_MS = 0.4;
+export const FRONT_MIN_MS = 900;
+export const FRONT_MAX_MS = 3200;
+export const SETTLE_MS = 700;
 /** How long the page's read-out stays once the judgment is complete. */
 const HUD_LINGER_MS = 2200;
 const HUD_COUNT_MS = 420;
@@ -184,62 +189,91 @@ function ruleKeeping(state: DocState, id: number): string | null {
 }
 
 /**
- * Toggles fade/pin classes from the stored judgment. With `wave`, sentences that become faded in this
- * pass get a delay by their rank in document order, so the page settles top to bottom. Sentences that
- * were already faded keep their state; kept sentences end with no class and no inline style. A
- * sentence an active rule keeps is never faded, whatever the slider says.
+ * Toggles fade/pin classes from the stored judgment. With `wave`, the sentences rendered for the
+ * first time in this pass get the front (see `sweep`). Sentences already rendered keep their
+ * state; kept sentences end with no class and no inline style. A sentence an active rule keeps is
+ * never faded, whatever the slider says.
  */
 function render(doc: Document, state: DocState, wave: boolean): Counts {
   let total = 0;
   let faded = 0;
-  let rank = 0;
-  let maxDelay = 0;
+  const fresh: Array<{ span: HTMLElement; fade: boolean }> = [];
   for (const [id, spans] of spansById(doc)) {
     const j = state.judgment.get(id);
     if (!j || state.failed.has(id)) continue;
     total++;
     const fade = j.keep < state.threshold && ruleKeeping(state, id) === null;
     const pinned = state.pinned.has(id);
-    const wasFaded = spans[0]!.classList.contains("osso-fade");
     for (const s of spans) {
       s.classList.toggle("osso-fade", fade);
       s.classList.toggle("osso-pin", pinned);
     }
     if (fade && !pinned) faded++;
-    // The wave runs over every sentence judged in this pass, kept or not: the sweep shows the
-    // judge passing over the text, and the grey follows it where it falls.
-    const fresh = !state.painted.has(id);
-    if (fresh) state.painted.add(id);
-    if (wave && (fresh || (fade && !wasFaded))) {
-      const delay = Math.min(rank * WAVE_STEP_MS, WAVE_MAX_MS);
-      rank++;
-      maxDelay = Math.max(maxDelay, delay);
-      for (const s of spans) {
-        s.style.setProperty("--osso-delay", `${delay}ms`);
-        state.waved.push(s);
-        // Glyphs painted through a gradient lose their own colours: a span holding an emoji keeps
-        // the plain colour transition instead of vanishing for a second.
-        if (fresh && !EMOJI.test(s.textContent ?? "")) {
-          s.classList.add("osso-sweep");
-          // Where the grey falls, the ink is washed out behind the front rather than faded all at
-          // once. Not inside a link (its ink is the link's, not the block's), and not without the
-          // block's ink to paint the part the front has not reached.
-          if (fade && !pinned && !s.closest("a") && hasInk(s)) s.classList.add("osso-wipe");
-          state.swept.push(s);
-        }
-      }
+    if (!state.painted.has(id)) {
+      state.painted.add(id);
+      if (wave) for (const span of spans) fresh.push({ span, fade: fade && !pinned });
     }
   }
-  if (wave && rank > 0) scheduleSettle(doc, state, maxDelay);
+  if (fresh.length > 0) sweep(doc, state, fresh);
   return { total, kept: total - faded, faded };
 }
 
+/** When a front on a sine ease reaches the share `p` of its travel, as a share of its duration. */
+function arrival(p: number): number {
+  return Math.acos(1 - 2 * Math.min(1, Math.max(0, p))) / Math.PI;
+}
+
 /**
- * Once the entrance wave has played, the delays have done their job: drop them so reveal, pin and
- * threshold changes move every sentence together, and mark the root settled (osso.css shortens the
+ * One front for the spans of this pass: from just above the first of them on screen to past the
+ * last, at a constant speed. Reads every rectangle first, then writes. Every judged sentence on
+ * screen, kept or not, is painted through the front; where the grey falls the ink is washed out
+ * behind it. A span holding an emoji, or inside a link, or with no ink known, keeps the plain
+ * colour transition, delayed to the moment the front gets to it.
+ */
+function sweep(doc: Document, state: DocState, fresh: Array<{ span: HTMLElement; fade: boolean }>) {
+  const vh = doc.defaultView?.innerHeight ?? 0;
+  const measured = fresh.map((f) => ({ ...f, rect: f.span.getBoundingClientRect() }));
+  // No layout (a test document, a detached view): everything counts as on screen, at the top.
+  const laidOut = vh > 0 && measured.some((m) => m.rect.height > 0);
+  const onScreen = laidOut ? measured.filter((m) => m.rect.bottom > 0 && m.rect.top < vh) : measured;
+  if (onScreen.length === 0) return;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const m of onScreen) {
+    if (m.rect.top < top) top = m.rect.top;
+    if (m.rect.bottom > bottom) bottom = m.rect.bottom;
+  }
+  const y0 = Math.max(-FRONT_FEATHER_PX, top - FRONT_LEAD_PX);
+  const y1 = (laidOut ? Math.min(vh, bottom) : bottom) + FRONT_TRAIL_PX;
+  const ms = Math.round(Math.min(FRONT_MAX_MS, Math.max(FRONT_MIN_MS, (y1 - y0) / FRONT_SPEED_PX_PER_MS)));
+
+  for (const m of onScreen) {
+    const s = m.span;
+    // The plain transition, where it is what a span gets, starts as the front arrives at its line.
+    s.style.setProperty("--osso-delay", `${Math.round(arrival((m.rect.top - y0) / (y1 - y0)) * ms)}ms`);
+    state.waved.push(s);
+    // Glyphs painted through a gradient lose their own colours: an emoji would vanish for the pass.
+    if (EMOJI.test(s.textContent ?? "")) continue;
+    s.classList.add("osso-sweep");
+    s.style.setProperty("--osso-y0", `${Math.round(y0)}px`);
+    s.style.setProperty("--osso-y1", `${Math.round(y1)}px`);
+    s.style.setProperty("--osso-front-ms", `${ms}ms`);
+    // Not inside a link (its ink is the link's, not the block's), and not without the block's ink
+    // to paint what the front has not reached.
+    if (m.fade && !s.closest("a") && hasInk(s)) s.classList.add("osso-wipe");
+    state.swept.push(s);
+  }
+  scheduleSettle(doc, state, ms);
+}
+
+const FRONT_PROPERTIES = ["--osso-y0", "--osso-y1", "--osso-front-ms"] as const;
+
+/**
+ * Once the front has passed, what it needed has done its job: drop it so reveal, pin and threshold
+ * changes move every sentence together, and mark the root settled (osso.css shortens the
  * transition from there on).
  */
-function scheduleSettle(doc: Document, state: DocState, maxDelay: number) {
+function scheduleSettle(doc: Document, state: DocState, ms: number) {
   const root = doc.documentElement;
   root.classList.remove("osso-settled");
   if (state.settleTimer) clearTimeout(state.settleTimer);
@@ -247,10 +281,13 @@ function scheduleSettle(doc: Document, state: DocState, maxDelay: number) {
     state.settleTimer = null;
     for (const s of state.waved) dropProperty(s, "--osso-delay");
     state.waved = [];
-    for (const s of state.swept) s.classList.remove("osso-sweep", "osso-wipe");
+    for (const s of state.swept) {
+      s.classList.remove("osso-sweep", "osso-wipe");
+      for (const name of FRONT_PROPERTIES) dropProperty(s, name);
+    }
     state.swept = [];
     root.classList.add("osso-settled");
-  }, maxDelay + SETTLE_MS + 50);
+  }, ms + SETTLE_MS + 50);
 }
 
 /** Whether the span's block knows the author's ink (paintBlocks wrote it): the wipe needs it for the part not yet swept. */
@@ -390,7 +427,8 @@ function inkOf(el: Element, win: Window): RGB | null {
 /** Reads every block's background and ink first, then writes each block's grey: no interleaved layout thrash. */
 function paintBlocks(doc: Document) {
   const win = doc.defaultView;
-  const blocks = Array.from(doc.querySelectorAll<HTMLElement>(BLOCK));
+  // Only blocks not painted yet: a chunk landing mid-wash must not re-read every paragraph on the page.
+  const blocks = Array.from(doc.querySelectorAll<HTMLElement>(BLOCK)).filter((b) => b.style.getPropertyValue("--osso-grey") === "");
   const memo = new Map<Element, RGB>();
   const bgs = blocks.map((b) => (win ? effectiveBackground(b, win, memo) : WHITE));
   const inks = blocks.map((b) => (win ? inkOf(b, win) : null));
@@ -949,6 +987,7 @@ export function clearRender(doc: Document): void {
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
     s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe");
     dropProperty(s, "--osso-delay");
+    for (const name of FRONT_PROPERTIES) dropProperty(s, name);
   }
   for (const b of doc.querySelectorAll<HTMLElement>(BLOCK)) {
     dropProperty(b, "--osso-grey");

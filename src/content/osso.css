@@ -3,59 +3,60 @@
  * and none of them touches layout. The fade is a colour transition on inline spans; nothing else.
  */
 
-/* The settle, where the wash cannot run (inside a link, or with no ink known): 900 ms per sentence on
-   the same curve as the wash, so the two are one movement; the renderer staggers the delays down
-   the page (render.ts SETTLE_MS matches). */
+/* The settle, where the front cannot paint (inside a link, over an emoji, with no ink known): a
+   700 ms colour transition that the renderer delays to the moment the front reaches that line
+   (render.ts SETTLE_MS matches). */
 .osso-s {
   transition-property: color;
-  transition-duration: var(--osso-dur, 1800ms);
+  transition-duration: var(--osso-dur, 700ms);
   transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
   transition-delay: var(--osso-delay, 0ms);
 }
 
-/* The sweep: the judge passing over a sentence, on the sentence's own delay. It is made of light,
-   not paint: no colour of ours touches the page. The glyphs themselves are painted through a
-   text-clipped gradient whose front (--osso-x) travels along the sentence, in reading order across
-   its lines, on the curve iOS uses for a sheet coming to rest: quick off the mark, a long soft
-   landing. --osso-x is a registered length-percentage, so the front's feathering is the same
-   width on a three-word item and on a paragraph-long sentence, and it ends far enough past the
-   right end that nothing of the pass is left on the text. */
-@property --osso-x {
-  syntax: "<length-percentage>";
+/* The front: one horizontal line of light that comes down the page, and the text is washed as it
+   passes. It is made of light, not paint: no colour of ours touches the page. The glyphs are
+   painted through a single vertical gradient anchored to the window (background-attachment:
+   fixed), so it runs unbroken across lines, sentences and paragraphs; --osso-y is where the front
+   is, in window pixels, and each chunk's spans carry their own start, end and duration (render.ts
+   sweep()). Registered, so it interpolates; a sine ease in and out, because a front on an
+   ease-out curve does most of its travel at once and reads as a snap. */
+@property --osso-y {
+  syntax: "<length>";
   inherits: false;
-  initial-value: -260px;
+  initial-value: -400px;
 }
 
-@keyframes osso-wash {
+@keyframes osso-front {
   from {
-    --osso-x: -260px;
+    --osso-y: var(--osso-y0, -200px);
   }
   to {
-    --osso-x: calc(100% + 330px);
+    --osso-y: var(--osso-y1, 1400px);
   }
 }
 
-/* A kept sentence: a veil of light crosses it and it is ink again. Read, and left alone. */
+/* A kept sentence: a veil of light, 240 px tall, passes down through it and it is ink again. */
 html.osso-on .osso-sweep {
   -webkit-text-fill-color: transparent;
   background-image: linear-gradient(
-    90deg,
-    currentColor calc(var(--osso-x) - 320px),
-    color-mix(in srgb, currentColor 58%, var(--osso-grey, #b9b9b9)) calc(var(--osso-x) - 160px),
-    currentColor var(--osso-x)
+    180deg,
+    currentColor calc(var(--osso-y) - 240px),
+    color-mix(in srgb, currentColor 58%, var(--osso-grey, #b9b9b9)) calc(var(--osso-y) - 120px),
+    currentColor var(--osso-y)
   );
+  background-attachment: fixed;
   background-repeat: no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
-  animation: osso-wash 1800ms cubic-bezier(0.37, 0, 0.63, 1) var(--osso-delay, 0ms) both;
+  animation: osso-front var(--osso-front-ms, 2000ms) cubic-bezier(0.37, 0, 0.63, 1) both;
 }
 
-/* A sentence the grey falls on: the ink is washed out of it behind a front feathered over 240 px,
-   so the grey arrives the way a tide does rather than the way a switch does. `color` is already
-   the grey underneath (no transition here), so nothing jumps when the class comes off. */
+/* A sentence the grey falls on: above the front its ink is gone, over a feathering 160 px tall, so
+   the grey comes down the page the way dusk does. The colour property is already the grey
+   underneath (no transition here), so nothing jumps when the class comes off. */
 html.osso-on .osso-sweep.osso-wipe {
   transition: none;
-  background-image: linear-gradient(90deg, var(--osso-grey, #b9b9b9) calc(var(--osso-x) - 240px), var(--osso-ink, #161616) var(--osso-x));
+  background-image: linear-gradient(180deg, var(--osso-grey, #b9b9b9) calc(var(--osso-y) - 160px), var(--osso-ink, #161616) var(--osso-y));
 }
 
 html.osso-still .osso-sweep {
@@ -185,7 +186,7 @@ html.osso-on:not(.osso-reveal) a:has(.osso-fade:not(.osso-pin)):not(:hover) {
 }
 
 html.osso-on:not(.osso-settled):not(.osso-still) a:has(.osso-fade:not(.osso-pin)) {
-  transition: text-decoration-color var(--osso-dur, 1800ms) cubic-bezier(0.32, 0.72, 0, 1);
+  transition: text-decoration-color var(--osso-dur, 700ms) cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 html.osso-on:not(.osso-reveal) a:hover .osso-fade:not(.osso-pin) {
