@@ -1,6 +1,6 @@
 /**
  * Osso on real pages: loads dist/ into Chromium, opens each URL, waits for the content script to
- * settle, and prints what it did and why — status, the skip reason, sentences wrapped, faded, the
+ * settle, and prints what it did and why: status, the skip reason, sentences wrapped, faded, the
  * container it chose. The tool for "it does nothing on site X": run it on X and read the row.
  *
  * Run: npm run build && node --env-file=.env e2e/sites.mjs [url ...]

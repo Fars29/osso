@@ -173,7 +173,7 @@ function renderStats(stats: Stats) {
   setNumber(ui.stSentences, integer.format(stats.sentencesJudged));
   setNumber(ui.stTokens, integer.format(stats.inputTokens));
   setNumber(ui.stCost, formatCost(stats.inputTokens));
-  setNumber(ui.stAvg, stats.pagesJudged > 0 ? formatMs(stats.ms / stats.pagesJudged) : "—");
+  setNumber(ui.stAvg, formatMs(stats.pagesJudged > 0 ? stats.ms / stats.pagesJudged : 0));
   setNumber(ui.stCache, integer.format(stats.cacheHits));
 }
 

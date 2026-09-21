@@ -215,7 +215,7 @@ for (const page of PAGES) {
   const parsed = parseAnswers(inputsFor(page), res.answers, true);
   if (parsed.failedIds.length) throw new Error(`page ${page.id}: unparseable answers for ids ${parsed.failedIds.join(", ")}`);
   const pk = parsed.pageKind ? `${parsed.pageKind.kind} (${parsed.pageKind.confidence.toFixed(2)})` : "?";
-  console.log(`\n=== ${page.id} ${page.kind} (${page.lang}) — ${page.s.length} sentences, ${questions} questions — ${res.ms.toFixed(0)} ms — ${res.tokens} in-tokens — page_kind: ${pk}`);
+  console.log(`\n=== ${page.id} ${page.kind} (${page.lang}) · ${page.s.length} sentences, ${questions} questions · ${res.ms.toFixed(0)} ms · ${res.tokens} in-tokens · page_kind: ${pk}`);
   for (const j of parsed.sentences) {
     const s = page.s[j.id]!;
     const row: Row = { page: page.id, k: s.k, t: s.t, ...j };

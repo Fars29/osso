@@ -39,9 +39,9 @@ You choose, at the welcome and any time in Options: **every page as it loads**, 
 
 ## What these checks can and cannot do
 
-Two things do not depend on any check, because no code exists to do them: **the page's address is never sent**, and **what you type into a page is never read** — form fields, text boxes and editors are skipped before anything is split into sentences, so their values are never part of what is sent.
+Two things do not depend on any check, because no code exists to do them: **the page's address is never sent**, and **what you type into a page is never read**, because form fields, text boxes and editors are skipped before anything is split into sentences, so their values are never part of what is sent.
 
-Everything else on this page is a heuristic. It reads how a page is built, and it catches the shapes private pages usually have. A site built differently — a portal that draws its own login box, a message displayed like an article, a record in a format these checks do not know — can get through, and then that page's visible text is sent to TypeSafe under your key, like any other page's.
+Everything else on this page is a heuristic. It reads how a page is built, and it catches the shapes private pages usually have. A site built differently can get through, and then that page's visible text is sent to TypeSafe under your key, like any other page's: a portal that draws its own login box, a message displayed like an article, a record in a format these checks do not know.
 
 So: where the text itself is private, choose **only when I click**, or switch Osso off for that site. Osso is a reading aid for published writing, and that is the job it is built for.
 

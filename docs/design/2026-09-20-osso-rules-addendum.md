@@ -1,4 +1,4 @@
-# Osso — addendum: your own rules
+# Osso addendum: your own rules
 
 *2026-09-20. Extends the design spec. Status: approved for build.*
 
@@ -36,8 +36,8 @@ RULE_THRESHOLD = 0.5; MAX_RULES = 8; MAX_RULE_LENGTH = 80; RULE_QUESTION = { ins
 
 - Background keeps an in-memory `recentRequests: Map<contentHash, JudgeRequest>` (last 50) so a rule can be judged later without the page resending its sentences. `judgeRules` looks the request up, calls `api.judgeRules(req, rules, opts)` (same chunking, concurrency and retry as `judgePage`), merges the result into the cached `PageJudgment.rules`, replies `ruleJudgment`.
 - On page load the content script sends `judge` and, if `settings.rules` is non-empty, `judgeRules` for all rules at once. Cached pages carry their rule results; only rules missing from the cache are judged.
-- `render.applyRules(doc, rules: Record<string, Record<number, number>>, activeRules: string[])`: sentences with a hit on an active rule lose `osso-fade`. On a *new* hit (a rule just added, or first paint), spans get a transient `osso-rule-hit` class: an accent underline that draws in over 240 ms and fades out over 1.2 s — the one place the accent colour touches the page, so the user sees what the rule caught. Removing a rule re-renders from cache with no animation beyond the normal fade.
-- Popup: the rules field sits directly under the header, above the big number. Placeholder cycles every 3 s through *prices · deadlines · allergens · what I have to do · names of people*. Enter adds; Escape clears; the chip appears with a 160 ms pop, reads `prices · …` while judging and `prices · 3` when the count arrives; `×` removes it. Chips wrap; over 8 the field is disabled with the hint "8 is plenty". Rules are saved through `setSettings({ rules })`; the background broadcasts `rulesChanged` (rules only — never the whole settings) to all tabs.
+- `render.applyRules(doc, rules: Record<string, Record<number, number>>, activeRules: string[])`: sentences with a hit on an active rule lose `osso-fade`. On a *new* hit (a rule just added, or first paint), spans get a transient `osso-rule-hit` class: an accent underline that draws in over 240 ms and fades out over 1.2 s, the one place the accent colour touches the page, so the user sees what the rule caught. Removing a rule re-renders from cache with no animation beyond the normal fade.
+- Popup: the rules field sits directly under the header, above the big number. Placeholder cycles every 3 s through *prices · deadlines · allergens · what I have to do · names of people*. Enter adds; Escape clears; the chip appears with a 160 ms pop, reads `prices · …` while judging and `prices · 3` when the count arrives; `×` removes it. Chips wrap; over 8 the field is disabled with the hint "8 is plenty". Rules are saved through `setSettings({ rules })`; the background broadcasts `rulesChanged` (rules only, never the whole settings) to all tabs.
 - Options page: the same list, editable, under Behaviour, for people who prefer a page.
 
 ## Tests

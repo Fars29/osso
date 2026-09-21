@@ -36,7 +36,7 @@ Per page:
 | E | news article | en | 10 | 1.000 | 0.93 | 0.10 | 0.90 | 0.13 |
 | F | recipe blog | it | 11 | 1.000 | 0.91 | 0.07 | 0.63 | 0.12 |
 | G | corporate statement | it | 8 | 1.000 | 0.96 | 0.05 | 0.95 | 0.06 |
-| H | noise floor | en | 8 | — | — | 0.05 | — | 0.06 |
+| H | noise floor | en | 8 | · | · | 0.05 | · | 0.06 |
 | I | recipe, redundancy trap | en | 14 | 0.978 | 0.94 | 0.26 | 0.75 | 0.84 |
 | J | corporate, redundancy trap | it | 7 | 1.000 | 0.96 | 0.12 | 0.95 | 0.29 |
 
@@ -196,7 +196,7 @@ different states:
 | state | tokens vs shipped | decisions that change at 0.35 | mean |Δp| |
 |---|---|---|---|
 | no text at all (title and hint only) | −4% to −8% | 2 to 12 a page | 0.035 to 0.065 |
-| **the chunk (shipped)** | — | — | — |
+| **the chunk (shipped)** | · | · | · |
 | the chunk, its boundaries moved by 15 sentences | 0% | 0 to 6 a page | 0.011 to 0.037 |
 | the chunk + the five sentences before it | +1% | 0 to 4 a page | 0.005 to 0.024 |
 | the chunk + the page's headings and lead, the sentence's heading in the question | +3% to +5% | 0 to 9 a page | 0.009 to 0.035 |
@@ -213,7 +213,7 @@ different states:
   case changed side under a bigger state: every sentence that flipped was one the shipped state
   already had between 0.17 and 0.52. Where the whole page
   leaned, it leaned the wrong way: on the encyclopedia article it greyed dated facts ("…replaced by
-  barm, and after 1871 by purpose-cultured yeast" 0.52 → 0.32) — a sentence weighed against a
+  barm, and after 1871 by purpose-cultured yeast" 0.52 → 0.32), since a sentence weighed against a
   whole page of facts looks less needed, the same trap as the redundancy clause above.
 - **No edge effect.** The two sentences that open a chunk, cut off from what precedes them, differ
   from the same sentences judged mid-chunk by 0.021 on average; interior sentences differ by 0.021.
@@ -235,7 +235,7 @@ and "the overall texture came out great" grey, the reviewer's aside about vanill
 a threshold to move: in a review the opinion is the content, and the question reads opinion as
 filler, so it is wrong there by construction. Reviews, comments and replies are now structure
 (`segment.ts`, `UGC_HINT` and schema.org's Review and Comment): never wrapped, never judged, never
-paid for — on that page they were 44% of the text. The rule is asked inside an `<article>` too,
+paid for, and on that page they were 44% of the text. The rule is asked inside an `<article>` too,
 which is where publishers put them, and gives way when the readers' words are most of the page (a
 thread, a Q&A). Names that also mean an article are left out: "review" is a critic's page,
 "discussion" a paper's section. And a tag at the end of a paragraph ("Edited", "Read more") is a

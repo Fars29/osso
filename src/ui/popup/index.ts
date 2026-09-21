@@ -288,7 +288,7 @@ function render() {
       }
       // Nothing back yet: the number that will become the kept count is already there, pulsing;
       // the caption carries the verb.
-      ui.kept.textContent = s.total > 0 ? String(s.total) : "—";
+      ui.kept.textContent = s.total > 0 ? String(s.total) : "…";
       ui.total.textContent = "";
       ui.caption.textContent = s.status === "judging" ? "sentences, judging…" : "waiting for the page";
       ui.status.textContent = "";

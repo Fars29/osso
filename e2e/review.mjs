@@ -7,7 +7,7 @@
  * Run: npm run build && node --env-file=.env e2e/review.mjs <url> [url…] [--kept] [--shot]
  *   --kept  list the kept sentences too (by default only the faded ones and the borderline kept)
  *   --brief one screen per page: the grey (cut to 120 characters, 45 at most), then the suspects
- *           among the kept — those the model itself calls opinion, story, filler or promo
+ *           among the kept, those the model itself calls opinion, story, filler or promo
  *   --shot  save a full-page screenshot to e2e/screenshots/review-<host>.png
  */
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -64,7 +64,7 @@ try {
     console.log(`\n${"=".repeat(100)}\n${url}`);
     const live = await page.evaluate(() => ({ title: document.title.slice(0, 80), chars: (document.body?.innerText ?? "").length }));
     console.log(`title: ${live.title}  |  text on page: ${live.chars} chars`);
-    console.log(`status: ${state?.status ?? "(none)"}${state?.reason ? ` — ${state.reason}` : ""}  |  kind: ${state?.pageKind ?? "-"} (pack ${state?.packId ?? "-"})  |  ${state?.kept ?? 0} kept / ${state?.faded ?? 0} faded of ${state?.total ?? 0}  |  ${state?.ms ?? 0} ms, ${state?.inputTokens ?? 0} tokens`);
+    console.log(`status: ${state?.status ?? "(none)"}${state?.reason ? `, ${state.reason}` : ""}  |  kind: ${state?.pageKind ?? "-"} (pack ${state?.packId ?? "-"})  |  ${state?.kept ?? 0} kept / ${state?.faded ?? 0} faded of ${state?.total ?? 0}  |  ${state?.ms ?? 0} ms, ${state?.inputTokens ?? 0} tokens`);
     if (state?.status !== "done") {
       await page.close();
       continue;

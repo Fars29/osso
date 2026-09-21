@@ -1,5 +1,5 @@
 /*
- * Osso — loaded on every page by the manifest, so every rule is scoped to .osso-* or html.osso-on
+ * Osso, loaded on every page by the manifest, so every rule is scoped to .osso-* or html.osso-on
  * and none of them touches layout. The fade is a colour transition on inline spans, and a hairline
  * drawn through them as a background; nothing else.
  */

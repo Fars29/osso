@@ -106,7 +106,7 @@ describe("splitSentences", () => {
   it("counts words across scripts and contractions", () => {
     expect(countWords("It's a weeknight staple")).toBe(4);
     expect(countWords("500 g di farina")).toBe(4);
-    expect(countWords("— · —")).toBe(0);
+    expect(countWords("· : ·")).toBe(0);
   });
 });
 
@@ -168,7 +168,7 @@ describe("recipe fixture", () => {
   it("collects the page meta packs route on", () => {
     const doc = fixture("recipe");
     const seg = segmentPage(doc);
-    expect(seg.meta.title).toBe("The Best One-Pot Lemon Chicken Orzo — Nonna's Kitchen");
+    expect(seg.meta.title).toBe("The Best One-Pot Lemon Chicken Orzo · Nonna's Kitchen");
     expect(seg.meta.lang).toBe("en");
     expect(seg.meta.ogType).toBe("article");
     expect(seg.meta.jsonLdTypes).toEqual(expect.arrayContaining(["recipe", "person", "webpage", "itempage"]));

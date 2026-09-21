@@ -46,7 +46,7 @@ function replay(el: HTMLElement, cls: string) {
 function countText(c: RuleCount): string {
   if (c === null) return "";
   if (c === "judging") return "· …";
-  if (c === "unknown") return "· —";
+  if (c === "unknown") return "· ?";
   return `· ${c}`;
 }
 

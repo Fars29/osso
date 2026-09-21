@@ -31,7 +31,7 @@ const ours: Array<[string, string]> = [
 describe("what we say to the model is English", () => {
   it.each(ours)("%s has no letter outside the English alphabet", (_name, text) => {
     // Punctuation we use on purpose: guillemets around quoted text, curly quotes, dashes, ellipsis.
-    expect(text.replace(/[«»“”‘’–—…]/g, "")).toMatch(/^[\x20-\x7E]*$/);
+    expect(text.replace(/[«»“”‘’–…]/g, "")).toMatch(/^[\x20-\x7E]*$/);
   });
 
   it("an Italian page is asked about in English: only the title and the sentences are Italian", () => {
@@ -39,6 +39,6 @@ describe("what we say to the model is English", () => {
     const sentence = "Cuocete il guanciale finché non è croccante, perché così rilascia il grasso.";
     const body = buildRequestBody([{ id: 1, text: sentence }], meta, PACKS[0]!, true);
     const strip = (s: string) => s.split(sentence).join("").split(meta.title).join("");
-    expect(strip(JSON.stringify(body))).toMatch(/^[\x20-\x7E«»“”‘’–—…]*$/);
+    expect(strip(JSON.stringify(body))).toMatch(/^[\x20-\x7E«»“”‘’–…]*$/);
   });
 });

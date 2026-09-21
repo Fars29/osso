@@ -5,7 +5,7 @@
  * This runs on every page on the web, so the rules are conservative by construction: it only ever
  * splits text nodes and wraps them in inline elements, it never reads layout, it never touches
  * headings, tables, code, chrome (nav/header/footer/aside), forms or editable regions, and anything
- * it is unsure about it leaves alone — untouched text stays in the author's ink, which is the safe
+ * it is unsure about it leaves alone, since untouched text stays in the author's ink, which is the safe
  * default.
  *
  * The wrapper is a custom element rather than a <span> so that no author stylesheet written against
@@ -174,7 +174,7 @@ function isHidden(el: Element): boolean {
 /**
  * A table is data (never touched) unless it is plainly the page's layout: no header cells, no
  * caption, and either a handful of cells or one cell holding most of its text. Hand-written sites
- * of the older web — essays, manifestos, university pages — put the whole article in one td, and
+ * of the older web (essays, manifestos, university pages) put the whole article in one td, and
  * "never touch a table" left every one of them untouched. Memoised: the walk asks many times.
  */
 const LAYOUT_TABLE_MAX_CELLS = 4;
@@ -421,7 +421,7 @@ export function countWords(text: string): number {
 
 /**
  * Whether a sentence may start at `at`: the Latin rule (capital, digit, opening quote), or any
- * letter of a script that has no case at all — Arabic, Hebrew, Thai, Devanagari, CJK — where the
+ * letter of a script that has no case at all (Arabic, Hebrew, Thai, Devanagari, CJK) where the
  * capital test would otherwise mean "never".
  */
 function isStarter(text: string, at: number): boolean {
@@ -627,7 +627,7 @@ interface Walk {
   /**
    * True when the container is the body, i.e. no main content was found: then anything that looks
    * like chrome by its class or id (a cookie banner, a top bar, a modal) is left alone too, since
-   * there is no article boundary keeping it out — unless it holds most of the page's text, in
+   * there is no article boundary keeping it out, unless it holds most of the page's text, in
    * which case the name is just a name.
    */
   hintSkip: boolean;
@@ -683,6 +683,7 @@ const BOLD_TAGS = new Set(["strong", "b"]);
 const LABEL_MAX_WORDS = 8;
 const LABEL_MIN_REST_WORDS = 3;
 /** What may close a bold label from outside the bold: a colon, a dash. */
+/** The punctuation a run-in label ends with, as the world's pages write it: the em dash belongs here because they use it, not because we do. */
 const LABEL_PUNCT = /^\s*[:–—-]/;
 /** A plain "Label: text" at the head of a list item, the label short and with no sentence in it. */
 const PLAIN_LABEL = /^\s*([^\n.!?:]{1,48}):(?=\s)/;

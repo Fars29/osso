@@ -49,9 +49,9 @@ If you chose *every page*, there is nothing to press: pages arrive already strip
 
 Osso stays out of the way where the page is your workspace rather than someone's writing (mail, docs, chat, code, search, video, social feeds), and it leaves reviews and comments alone: there, the opinion is the point.
 
-**Private pages.** Osso does not read a page that shows a password or card field. On a page that looks like the inside of an account — its address, a form asking for your details, an intranet host, a page its site hides from search engines — it holds back, tells you why, and reads it only if you say so. It decides by how a page is built, never by what it talks about: an article about banks is an article. A sentence carrying an IBAN, a card number or a tax code is left out of what is sent.
+**Private pages.** Osso does not read a page that shows a password or card field. On a page that looks like the inside of an account (its address, a form asking for your details, an intranet host, a page its site hides from search engines) it holds back, tells you why, and reads it only if you say so. It decides by how a page is built, never by what it talks about: an article about banks is an article. A sentence carrying an IBAN, a card number or a tax code is left out of what is sent.
 
-These checks catch the shapes private pages usually have, not every one: a site built differently can slip through, and then its text is sent like any other page's. What does not depend on them: **the page's address is never sent, and neither is anything you type into a page** — Osso reads the words a page displays, not the values in its fields. Where the text itself is private, use *only when I click*, or switch Osso off for that site.
+These checks catch the shapes private pages usually have, not every one: a site built differently can slip through, and then its text is sent like any other page's. What does not depend on them: **the page's address is never sent, and neither is anything you type into a page**. Osso reads the words a page displays, not the values in its fields. Where the text itself is private, use *only when I click*, or switch Osso off for that site.
 
 ![A rule bringing the sponsor's discount code back to ink](docs/screenshots/page-rule.png)
 

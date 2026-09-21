@@ -66,14 +66,14 @@ describe("ruleList", () => {
     expect(prices.querySelector(".rule-x")?.getAttribute("aria-label")).toBe("Remove “prices”");
   });
 
-  it("shows a count per rule: a number, … while judging, — when unknown, nothing when there is none", () => {
+  it("shows a count per rule: a number, … while judging, ? when unknown, nothing when there is none", () => {
     const list = ruleList(ul, { onRemove: () => undefined });
     const counts: Record<string, number | "judging" | "unknown" | null> = { a: 3, b: 0, c: "judging", d: "unknown", e: null };
     list.render(["a", "b", "c", "d", "e"], (r) => counts[r] ?? null);
     expect(countOf(ul, "a")).toBe("· 3");
     expect(countOf(ul, "b")).toBe("· 0");
     expect(countOf(ul, "c")).toBe("· …");
-    expect(countOf(ul, "d")).toBe("· —");
+    expect(countOf(ul, "d")).toBe("· ?");
     expect(countOf(ul, "e")).toBeNull();
     const muted = (r: string) => ul.querySelector(`.rule[data-rule="${r}"] .rule-count`)?.classList.contains("muted");
     expect([muted("a"), muted("b"), muted("c"), muted("d")]).toEqual([false, true, true, true]);
