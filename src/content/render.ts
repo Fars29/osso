@@ -56,6 +56,15 @@ export const STRIKE_LAG_MS = 120;
 export const STRIKE_MS_PER_CHAR = 7;
 export const STRIKE_MIN_MS = 450;
 export const STRIKE_MAX_MS = 1200;
+/**
+ * A sentence the reader scrolls to goes at once and briskly: they are looking at it, and a second
+ * of black text before anything happens reads as lag. The pen is quicker here than in the entrance.
+ */
+export const ARRIVE_MS_PER_CHAR = 4;
+export const ARRIVE_MIN_MS = 320;
+export const ARRIVE_MAX_MS = 800;
+export const ARRIVE_STAGGER_MS = 60;
+export const ARRIVE_STAGGER_MAX_MS = 240;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
 /** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
@@ -212,7 +221,7 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
   // Every read before any write. A rectangle read once the classes are on makes the browser resolve
   // the new styles there and then, and every transition starts at once, before its delay is written:
   // the links went grey and the strikes set off together while the front was still at the top.
-  const paint = fresh.length > 0 ? sweep(doc, state, fresh, true) : null;
+  const paint = fresh.length > 0 ? sweep(doc, state, fresh) : null;
   for (const d of decided) {
     for (const s of d.spans) {
       s.classList.toggle("osso-fade", d.fade);
@@ -243,11 +252,11 @@ function arrival(p: number): number {
  * delayed to the moment the front gets to it.
  *
  * What the grey will fall on elsewhere on the page is not greyed behind the reader's back: it waits
- * in ink (`osso-wait`) and gets its own small front the moment it comes into view, so the reader
- * sees each sentence go as they reach it (`arrive`). Where the browser cannot tell us when that is,
+ * in ink (`osso-wait`) and is struck the moment it comes into view, so the reader sees each
+ * sentence go as they reach it (`arrive`). Where the browser cannot tell us when that is,
  * it is simply grey when the reader gets there, as it was before.
  */
-function sweep(doc: Document, state: DocState, fresh: Fresh[], entrance: boolean): (() => void) | null {
+function sweep(doc: Document, state: DocState, fresh: Fresh[]): (() => void) | null {
   const win = doc.defaultView;
   const vh = win?.innerHeight ?? 0;
   const measured = fresh.map((f) => ({ ...f, rect: f.span.getBoundingClientRect() }));
@@ -273,7 +282,7 @@ function sweep(doc: Document, state: DocState, fresh: Fresh[], entrance: boolean
   }
   return () => {
     hold(doc, state, away.map((m) => m.span));
-    if (front) paintSweep(doc, state, onScreen, front, entrance);
+    if (front) paintSweep(doc, state, onScreen, front);
   };
 }
 
@@ -286,7 +295,7 @@ interface Front {
 }
 
 /** The writes of a sweep: nothing here asks the browser where anything is. */
-function paintSweep(doc: Document, state: DocState, onScreen: Array<Fresh & { rect: DOMRect }>, front: Front, entrance: boolean) {
+function paintSweep(doc: Document, state: DocState, onScreen: Array<Fresh & { rect: DOMRect }>, front: Front) {
   const { y0, y1, ms, reaches } = front;
   const waved: HTMLElement[] = [];
   const swept: HTMLElement[] = [];
@@ -332,7 +341,7 @@ function paintSweep(doc: Document, state: DocState, onScreen: Array<Fresh & { re
     if (m.fade && !s.closest("a") && hasInk(s)) s.classList.add("osso-wipe");
     swept.push(s);
   }
-  scheduleSettle(doc, state, { waved, swept }, Math.max(ms + SETTLE_MS, lastStroke), entrance);
+  scheduleSettle(doc, state, { waved, swept }, Math.max(ms + SETTLE_MS, lastStroke));
 }
 
 const FRONT_PROPERTIES = ["--osso-y0", "--osso-y1", "--osso-front-ms"] as const;
@@ -368,23 +377,66 @@ function watcherOf(doc: Document, state: DocState): IntersectionObserver | null 
 }
 
 /**
- * The reader got there. The spans that came into view get a front of their own and their strike, if
- * the grey still falls on them (the slider, a rule or a pin may have changed that while they
- * waited). Only the sentences that go are animated here: a veil over the ink of every paragraph
- * that scrolls in would be motion under the reader's eyes for nothing.
+ * The reader got there. Each sentence that came into view and is still to go (the slider, a rule or
+ * a pin may have changed that while it waited) is crossed by the pen at once, and its ink drains
+ * behind the pen: one property, `--osso-strike`, drives the line and the wash together (osso.css
+ * `osso-arrive`), along the sentence itself. Nothing here is anchored to the window. The entrance's
+ * front is, and while the page is moving under it (a scroll, an advert pushing the text down) a
+ * window-anchored wash falls out of step with the text: the sentence sat struck and black until the
+ * clean-up took the class off, and then snapped grey. Asking the browser nothing, this also costs
+ * no layout. Only what goes is animated: a veil over every paragraph that scrolls in would be
+ * motion under the reader's eyes for nothing.
  */
 function arrive(doc: Document, state: DocState, spans: HTMLElement[]) {
-  const fresh: Fresh[] = [];
-  for (const span of spans) {
+  const bySentence = new Map<number, HTMLElement[]>();
+  // The observer reports in no particular order; a stroke is handed on in reading order.
+  const inOrder = [...spans].sort((a, b) => (a.compareDocumentPosition(b) & 4 /* FOLLOWING */ ? -1 : 1));
+  for (const span of inOrder) {
     state.waiting.delete(span);
     state.watcher?.unobserve(span);
     const id = sentenceId(span);
-    if (id != null && span.classList.contains("osso-fade") && !span.classList.contains("osso-pin")) fresh.push({ id, span, fade: true });
+    if (id == null || !span.classList.contains("osso-fade") || span.classList.contains("osso-pin")) continue;
+    const parts = bySentence.get(id);
+    if (parts) parts.push(span);
+    else bySentence.set(id, [span]);
   }
   const moving = state.animations && !prefersReducedMotion(doc) && !doc.documentElement.classList.contains("osso-reveal");
-  const paint = moving && fresh.length > 0 ? sweep(doc, state, fresh, false) : null;
+  const touched: HTMLElement[] = [];
+  let end = 0;
+  if (moving) {
+    let n = 0;
+    for (const parts of bySentence.values()) {
+      const chars = parts.map((p) => (p.textContent ?? "").length);
+      const total = Math.max(1, chars.reduce((a, b) => a + b, 0));
+      const draw = Math.min(ARRIVE_MAX_MS, Math.max(ARRIVE_MIN_MS, total * ARRIVE_MS_PER_CHAR));
+      // Sentences that come in together go one just after the other, not as a block.
+      const start = Math.min(ARRIVE_STAGGER_MAX_MS, n++ * ARRIVE_STAGGER_MS);
+      let before = 0;
+      parts.forEach((s, i) => {
+        const delay = Math.round(start + (draw * before) / total);
+        s.style.setProperty("--osso-strike-delay", `${delay}ms`);
+        s.style.setProperty("--osso-strike-ms", `${Math.max(60, Math.round((draw * chars[i]!) / total))}ms`);
+        if (parts.length > 1) s.style.setProperty("--osso-strike-ease", "linear");
+        // Where the ink cannot be painted through (a link's own colour, an emoji, no ink known) the colour eases instead, in step.
+        s.style.setProperty("--osso-delay", `${delay}ms`);
+        if (!EMOJI.test(s.textContent ?? "") && !s.closest("a") && hasInk(s)) s.classList.add("osso-arrive");
+        touched.push(s);
+        before += chars[i]!;
+      });
+      end = Math.max(end, start + draw);
+    }
+  }
   for (const span of spans) span.classList.remove("osso-wait");
-  paint?.();
+  if (touched.length === 0) return;
+  // At the end the wash is all grey over a colour that is already grey: taking the class off changes nothing on screen.
+  const timer = setTimeout(() => {
+    state.settling.delete(timer);
+    for (const s of touched) {
+      s.classList.remove("osso-arrive");
+      for (const name of WAVE_PROPERTIES) dropProperty(s, name);
+    }
+  }, end + SETTLE_MS + 50);
+  state.settling.add(timer);
 }
 
 /** Nothing waits any more: with animations off, or on the way out. */
@@ -398,16 +450,13 @@ function releaseWaiting(state: DocState) {
 /**
  * Once a front has passed, what it needed has done its job: drop it from the spans it touched, so
  * reveal, pin and threshold changes move every sentence together. Each pass cleans up after itself,
- * so a short front that starts late never cuts a long one short. The entrance passes (a chunk
- * landing on what is on screen) also hold the root unsettled; osso.css shortens the transitions once
- * the last of them is done. A pass the reader scrolled into leaves the root alone.
+ * so a short front that starts late never cuts a long one short, and holds the root unsettled;
+ * osso.css shortens the transitions once the last of them is done.
  */
-function scheduleSettle(doc: Document, state: DocState, pass: { waved: HTMLElement[]; swept: HTMLElement[] }, after: number, entrance: boolean) {
+function scheduleSettle(doc: Document, state: DocState, pass: { waved: HTMLElement[]; swept: HTMLElement[] }, after: number) {
   const root = doc.documentElement;
-  if (entrance) {
-    root.classList.remove("osso-settled");
-    state.entrances++;
-  }
+  root.classList.remove("osso-settled");
+  state.entrances++;
   const timer = setTimeout(() => {
     state.settling.delete(timer);
     for (const s of pass.waved) for (const name of WAVE_PROPERTIES) dropProperty(s, name);
@@ -415,7 +464,7 @@ function scheduleSettle(doc: Document, state: DocState, pass: { waved: HTMLEleme
       s.classList.remove("osso-sweep", "osso-wipe");
       for (const name of FRONT_PROPERTIES) dropProperty(s, name);
     }
-    if (entrance && --state.entrances === 0) root.classList.add("osso-settled");
+    if (--state.entrances === 0) root.classList.add("osso-settled");
   }, after + 50);
   state.settling.add(timer);
 }
@@ -1024,7 +1073,7 @@ export function clearRender(doc: Document): void {
   }
   doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still", "osso-strike");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
-    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe", "osso-wait");
+    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe", "osso-wait", "osso-arrive");
     for (const name of WAVE_PROPERTIES) dropProperty(s, name);
     for (const name of FRONT_PROPERTIES) dropProperty(s, name);
   }

@@ -26,18 +26,21 @@
   initial-value: 0%;
 }
 
+/* The line is only there for a reader who wants it (Options); the property runs either way, because
+   the wash of a sentence scrolled to rides on it too. */
 html.osso-strike .osso-s {
-  background-image: linear-gradient(var(--osso-grey, #b9b9b9), var(--osso-grey, #b9b9b9));
+  --osso-line: var(--osso-grey, #b9b9b9);
+  background-image: linear-gradient(var(--osso-line), var(--osso-line));
   background-repeat: no-repeat;
   background-position: 0 56%;
   background-size: var(--osso-strike) 1px;
 }
 
-html.osso-strike:not(.osso-reveal) .osso-fade:not(.osso-pin):not(.osso-wait) {
+html.osso-on:not(.osso-reveal) .osso-fade:not(.osso-pin):not(.osso-wait) {
   --osso-strike: 100%;
 }
 
-html.osso-strike a:hover .osso-fade {
+html.osso-on a:hover .osso-fade {
   --osso-strike: 0%;
 }
 
@@ -54,12 +57,27 @@ html.osso-strike a:hover .osso-fade {
   initial-value: -400px;
 }
 
+/* How much of the author's ink is left below the front. It drains over the last stretch of the pass
+   whatever the geometry, so a pass never ends with ink on the page: if the text moved under the
+   front (an advert pushed it down, the reader scrolled) it still goes grey with the pass, smoothly,
+   and not when the class comes off, with a snap. */
+@property --osso-ink-left {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+
 @keyframes osso-front {
   from {
     --osso-y: var(--osso-y0, -200px);
+    --osso-ink-left: 100%;
+  }
+  70% {
+    --osso-ink-left: 100%;
   }
   to {
     --osso-y: var(--osso-y1, 1400px);
+    --osso-ink-left: 0%;
   }
 }
 
@@ -68,7 +86,7 @@ html.osso-on .osso-sweep {
   -webkit-text-fill-color: transparent;
   /* Two layers: the strike over the box, the front through the glyphs. */
   background-image:
-    linear-gradient(var(--osso-grey, #b9b9b9), var(--osso-grey, #b9b9b9)),
+    linear-gradient(var(--osso-line, transparent), var(--osso-line, transparent)),
     linear-gradient(
       180deg,
       currentColor calc(var(--osso-y) - 240px),
@@ -93,8 +111,38 @@ html.osso-on .osso-sweep.osso-wipe {
   transition-timing-function: var(--osso-strike-ease, cubic-bezier(0.65, 0, 0.35, 1));
   transition-delay: var(--osso-strike-delay, 0ms);
   background-image:
-    linear-gradient(var(--osso-grey, #b9b9b9), var(--osso-grey, #b9b9b9)),
-    linear-gradient(180deg, var(--osso-grey, #b9b9b9) calc(var(--osso-y) - 160px), var(--osso-ink, #161616) var(--osso-y));
+    linear-gradient(var(--osso-line, transparent), var(--osso-line, transparent)),
+    linear-gradient(
+      180deg,
+      var(--osso-grey, #b9b9b9) calc(var(--osso-y) - 160px),
+      color-mix(in srgb, var(--osso-ink, #161616) var(--osso-ink-left), var(--osso-grey, #b9b9b9)) var(--osso-y)
+    );
+}
+
+/* A sentence the reader scrolled to (render.ts arrive()): the pen crosses it and the ink drains
+   behind the pen. One property drives both, along the sentence itself (an inline box broken over
+   several lines is one strip, so it runs in reading order), and nothing is anchored to the window:
+   it cannot fall out of step with a page that is moving. The wash leads the pen by a tenth and ends
+   all grey, over a colour that is already grey, so the class comes off unseen. */
+html.osso-on .osso-arrive {
+  -webkit-text-fill-color: transparent;
+  transition-property: --osso-strike;
+  transition-duration: var(--osso-strike-ms, 500ms);
+  transition-timing-function: var(--osso-strike-ease, cubic-bezier(0.65, 0, 0.35, 1));
+  transition-delay: var(--osso-strike-delay, 0ms);
+  background-image:
+    linear-gradient(var(--osso-line, transparent), var(--osso-line, transparent)),
+    linear-gradient(90deg, var(--osso-grey, #b9b9b9) calc(var(--osso-strike) * 1.1 - 10%), var(--osso-ink, #161616) calc(var(--osso-strike) * 1.1));
+  background-repeat: no-repeat;
+  background-position: 0 56%, 0 0;
+  background-size: var(--osso-strike) 1px, 100% 100%;
+  -webkit-background-clip: border-box, text;
+  background-clip: border-box, text;
+}
+
+html.osso-still .osso-arrive {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 html.osso-still .osso-sweep {

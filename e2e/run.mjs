@@ -160,7 +160,7 @@ try {
   for (let y = 0, h = await page.evaluate(() => document.documentElement.scrollHeight); y < h; y += 300) {
     await page.mouse.wheel(0, 300);
     await sleep(120);
-    swept = Math.max(swept, await page.evaluate(() => document.querySelectorAll(".osso-sweep").length));
+    swept = Math.max(swept, await page.evaluate(() => document.querySelectorAll(".osso-arrive").length));
   }
   await sleep(300);
   const after = await page.evaluate(() => ({ waiting: document.querySelectorAll(".osso-wait").length, faded: document.querySelectorAll(".osso-fade").length }));

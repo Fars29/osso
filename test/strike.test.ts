@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageJudgment, SentenceJudgment } from "../src/shared/types.ts";
-import { FRONT_LEAD_PX, FRONT_MAX_MS, SETTLE_MS, STRIKE_LAG_MS, STRIKE_MAX_MS, STRIKE_MIN_MS, STRIKE_MS_PER_CHAR, applyJudgment, clearRender, counts, installInteractions, setThreshold } from "../src/content/render.ts";
+import { ARRIVE_MAX_MS, ARRIVE_MIN_MS, ARRIVE_MS_PER_CHAR, ARRIVE_STAGGER_MAX_MS, ARRIVE_STAGGER_MS, FRONT_MAX_MS, SETTLE_MS, STRIKE_LAG_MS, STRIKE_MAX_MS, STRIKE_MIN_MS, STRIKE_MS_PER_CHAR, applyJudgment, clearRender, counts, installInteractions, setThreshold } from "../src/content/render.ts";
 
 const PAGE = `
 <main>
@@ -143,45 +143,58 @@ describe("what is further down waits for the reader", () => {
     expect(FakeWatcher.last!.watched.has(spans(5)[0]!)).toBe(false);
   });
 
-  it("goes grey in front of the reader: its own front, from just above it, and its strike", () => {
+  it("goes in front of the reader, at once: the pen crosses it and the ink drains behind, with nothing anchored to the window", () => {
     withWatcher();
     layOut({ 0: 100, 1: 130, 2: 1300, 3: 1330, 4: 2500, 5: 2530 });
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
-    // The reader scrolls 600 px: the second paragraph comes up from the bottom edge.
-    layOut({ 0: -500, 1: -470, 2: 700, 3: 730, 4: 1900, 5: 1930 });
-    FakeWatcher.last!.see([...spans(2), ...spans(3)]);
-    for (const s of [...spans(2), ...spans(3)]) {
-      expect(s.classList.contains("osso-wait")).toBe(false);
-      expect(s.classList.contains("osso-sweep")).toBe(true);
-      expect(s.style.getPropertyValue("--osso-y0")).toBe(`${700 - FRONT_LEAD_PX}px`);
-      expect(s.style.getPropertyValue("--osso-strike-delay")).not.toBe("");
-      expect(FakeWatcher.last!.watched.has(s)).toBe(false);
+    // jsdom reports no colours; the page's ink is what the wash paints what the pen has not reached with.
+    for (const b of document.querySelectorAll<HTMLElement>("[data-osso-block]")) b.style.setProperty("--osso-ink", "rgb(22, 22, 22)");
+    FakeWatcher.last!.see([...spans(3), ...spans(2)]);
+    const [a, link, c] = spans(2) as [HTMLElement, HTMLElement, HTMLElement];
+    // The first sentence starts with no delay at all, and is done in well under a second.
+    expect(px(a, "--osso-strike-delay")).toBe(0);
+    const total = spans(2).reduce((n, p) => n + p.textContent!.length, 0);
+    expect(px(c, "--osso-strike-delay") + px(c, "--osso-strike-ms")).toBeLessThanOrEqual(Math.max(ARRIVE_MIN_MS, total * ARRIVE_MS_PER_CHAR) + 2);
+    expect(Math.max(ARRIVE_MIN_MS, total * ARRIVE_MS_PER_CHAR)).toBeLessThanOrEqual(ARRIVE_MAX_MS);
+    // One stroke in reading order, whatever order the browser reported the spans in.
+    expect(px(link, "--osso-strike-delay")).toBe(px(a, "--osso-strike-delay") + px(a, "--osso-strike-ms"));
+    // The next sentence goes just after, not with it.
+    expect(px(spans(3)[0]!, "--osso-strike-delay")).toBe(ARRIVE_STAGGER_MS);
+    for (const p of [a, c, spans(3)[0]!]) {
+      expect(p.classList.contains("osso-arrive")).toBe(true);
+      expect(p.classList.contains("osso-wait")).toBe(false);
+      // No front: nothing that depends on where the text is in the window.
+      expect(p.classList.contains("osso-sweep")).toBe(false);
+      expect(p.style.getPropertyValue("--osso-y0")).toBe("");
+      expect(FakeWatcher.last!.watched.has(p)).toBe(false);
     }
+    // A link keeps its own ink: its words ease to grey instead, in step with the stroke.
+    expect(link.classList.contains("osso-arrive")).toBe(false);
+    expect(px(link, "--osso-delay")).toBe(px(link, "--osso-strike-delay"));
     // The last paragraph is still further down, still waiting.
     expect(spans(4)[0]!.classList.contains("osso-wait")).toBe(true);
     expect(waiting().length).toBe(1);
   });
 
-  it("cleans up after itself without unsettling the page, and never cuts another front short", () => {
+  it("cleans up after itself without unsettling the page", () => {
     vi.useFakeTimers();
     withWatcher();
     layOut({ 0: 100, 1: 130, 2: 1300, 3: 1330, 4: 2500, 5: 2530 });
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    for (const b of document.querySelectorAll<HTMLElement>("[data-osso-block]")) b.style.setProperty("--osso-ink", "rgb(22, 22, 22)");
     vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + STRIKE_MAX_MS + 100);
     expect(document.documentElement.classList.contains("osso-settled")).toBe(true);
-    layOut({ 2: 700, 3: 730 });
     FakeWatcher.last!.see(spans(3));
     expect(document.documentElement.classList.contains("osso-settled")).toBe(true);
-    vi.advanceTimersByTime(400);
-    layOut({ 4: 760 });
+    vi.advanceTimersByTime(200);
     FakeWatcher.last!.see(spans(4));
-    // The first of the two is still mid-pass when the second starts.
-    expect(spans(3)[0]!.classList.contains("osso-sweep")).toBe(true);
-    vi.advanceTimersByTime(FRONT_MAX_MS + SETTLE_MS + STRIKE_MAX_MS + 100);
-    for (const s of [...spans(3), ...spans(4)]) {
-      expect(s.classList.contains("osso-sweep")).toBe(false);
-      expect(s.getAttribute("style") || "").toBe("");
-      expect(s.classList.contains("osso-fade")).toBe(true);
+    // The first of the two is still mid-stroke when the second starts.
+    expect(spans(3)[0]!.classList.contains("osso-arrive")).toBe(true);
+    vi.advanceTimersByTime(ARRIVE_MAX_MS + ARRIVE_STAGGER_MAX_MS + SETTLE_MS + 100);
+    for (const p of [...spans(3), ...spans(4)]) {
+      expect(p.classList.contains("osso-arrive")).toBe(false);
+      expect(p.getAttribute("style") || "").toBe("");
+      expect(p.classList.contains("osso-fade")).toBe(true);
     }
   });
 
@@ -194,7 +207,8 @@ describe("what is further down waits for the reader", () => {
     FakeWatcher.last!.see(spans(3));
     expect(spans(3)[0]!.classList.contains("osso-wait")).toBe(false);
     expect(spans(3)[0]!.classList.contains("osso-fade")).toBe(false);
-    expect(spans(3)[0]!.classList.contains("osso-sweep")).toBe(false);
+    expect(spans(3)[0]!.classList.contains("osso-arrive")).toBe(false);
+    expect(spans(3)[0]!.getAttribute("style") || "").toBe("");
   });
 
   it("cannot be pinned or explained before it has been seen to go", () => {
