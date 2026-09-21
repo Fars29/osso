@@ -228,6 +228,29 @@ The state stays as it is. What the numbers do say: p is good to about ±0.05. On
 close to the threshold (1 sentence of 199); on an encyclopedia article, a paper or a contract about
 one in thirty does (19 of 568), which is why the fade is a colour and never a cut.
 
+## A page that is all quotes (2026-09-21)
+
+A news report made end to end of one central banker's quotes (rainews.it, Panetta on AI) lost the
+one sentence that says whose words they are, "Lo ha detto il governatore della Banca d'Italia,
+Fabio Panetta, alla 10ª Conferenza annuale di ricerca..." at 0.20, and the claim its own headline
+was built on, "Le banche centrali non possono rimanere in disparte", at 0.32. Twelve of its 25
+sentences went grey.
+
+The article pack's hint already listed "who, what, when, where", but the model read a standalone
+attribution as signposting rather than as content, so naming the speaker inside that list barely
+moved it (0.20 to 0.29). Putting the news itself in those terms did: "The news is what was said or
+done and by whom: the main claim, the speaker's name and title..." takes the attribution to 0.37
+and the headline claim to 0.48. Three wordings were measured against this page and against two
+other pages the pack routes, an Apple press release and a recipe blog; the one shipped leaves the
+press release's 21 grey sentences exactly as they were and is one sentence stricter on the blog.
+The page now keeps 19 of 25. What still goes: a stock photo caption, two rhetorical bridges
+("Cosa implicherebbe ciò?", "Ma è qui che finisce la parte semplice della storia") and two lines
+of central-bank abstraction.
+
+Worth remembering about this kind of page: nothing on it scored above 0.90 and most of it sat
+between 0.30 and 0.70, so the default 0.35 runs through the middle of the distribution. On analysis
+built of abstract quotes the slider does more than usual.
+
 ## What readers wrote is not the page (2026-09-21)
 
 A recipe's reviews went through the keep question and came out backwards: "it didn't disappoint"
