@@ -6,3 +6,4 @@ release/
 .DS_Store
 e2e/.playwright/
 e2e/screenshots/
+e2e/.scratch/

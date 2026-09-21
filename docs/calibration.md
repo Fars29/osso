@@ -182,3 +182,52 @@ has its own filler (signposting, contributions, funding) and its own substance (
 a sample size, a limitation). The kind question's eight descriptions were cut to a quarter of
 their words: asked once per sentence, they had been more than half of every request. Together:
 the encyclopedia article 44.8k → 12.7k tokens, the long paper 421k → 277k, the recipe 44.0k → 29.7k.
+
+
+## What the model sees (2026-09-21)
+
+Beside each sentence the model gets a state: the page's title, its language, the pack's one-line
+hint of what kind of page this is, and as `text` the chunk's own sentences, at most thirty, in
+page order. Not the whole page. Is that the right amount? Seven live pages of 56 to 245 sentences
+(a paper, terms of use, an encyclopedia article, a press release, three recipes; 880 sentences)
+were dumped with `e2e/dump.mjs` and replayed with `scripts/context.ts`, the same questions over
+different states:
+
+| state | tokens vs shipped | decisions that change at 0.35 | mean |Δp| |
+|---|---|---|---|
+| no text at all (title and hint only) | −4% to −8% | 2 to 12 a page | 0.035 to 0.065 |
+| **the chunk (shipped)** | — | — | — |
+| the chunk, its boundaries moved by 15 sentences | 0% | 0 to 6 a page | 0.011 to 0.037 |
+| the chunk + the five sentences before it | +1% | 0 to 4 a page | 0.005 to 0.024 |
+| the chunk + the page's headings and lead, the sentence's heading in the question | +3% to +5% | 0 to 9 a page | 0.009 to 0.035 |
+| the whole page | +4% to +62% | 0 to 8 a page | 0.012 to 0.046 |
+| the whole page with headings, heading in the question | +7% to +66% | 0 to 10 a page | 0.010 to 0.049 |
+
+- **Local context does real work.** With no text the model loses the sentences that lean on their
+  neighbours ("Any counsel representing the parties also may participate" 0.72 → 0.33, "For each of
+  these we use…" 0.63 → 0.14, "The salt amount has been reduced based on review feedback" 0.43 →
+  0.21) and warms to platitudes that the clauses around them expose ("You and Spotify agree that
+  arbitration should be cost effective" 0.20 → 0.47).
+- **The whole page adds nothing that can be told from noise.** Moving the chunk boundaries, which
+  changes no information at all, moves p as much as handing over the entire page does. No clear
+  case changed side under a bigger state: every sentence that flipped was one the shipped state
+  already had between 0.17 and 0.52. Where the whole page
+  leaned, it leaned the wrong way: on the encyclopedia article it greyed dated facts ("…replaced by
+  barm, and after 1871 by purpose-cultured yeast" 0.52 → 0.32) — a sentence weighed against a
+  whole page of facts looks less needed, the same trap as the redundancy clause above.
+- **No edge effect.** The two sentences that open a chunk, cut off from what precedes them, differ
+  from the same sentences judged mid-chunk by 0.021 on average; interior sentences differ by 0.021.
+  The five-sentence lead-in fixes nothing because nothing is broken.
+- **The state is billed once per request**, not once per question (a 2.9k-token state costs 2.9k
+  with one question or with sixty), and does not slow the answer. So context is cheap; it is just
+  not what these judgments are short of. The tokens are in the questions: about 290 a sentence for
+  the keep question and as many again for the kind question, which only ever names the reason on
+  the chip of a grey sentence.
+
+The state stays as it is. What the numbers do say: p is good to about ±0.05. On a recipe almost nothing sits that
+close to the threshold (1 sentence of 199); on an encyclopedia article, a paper or a contract about
+one in thirty does (19 of 568), which is why the fade is a colour and never a cut.
+
+Everything we say to the model is English, on a page in any language: only what is quoted inside
+« » (the sentence, the user's rule) and the title are the page's own. `test/prompts.test.ts` holds
+that line.

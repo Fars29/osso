@@ -132,7 +132,10 @@ const PAGE_KIND_CRITERIA = describe(PAGE_KINDS);
 /**
  * One request for one chunk. The state is the chunk's own text, so every sentence the questions
  * mention is present in the context the model attends over; the probe showed per-element attention
- * holds at this size.
+ * holds at this size. Measured on live pages (docs/calibration.md, "What the model sees"): with no
+ * text the model loses the sentences that lean on their neighbours; with the whole page, or the
+ * headings, or a lead-in, p moves no more than it does when the chunk boundaries move, and the
+ * page costs up to two thirds more. The neighbours are the context that counts.
  */
 export function buildRequestBody(chunk: SentenceInput[], meta: PageMeta, pack: PackLike, includePageKind: boolean): RequestBody {
   const criteriaTrue = KEEP_QUESTION.criteriaTrue + (pack.keepHints?.true ? " " + pack.keepHints.true : "");
