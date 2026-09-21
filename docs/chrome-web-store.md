@@ -90,7 +90,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 | Remotely hosted code, obfuscation | None. Minified by esbuild; source public. |
 | Misleading behaviour | Nothing is hidden or rewritten; every change is a colour and a line, reversible with one key; the listing says a paid third-party key is required. |
 | Payments | Osso takes no payment. The requirement of a paid third-party key is stated in the summary and the description. |
-| Developer Agreement: third parties' terms | Osso calls TypeSafe's public API with the user's own key; check TypeSafe's terms allow client applications that bring the user's key before submitting. |
+| Developer Agreement: third parties' terms | Osso calls TypeSafe's public API with the user's own key. TypeSafe's Master Customer Agreement (read 2026-09-21, last updated 2026-09-19) lets a customer include the API in software for its end users (2.2) and forbids offering the Services "as a standalone service" (2.3a): with a key of their own each user is TypeSafe's customer, and Osso resells nothing. It also forbids using the Output to distil or train an imitating model (2.3b): Osso must never be used to label data for a local replacement. Not settled: which agreement governs a self-serve account, and TypeSafe's own guidance says to keep credentials server-side in web apps; an extension's background worker holding the user's own key is a different case, but ask them if in doubt. |
 
 ## What can still get it bounced
 

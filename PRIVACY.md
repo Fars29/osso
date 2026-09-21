@@ -13,7 +13,7 @@ When Osso judges a page, it sends to `api.typesafe.ai`, over HTTPS, with your ow
 
 It never sends the page's **address**, your cookies, anything you type into a page, or anything from a page Osso is switched off on. Nothing is sent anywhere else, to us or to anyone.
 
-What TypeSafe does with a request is governed by [TypeSafe's own terms and privacy policy](https://typesafe.ai); the request is made under your account with them, not ours.
+What TypeSafe does with a request is governed by TypeSafe's own [terms](https://typesafe.ai/legal/mca) and [privacy policy](https://typesafe.ai/legal/privacy-policy); the request is made under your account with them, not ours. As we read them on 2026-09-21: requests are processed in the United States, customer data is not used to train models without consent, and no fixed retention period is given. Read them yourself before relying on that.
 
 ## What stays in your browser
 
