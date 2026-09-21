@@ -41,7 +41,7 @@ Click the icon. The popup shows how many sentences were kept, the page kind, and
 
 **Per site.** The **On this site** switch in the popup turns Osso off for the current host; the keyboard shortcut **Alt+Shift+O** does the same. Osso is off by default where the page is your workspace rather than someone's writing: mail, docs, chat, code hosting, search, video and social feeds (the list is in Options under Sites). To use it there anyway, flip the switch on that site or add the host to *Always on these sites*.
 
-**Hover** a grey sentence to see what it was judged to be (story, promo, opinion) and how much of it is worth keeping. **Click** a grey sentence to pin it back for this visit.
+**Hover** a grey sentence to see why it is grey, in one word (story, promo, opinion, or *aside* for a fact that is beside the point). **Click** a grey sentence to pin it back for this visit.
 
 ![The options page](docs/screenshots/options.png)
 
@@ -50,7 +50,7 @@ Click the icon. The popup shows how many sentences were kept, the page kind, and
 1. The main text of the page is split into sentences; headings, tables, code, navigation and forms are never touched, and neither is the bold label that opens a list item ("**Milk:** …"), which is structure, not prose.
 2. Sentences go to the model in batches of about 30, in parallel, with their own text as context.
 3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
-4. Each batch is painted the moment it comes back, sentence by sentence, so you see the grey run down the page as the model answers. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
+4. Each batch is painted the moment it comes back: a soft front of light comes down the page and the text is washed as it passes. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
 5. Probabilities are cached per page, so the slider and rule removal re-render instantly with no request.
 6. Pages that change under you (infinite scroll, client-side navigation) are watched; only new sentences are judged.
 

@@ -121,13 +121,20 @@ try {
     }
   })();
   await page.goto(`${server.url}/recipe.html`);
-  await page.waitForSelector(".osso-fade", { state: "attached", timeout: JUDGE_TIMEOUT_MS });
-  const sweeping = await page.evaluate(() => document.querySelectorAll(".osso-sweep").length);
+  // The front only passes over what is on screen, and the first chunk to come back may be one from
+  // further down the page: wait for the front itself, not for the first grey.
+  await page.waitForSelector(".osso-sweep", { state: "attached", timeout: JUDGE_TIMEOUT_MS });
+  const sweeping = await page.evaluate(() => {
+    const swept = [...document.querySelectorAll(".osso-sweep")];
+    const onScreen = swept.every((s) => { const r = s.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; });
+    return { count: swept.length, onScreen, front: swept[0] ? ["--osso-y0", "--osso-y1", "--osso-front-ms"].map((n) => swept[0].style.getPropertyValue(n)) : [] };
+  });
   await waitJudged(page);
   await sampling;
-  assert(sweeping > 0, "recipe: the first grey arrived without the sweep");
+  assert(sweeping.count > 0 && sweeping.onScreen, `recipe: the front should pass over on-screen sentences only, got ${JSON.stringify(sweeping)}`);
+  assert(sweeping.front.every((v) => v !== ""), `recipe: the front has no start, end or duration: ${JSON.stringify(sweeping.front)}`);
   assert(partials.length >= 1, "recipe: no partial counts were seen while judging (chunks are not painted as they land)");
-  console.log(`[osso e2e] progressive paint: ${partials.length} partial states seen (${partials.join(" → ")} judged), ${sweeping} sentences sweeping at first grey`);
+  console.log(`[osso e2e] progressive paint: ${partials.length} partial states seen (${partials.join(" → ")} judged), front ${sweeping.front.join(" → ")} over ${sweeping.count} spans on screen`);
   await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 60 } }));
   await probe.close();
   const recipe = await page.evaluate(countSentences);
