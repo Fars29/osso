@@ -14,10 +14,12 @@ Everything Osso says to the model is in English, whatever the language of the pa
 The reader chooses at the welcome: every page as it loads, or only a page they open Osso on (`mode`, `auto` or `click`). Before anything is segmented, `content/privacy.ts` looks at how the page is made:
 
 - a visible password, card or one-time-code field: **never** read, asked or not;
-- a private area in the address (whole path segments: `/account`, `/checkout`, `/settings`…), a form with three or more personal-detail fields, or `noindex` together with a sign-out link: **held back**; the popup says why and offers to read the page once;
+- a private area in the address (whole path segments: `/account`, `/checkout`, `/settings`…), a host that only exists inside a network (an intranet name, `.local`, a private IP range), a form with three or more personal-detail fields, or a `noindex` tag: **held back**; the popup says why and offers to read the page once. On twelve live articles, recipes, papers and policy pages checked on 2026-09-21, none carried `noindex`; account areas and intranets carry it almost by habit;
 - after segmentation, a sentence carrying an IBAN or card number that passes its checksum (mod-97, Luhn), an Italian tax code or a US SSN is **never sent**; three or more make the page a statement, and it is held back.
 
 None of these looks at what the page talks about. An article on banking says "bank", "password" and "checkout" and trips none of them (`test/privacy.test.ts` holds that line).
+
+They are heuristics, and the code and the copy both say so: a page built unusually can get through them, and then its visible text is sent like any other page's. Two things do not depend on them, because they are structural. The URL is never put in a request (`background/api.ts`), and form values are never read: `input`, `textarea`, `select`, `button` and `label` are in `SKIP_TAGS`, so what the reader types is not a text node the segmenter ever walks.
 
 ## The question, verbatim
 

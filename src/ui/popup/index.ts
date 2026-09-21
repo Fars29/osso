@@ -27,6 +27,8 @@ function heldReason(reason: string | undefined): string {
   if (reason?.startsWith("private-path:")) return `Its address is a private area (/${reason.slice("private-path:".length)}). Nothing was sent.`;
   if (reason === "personal-form") return "It asks for your personal details. Nothing was sent.";
   if (reason === "signed-in") return "It looks like the inside of an account. Nothing was sent.";
+  if (reason === "unlisted") return "Its site tells search engines not to keep this page. Nothing was sent.";
+  if (reason === "private-host") return "This host only exists inside a network. Nothing was sent.";
   if (reason === "account-numbers") return "It lists account numbers, like a statement. Nothing was sent.";
   return "It looks private. Nothing was sent.";
 }

@@ -9,7 +9,7 @@ import { assessPrivacy, carriesAccountNumber } from "../src/content/privacy.ts";
 function page(body: string, head = ""): Document {
   return new DOMParser().parseFromString(`<!DOCTYPE html><html><head>${head}</head><body>${body}</body></html>`, "text/html");
 }
-const at = (pathname: string) => ({ pathname });
+const at = (pathname: string, hostname = "www.example.com") => ({ hostname, pathname });
 
 const FINANCE_ARTICLE = `<main><article><h1>Why your bank account fees are rising</h1>
   <p>Banks across Europe raised current account fees by 8% this year, and the central bank expects another rise.</p>
@@ -25,9 +25,9 @@ describe("a page is never refused for what it talks about", () => {
     expect(assessPrivacy(page(FINANCE_ARTICLE), at("/health/my-account-of-a-year-with-long-covid"))).toBeNull();
   });
 
-  it("nor for a newsletter box, a search field, or a noindex tag on its own, or a sign-out link on its own", () => {
-    expect(assessPrivacy(page(FINANCE_ARTICLE, `<meta name="robots" content="noindex">`), at("/article"))).toBeNull();
+  it("nor for a newsletter box, a search field, or a sign-out link on its own: a subscriber is logged in to a newspaper too", () => {
     expect(assessPrivacy(page(`${FINANCE_ARTICLE}<a href="/logout">Sign out</a>`), at("/article"))).toBeNull();
+    expect(assessPrivacy(page(FINANCE_ARTICLE, `<meta name="robots" content="index, follow, max-image-preview:large">`), at("/article"))).toBeNull();
   });
 });
 
@@ -76,5 +76,26 @@ describe("a sentence that carries an account number is never sent", () => {
       "Order 2026-09-21-000173 shipped in 3 boxes of 12 units.",
       "Use 500 g of chicken thighs, 300 g of orzo and 750 ml of stock.",
     ]) expect(carriesAccountNumber(s), s).toBe(false);
+  });
+});
+
+describe("a page nobody published", () => {
+  it("is held back when its own site tells search engines not to keep it", () => {
+    const head = `<meta name="robots" content="noindex, nofollow">`;
+    expect(assessPrivacy(page(FINANCE_ARTICLE, head), at("/anything"))).toEqual({ level: "ask", reason: "unlisted" });
+    // With a way to sign out as well, the reason is the plainer one.
+    expect(assessPrivacy(page(`${FINANCE_ARTICLE}<a href="/logout">Log out</a>`, head), at("/anything"))).toEqual({ level: "ask", reason: "signed-in" });
+  });
+
+  it("is held back on a host that only exists inside a network", () => {
+    for (const host of ["intranet", "hr.corp.local", "wiki.internal", "10.4.1.9", "172.20.0.3", "192.168.1.1", "169.254.10.2", "fd00::1"]) {
+      expect(assessPrivacy(page(FINANCE_ARTICLE), at("/article", host))?.reason, host).toBe("private-host");
+    }
+  });
+
+  it("is not held back on the open web, or on the machine the reader is developing on", () => {
+    for (const host of ["www.example.com", "corporate.com", "my.internal-affairs.org", "192.168.com", "10.com", "localhost", "127.0.0.1"]) {
+      expect(assessPrivacy(page(FINANCE_ARTICLE), at("/article", host)), host).toBeNull();
+    }
   });
 });

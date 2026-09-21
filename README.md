@@ -49,7 +49,9 @@ If you chose *every page*, there is nothing to press: pages arrive already strip
 
 Osso stays out of the way where the page is your workspace rather than someone's writing (mail, docs, chat, code, search, video, social feeds), and it leaves reviews and comments alone: there, the opinion is the point.
 
-**Private pages.** Osso never reads a page that shows a password or card field. On a page that looks like the inside of an account (its address, a form asking for your details, a page hidden from search engines with a sign-out link) it holds back, tells you why, and reads it only if you say so. It decides by how a page is made, never by what it talks about: an article about banks is an article. And a sentence that carries an IBAN, a card number or a tax code is never sent, on any page.
+**Private pages.** Osso does not read a page that shows a password or card field. On a page that looks like the inside of an account — its address, a form asking for your details, an intranet host, a page its site hides from search engines — it holds back, tells you why, and reads it only if you say so. It decides by how a page is built, never by what it talks about: an article about banks is an article. A sentence carrying an IBAN, a card number or a tax code is left out of what is sent.
+
+These checks catch the shapes private pages usually have, not every one: a site built differently can slip through, and then its text is sent like any other page's. What does not depend on them: **the page's address is never sent, and neither is anything you type into a page** — Osso reads the words a page displays, not the values in its fields. Where the text itself is private, use *only when I click*, or switch Osso off for that site.
 
 ![A rule bringing the sponsor's discount code back to ink](docs/screenshots/page-rule.png)
 
@@ -62,6 +64,7 @@ On 99 hand-labelled sentences in English and Italian the question separates subs
 ## Honest limits
 
 - It is a judgment, not a guarantee. Sometimes it will strike a sentence you needed. It is still there and still readable: hold Shift when it matters.
+- The privacy checks are heuristics. They read how a page is built, and a page built unusually can get through them; on a page whose text is itself private, that text would be sent to TypeSafe under your key. Run in *click* mode, or switch Osso off, where that matters.
 - Pages with very little text, or built from unusual markup, may be skipped. The popup says why.
 - The requests are made with your key, so the cost is yours. Options keeps a running total.
 - Firefox is untested.

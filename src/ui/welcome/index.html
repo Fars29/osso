@@ -32,8 +32,8 @@
           <p class="feedback" id="key-feedback" aria-live="polite"></p>
           <p class="privacy muted">
             Saving a key turns Osso on. When it reads a page, what leaves this machine is the page's title, its language
-            and its main text, sent to api.typesafe.ai only, over your key. Never the page's address. The key stays in this
-            browser.
+            and the words the page displays, sent to api.typesafe.ai only, over your key. Never the page's address, and
+            never what you type into it. The key stays in this browser.
           </p>
         </li>
 
@@ -52,10 +52,16 @@
             </label>
           </div>
           <ul class="never muted">
-            <li><strong>Never</strong> on a page that shows a password or a card field.</li>
-            <li><strong>Asks first</strong> on a page that looks like the inside of an account: by how it is made, never by what it talks about. An article about banks is an article.</li>
+            <li><strong>Never sent:</strong> the page's address, and anything you type into a page. Osso reads the words a page displays, never the values in its fields.</li>
+            <li><strong>Not read:</strong> a page showing a password, card or one-time-code field.</li>
+            <li><strong>Held back:</strong> pages that look private — an account area, an intranet, a page its site hides from search engines. Osso asks before reading those, and goes by how a page is built, never by what it talks about: an article about banks is an article.</li>
             <li><strong>Off</strong> on mail, documents, chat, code, search, video and social sites. <a href="#" id="edit-sites">Edit the list</a></li>
           </ul>
+          <p class="caveat">
+            Those checks catch the shapes private pages usually have, not every one. A site built
+            differently can slip through, and then that page's text is sent like any other. Where the
+            text itself is private, choose <em>only when I click</em>, or switch Osso off for that site.
+          </p>
         </li>
 
         <li class="step" id="step-go" data-n="3">
