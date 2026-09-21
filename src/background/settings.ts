@@ -92,6 +92,7 @@ export function validate(raw: unknown): Settings {
     thresholdRev: d.thresholdRev,
     revealKey: REVEAL_KEYS.includes(r.revealKey as RevealKey) ? (r.revealKey as RevealKey) : d.revealKey,
     animations: boolOr(r.animations, d.animations),
+    strike: boolOr(r.strike, d.strike),
     deniedHosts: hostList(r.deniedHosts),
     allowedHosts: hostList(r.allowedHosts),
     maxSentencesPerRequest: Math.round(

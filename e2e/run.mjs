@@ -109,6 +109,13 @@ try {
   await probe.goto(`chrome-extension://${launched.id}/options.html`);
   await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 10 } }));
   const page = await context.newPage();
+  // The reasons in the margin are there for under two seconds: note each as it is added.
+  await page.addInitScript(() => {
+    window.__whys = [];
+    new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1 && n.classList.contains("osso-why")) window.__whys.push(n.textContent);
+    }).observe(document, { childList: true, subtree: true });
+  });
   await page.bringToFront();
   let t0 = performance.now();
   const partials = [];
@@ -137,6 +144,17 @@ try {
   console.log(`[osso e2e] progressive paint: ${partials.length} partial states seen (${partials.join(" → ")} judged), front ${sweeping.front.join(" → ")} over ${sweeping.count} spans on screen`);
   await probe.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { maxSentencesPerRequest: 60 } }));
   await probe.close();
+  // The strike is drawn through what is grey and through nothing else; the reasons came and went.
+  const strike = await page.evaluate(() => {
+    const of = (el) => (el ? getComputedStyle(el).getPropertyValue("--osso-strike").trim() : null);
+    return { grey: of(document.querySelector(".osso-fade")), ink: of(document.querySelector(".osso-s:not(.osso-fade)")), whys: window.__whys, left: document.querySelectorAll(".osso-why").length };
+  });
+  assert(strike.grey === "100%" && strike.ink === "0%", `recipe: the strike should be drawn on grey and absent on ink, got ${JSON.stringify(strike)}`);
+  const REASON = /^(opinion|story|filler|promo|aside)( · (opinion|story|filler|promo|aside))?$/;
+  assert(strike.whys.length >= 1 && strike.whys.every((w) => REASON.test(w)), `recipe: the margin should have named a reason, got ${JSON.stringify(strike.whys)}`);
+  await sleep(2200);
+  assert((await page.evaluate(() => document.querySelectorAll(".osso-why").length)) === 0, "recipe: a reason was left in the margin");
+  console.log(`[osso e2e] strike drawn on grey only; reasons in the margin: ${strike.whys.join(", ")}`);
   const recipe = await page.evaluate(countSentences);
   rows.push({ page: "recipe.html", ...recipe, ms: Math.round(performance.now() - t0) });
   assert(recipe.faded >= 5, `recipe: expected ≥ 5 faded sentences, got ${recipe.faded}`);
@@ -175,6 +193,8 @@ try {
   await page.keyboard.down("Shift");
   await sleep(300);
   assert(await page.evaluate(() => document.documentElement.classList.contains("osso-reveal")), "recipe: holding Shift did not add html.osso-reveal");
+  await sleep(300);
+  assert((await page.evaluate(() => getComputedStyle(document.querySelector(".osso-fade")).getPropertyValue("--osso-strike").trim())) === "0%", "recipe: the strike stayed on while revealed");
   await page.screenshot({ path: join(shots, "recipe-revealed.png"), fullPage: true });
   await page.keyboard.up("Shift");
   await sleep(500);

@@ -2,7 +2,7 @@
 
 **Solo l'osso.** Just the bones.
 
-Every page you open arrives with its filler faded to grey and its substance left in the author's own words. Nothing is hidden, nothing is rewritten, nothing is summarised: the story is still there, in grey, right above the recipe, in ink.
+Every page you open arrives with its filler faded to grey and struck through with a hairline, and its substance left in the author's own words. Nothing is hidden, nothing is rewritten, nothing is summarised: the story is still there, in grey, right above the recipe, in ink.
 
 ![A recipe page with the story faded and the recipe in ink](docs/screenshots/page-faded.png)
 
@@ -50,7 +50,7 @@ Click the icon. The popup shows how many sentences were kept, the page kind, and
 1. The main text of the page is split into sentences. Structure is never touched: headings (including the ones written as a bold paragraph), tables, code, navigation, forms, captions, bibliographies, the question that heads an FAQ answer, a sentence that introduces a list, and the bold label that opens a list item ("**Milk:** …").
 2. Sentences go to the model in batches of about 30, in parallel, with their own text as context.
 3. Each sentence gets a probability that it carries what the reader came for, and a kind (fact, figure, step, condition, opinion, story, filler, promo).
-4. Each batch is painted the moment it comes back: a soft front of light comes down the page and the text is washed as it passes. Sentences below the slider are faded: a colour change only, so nothing moves and links still work.
+4. Each batch is painted the moment it comes back: a soft front of light comes down the page and the text is washed as it passes; a hairline draws itself through each sentence that goes, and for a second a small word in the margin says why (*story*, *promo*, *filler*). Sentences below the slider are faded: a colour and a line, so nothing moves and links still work. The line can be switched off in Options.
 5. Probabilities are cached per page, so the slider and rule removal re-render instantly with no request.
 6. Pages that change under you (infinite scroll, client-side navigation) are watched; only new sentences are judged.
 

@@ -39,6 +39,7 @@ const ui = {
   thresholdValue: el<HTMLOutputElement>("threshold-value"),
   revealKey: el<HTMLSelectElement>("reveal-key"),
   animations: el<HTMLInputElement>("animations"),
+  strike: el<HTMLInputElement>("strike"),
   rule: el<HTMLInputElement>("rule"),
   ruleList: el<HTMLUListElement>("rule-list"),
   behaviourSaved: el<HTMLSpanElement>("behaviour-saved"),
@@ -144,6 +145,7 @@ function renderSettings() {
   renderThreshold();
   ui.revealKey.value = settings.revealKey;
   ui.animations.checked = settings.animations;
+  ui.strike.checked = settings.strike;
   ui.denied.value = settings.deniedHosts.join("\n");
   ui.allowed.value = settings.allowedHosts.join("\n");
   renderRules();
@@ -286,6 +288,7 @@ function wire() {
   ui.threshold.addEventListener("change", () => void save({ threshold: Number(ui.threshold.value) }, ui.behaviourSaved));
   ui.revealKey.addEventListener("change", () => void save({ revealKey: ui.revealKey.value as RevealKey }, ui.behaviourSaved));
   ui.animations.addEventListener("change", () => void save({ animations: ui.animations.checked }, ui.behaviourSaved));
+  ui.strike.addEventListener("change", () => void save({ strike: ui.strike.checked }, ui.behaviourSaved));
 
   ui.denied.addEventListener("blur", () => {
     const deniedHosts = parseHosts(ui.denied.value);

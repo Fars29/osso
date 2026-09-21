@@ -88,6 +88,8 @@ export interface Settings {
   threshold: number;
   revealKey: RevealKey;
   animations: boolean;
+  /** A hairline through what is faded, as well as the grey. */
+  strike: boolean;
   /** Hosts where Osso never runs (user list; merged with DEFAULT_DENIED_HOSTS at runtime). */
   deniedHosts: string[];
   /** Hosts the user explicitly re-enabled, overriding the default deny list. */

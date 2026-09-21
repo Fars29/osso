@@ -1,16 +1,44 @@
 /*
  * Osso — loaded on every page by the manifest, so every rule is scoped to .osso-* or html.osso-on
- * and none of them touches layout. The fade is a colour transition on inline spans; nothing else.
+ * and none of them touches layout. The fade is a colour transition on inline spans, and a hairline
+ * drawn through them as a background; nothing else.
  */
 
 /* The settle, where the front cannot paint (inside a link, over an emoji, with no ink known): a
    700 ms colour transition that the renderer delays to the moment the front reaches that line
    (render.ts SETTLE_MS matches). */
 .osso-s {
-  transition-property: color;
-  transition-duration: var(--osso-dur, 700ms);
-  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
-  transition-delay: var(--osso-delay, 0ms);
+  transition-property: color, --osso-strike;
+  transition-duration: var(--osso-dur, 700ms), var(--osso-strike-ms, 700ms);
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1), var(--osso-strike-ease, cubic-bezier(0.65, 0, 0.35, 1));
+  transition-delay: var(--osso-delay, 0ms), var(--osso-strike-delay, var(--osso-delay, 0ms));
+}
+
+/* The strike: a hairline in the fade's own grey, drawn through the sentence from its first letter to
+   its last the way a pen would, as the front reaches it (render.ts sweep() sets when and how fast).
+   It is a background on the inline wrapper, so a sentence broken over several lines is struck in
+   reading order and nothing moves; how much of it is drawn is a registered property, so it
+   interpolates whatever else the background is doing (the front paints through the same element).
+   Drawn back in by anything that returns the ink: the reveal key, a pin, a link under the pointer. */
+@property --osso-strike {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+
+html.osso-strike .osso-s {
+  background-image: linear-gradient(var(--osso-grey, #b9b9b9), var(--osso-grey, #b9b9b9));
+  background-repeat: no-repeat;
+  background-position: 0 56%;
+  background-size: var(--osso-strike) 1px;
+}
+
+html.osso-strike:not(.osso-reveal) .osso-fade:not(.osso-pin) {
+  --osso-strike: 100%;
+}
+
+html.osso-strike a:hover .osso-fade {
+  --osso-strike: 0%;
 }
 
 /* The front: one horizontal line of light that comes down the page, and the text is washed as it
@@ -38,16 +66,21 @@
 /* A kept sentence: a veil of light, 240 px tall, passes down through it and it is ink again. */
 html.osso-on .osso-sweep {
   -webkit-text-fill-color: transparent;
-  background-image: linear-gradient(
-    180deg,
-    currentColor calc(var(--osso-y) - 240px),
-    color-mix(in srgb, currentColor 58%, var(--osso-grey, #b9b9b9)) calc(var(--osso-y) - 120px),
-    currentColor var(--osso-y)
-  );
-  background-attachment: fixed;
+  /* Two layers: the strike over the box, the front through the glyphs. */
+  background-image:
+    linear-gradient(var(--osso-grey, #b9b9b9), var(--osso-grey, #b9b9b9)),
+    linear-gradient(
+      180deg,
+      currentColor calc(var(--osso-y) - 240px),
+      color-mix(in srgb, currentColor 58%, var(--osso-grey, #b9b9b9)) calc(var(--osso-y) - 120px),
+      currentColor var(--osso-y)
+    );
+  background-attachment: scroll, fixed;
   background-repeat: no-repeat;
-  -webkit-background-clip: text;
-  background-clip: text;
+  background-position: 0 56%, 0 0;
+  background-size: var(--osso-strike) 1px, 100% 100%;
+  -webkit-background-clip: border-box, text;
+  background-clip: border-box, text;
   animation: osso-front var(--osso-front-ms, 2000ms) cubic-bezier(0.37, 0, 0.63, 1) both;
 }
 
@@ -55,8 +88,13 @@ html.osso-on .osso-sweep {
    the grey comes down the page the way dusk does. The colour property is already the grey
    underneath (no transition here), so nothing jumps when the class comes off. */
 html.osso-on .osso-sweep.osso-wipe {
-  transition: none;
-  background-image: linear-gradient(180deg, var(--osso-grey, #b9b9b9) calc(var(--osso-y) - 160px), var(--osso-ink, #161616) var(--osso-y));
+  transition-property: --osso-strike;
+  transition-duration: var(--osso-strike-ms, 700ms);
+  transition-timing-function: var(--osso-strike-ease, cubic-bezier(0.65, 0, 0.35, 1));
+  transition-delay: var(--osso-strike-delay, 0ms);
+  background-image:
+    linear-gradient(var(--osso-grey, #b9b9b9), var(--osso-grey, #b9b9b9)),
+    linear-gradient(180deg, var(--osso-grey, #b9b9b9) calc(var(--osso-y) - 160px), var(--osso-ink, #161616) var(--osso-y));
 }
 
 html.osso-still .osso-sweep {
@@ -220,6 +258,52 @@ html.osso-on .osso-dark .osso-rule-hit {
   transform: none;
 }
 
+/* The reason, for a moment: as the front reaches a paragraph that loses sentences, one small word in
+   the margin beside it says why ("story", "promo"), and is gone a second and a half later. Type and
+   nothing else: no card, no colour, never over the text (render.ts only places it in an empty
+   margin). The hover chip is where the reason lives afterwards. */
+@keyframes osso-why {
+  0% {
+    opacity: 0;
+    transform: translateX(var(--osso-why-dx, 6px));
+  }
+  16% {
+    opacity: 1;
+    transform: none;
+  }
+  68% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+.osso-why {
+  position: fixed;
+  z-index: 2147483646;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #8c8c8c;
+  font: 500 10.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  animation: osso-why 1900ms cubic-bezier(0.32, 0.72, 0, 1) var(--osso-why-delay, 0ms) both;
+}
+
+.osso-why-right {
+  --osso-why-dx: -6px;
+}
+
 /* On a dark block the card is dark too, so it still reads as a card sitting on the page. */
 .osso-chip.osso-chip-on-dark {
   border-color: rgba(242, 240, 234, 0.16);
@@ -242,7 +326,8 @@ html.osso-still .osso-rule-hit {
     transition: none;
   }
   html.osso-on .osso-rule-hit,
-  html.osso-on .osso-sweep {
+  html.osso-on .osso-sweep,
+  .osso-why {
     animation: none;
   }
   html.osso-on .osso-sweep {

@@ -1,6 +1,8 @@
 /**
- * The fade is the product. Everything here is a colour change on wrappers that segment already
- * placed: no node is moved, hidden or resized, and every state is reversible by removing a class.
+ * The fade is the product. Everything here is a colour change, and a hairline through it, on
+ * wrappers that segment already placed: no node is moved, hidden or resized, and every state is
+ * reversible by removing a class. The one thing added beside the text is a word in an empty margin,
+ * for under two seconds, saying why.
  *
  * Contract with segment: each sentence is one or more `<osso-s class="osso-s" data-osso="ID">`,
  * each judged block carries `data-osso-block`. We add classes, custom properties and one chip; we
@@ -45,6 +47,27 @@ export const FRONT_SPEED_PX_PER_MS = 0.4;
 export const FRONT_MIN_MS = 900;
 export const FRONT_MAX_MS = 3200;
 export const SETTLE_MS = 700;
+/**
+ * The strike: a hairline drawn through a sentence the grey falls on, from its first letter to its
+ * last, starting a moment after the front reaches it. A pen moves at a pace, so a longer sentence
+ * takes longer, within limits; a sentence in several wrappers (a link or an emphasis in the middle)
+ * is one stroke handed from wrapper to wrapper.
+ */
+export const STRIKE_LAG_MS = 120;
+export const STRIKE_MS_PER_CHAR = 7;
+export const STRIKE_MIN_MS = 450;
+export const STRIKE_MAX_MS = 1200;
+/**
+ * The reason, for a moment: one small word in the margin beside a paragraph that loses sentences,
+ * there for WHY_MS (osso.css). Only in an empty margin, never over text; WHY_CHAR_PX estimates its
+ * width so placing it costs no layout.
+ */
+export const WHY_MS = 1900;
+const WHY_GAP_PX = 14;
+const WHY_FONT_PX = 10.5;
+const WHY_CHAR_PX = 7.4;
+/** The same word again this close below the last one says nothing new: a list of ten pitches gets one "promo". */
+const WHY_REPEAT_PX = 120;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
 /** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
@@ -83,6 +106,10 @@ interface DocState {
   waved: HTMLElement[];
   /** Spans wearing the sweep; the class comes off with the delays. */
   swept: HTMLElement[];
+  /** The reasons in the margin right now, the timer that takes them away, and the scroll listener that does it sooner. */
+  whys: HTMLElement[];
+  whyTimer: ReturnType<typeof setTimeout> | null;
+  whyScroll: (() => void) | null;
   /** Ids rendered at least once: only a sentence's first rendering gets the sweep. */
   painted: Set<number>;
   settleTimer: ReturnType<typeof setTimeout> | null;
@@ -112,6 +139,9 @@ function stateOf(doc: Document): DocState {
       pinned: new Set(),
       waved: [],
       swept: [],
+      whys: [],
+      whyTimer: null,
+      whyScroll: null,
       painted: new Set(),
       settleTimer: null,
       instantTimer: null,
@@ -181,25 +211,39 @@ function ruleKeeping(state: DocState, id: number): string | null {
 function render(doc: Document, state: DocState, wave: boolean): Counts {
   let total = 0;
   let faded = 0;
-  const fresh: Array<{ span: HTMLElement; fade: boolean }> = [];
+  const fresh: Fresh[] = [];
+  const decided: Array<{ spans: HTMLElement[]; fade: boolean; pinned: boolean }> = [];
   for (const [id, spans] of spansById(doc)) {
     const j = state.judgment.get(id);
     if (!j || state.failed.has(id)) continue;
     total++;
     const fade = j.keep < state.threshold && ruleKeeping(state, id) === null;
     const pinned = state.pinned.has(id);
-    for (const s of spans) {
-      s.classList.toggle("osso-fade", fade);
-      s.classList.toggle("osso-pin", pinned);
-    }
+    decided.push({ spans, fade, pinned });
     if (fade && !pinned) faded++;
     if (!state.painted.has(id)) {
       state.painted.add(id);
-      if (wave) for (const span of spans) fresh.push({ span, fade: fade && !pinned });
+      if (wave) for (const span of spans) fresh.push({ id, span, fade: fade && !pinned });
     }
   }
-  if (fresh.length > 0) sweep(doc, state, fresh);
+  // Every read before any write. A rectangle read once the classes are on makes the browser resolve
+  // the new styles there and then, and every transition starts at once, before its delay is written:
+  // the links went grey and the strikes set off together while the front was still at the top.
+  const paint = fresh.length > 0 ? sweep(doc, state, fresh) : null;
+  for (const d of decided) {
+    for (const s of d.spans) {
+      s.classList.toggle("osso-fade", d.fade);
+      s.classList.toggle("osso-pin", d.pinned);
+    }
+  }
+  paint?.();
   return { total, kept: total - faded, faded };
+}
+
+interface Fresh {
+  id: number;
+  span: HTMLElement;
+  fade: boolean;
 }
 
 /** When a front on a sine ease reaches the share `p` of its travel, as a share of its duration. */
@@ -208,19 +252,20 @@ function arrival(p: number): number {
 }
 
 /**
+ * Reads now and returns the writes, for `render` to run after it has put the classes on.
  * One front for the spans of this pass: from just above the first of them on screen to past the
  * last, at a constant speed. Reads every rectangle first, then writes. Every judged sentence on
  * screen, kept or not, is painted through the front; where the grey falls the ink is washed out
  * behind it. A span holding an emoji, or inside a link, or with no ink known, keeps the plain
  * colour transition, delayed to the moment the front gets to it.
  */
-function sweep(doc: Document, state: DocState, fresh: Array<{ span: HTMLElement; fade: boolean }>) {
+function sweep(doc: Document, state: DocState, fresh: Fresh[]): (() => void) | null {
   const vh = doc.defaultView?.innerHeight ?? 0;
   const measured = fresh.map((f) => ({ ...f, rect: f.span.getBoundingClientRect() }));
   // No layout (a test document, a detached view): everything counts as on screen, at the top.
   const laidOut = vh > 0 && measured.some((m) => m.rect.height > 0);
   const onScreen = laidOut ? measured.filter((m) => m.rect.bottom > 0 && m.rect.top < vh) : measured;
-  if (onScreen.length === 0) return;
+  if (onScreen.length === 0) return null;
   let top = Infinity;
   let bottom = -Infinity;
   for (const m of onScreen) {
@@ -230,11 +275,53 @@ function sweep(doc: Document, state: DocState, fresh: Array<{ span: HTMLElement;
   const y0 = Math.max(-FRONT_FEATHER_PX, top - FRONT_LEAD_PX);
   const y1 = (laidOut ? Math.min(vh, bottom) : bottom) + FRONT_TRAIL_PX;
   const ms = Math.round(Math.min(FRONT_MAX_MS, Math.max(FRONT_MIN_MS, (y1 - y0) / FRONT_SPEED_PX_PER_MS)));
+  /** When the front reaches a line at this height. */
+  const reaches = (y: number) => Math.round(arrival((y - y0) / (y1 - y0)) * ms);
+  // Still reading: where a reason can go, before anything is written.
+  const notes = whyNotes(doc, state, onScreen, reaches);
+  return () => paintSweep(doc, state, onScreen, notes, { y0, y1, ms, reaches });
+}
+
+interface Front {
+  y0: number;
+  y1: number;
+  ms: number;
+  reaches: (y: number) => number;
+}
+
+/** The writes of a sweep: nothing here asks the browser where anything is. */
+function paintSweep(doc: Document, state: DocState, onScreen: Array<Fresh & { rect: DOMRect }>, notes: WhyNote[], front: Front) {
+  const { y0, y1, ms, reaches } = front;
+
+  // The strike, one stroke a sentence, handed from wrapper to wrapper in reading order.
+  let lastStroke = 0;
+  const strokes = new Map<number, Array<(typeof onScreen)[number]>>();
+  for (const m of onScreen) {
+    if (!m.fade) continue;
+    const parts = strokes.get(m.id);
+    if (parts) parts.push(m);
+    else strokes.set(m.id, [m]);
+  }
+  for (const parts of strokes.values()) {
+    const chars = parts.map((p) => (p.span.textContent ?? "").length);
+    const total = Math.max(1, chars.reduce((a, b) => a + b, 0));
+    const draw = Math.min(STRIKE_MAX_MS, Math.max(STRIKE_MIN_MS, total * STRIKE_MS_PER_CHAR));
+    const start = reaches(parts[0]!.rect.top) + STRIKE_LAG_MS;
+    let before = 0;
+    parts.forEach((p, i) => {
+      p.span.style.setProperty("--osso-strike-delay", `${Math.round(start + (draw * before) / total)}ms`);
+      p.span.style.setProperty("--osso-strike-ms", `${Math.max(60, Math.round((draw * chars[i]!) / total))}ms`);
+      // A stroke that changes hands cannot ease in each hand: it moves at one pace.
+      if (parts.length > 1) p.span.style.setProperty("--osso-strike-ease", "linear");
+      before += chars[i]!;
+    });
+    lastStroke = Math.max(lastStroke, start + draw);
+  }
 
   for (const m of onScreen) {
     const s = m.span;
     // The plain transition, where it is what a span gets, starts as the front arrives at its line.
-    s.style.setProperty("--osso-delay", `${Math.round(arrival((m.rect.top - y0) / (y1 - y0)) * ms)}ms`);
+    s.style.setProperty("--osso-delay", `${reaches(m.rect.top)}ms`);
     state.waved.push(s);
     // Glyphs painted through a gradient lose their own colours: an emoji would vanish for the pass.
     if (EMOJI.test(s.textContent ?? "")) continue;
@@ -247,23 +334,122 @@ function sweep(doc: Document, state: DocState, fresh: Array<{ span: HTMLElement;
     if (m.fade && !s.closest("a") && hasInk(s)) s.classList.add("osso-wipe");
     state.swept.push(s);
   }
-  scheduleSettle(doc, state, ms);
+  showWhys(doc, state, notes);
+  scheduleSettle(doc, state, Math.max(ms + SETTLE_MS, lastStroke));
 }
 
 const FRONT_PROPERTIES = ["--osso-y0", "--osso-y1", "--osso-front-ms"] as const;
+const WAVE_PROPERTIES = ["--osso-delay", "--osso-strike-delay", "--osso-strike-ms", "--osso-strike-ease"] as const;
+
+/** The reason in one word: the kind when the kind is the reason, "aside" when the model called it a fact, a figure or a step and still not what the reader came for. */
+function reasonWord(j: SentenceJudgment): string {
+  const kind = SENTENCE_KINDS[j.kind];
+  return kind && !kind.substantive ? kind.label : "aside";
+}
+
+interface WhyNote {
+  text: string;
+  side: "left" | "right";
+  /** Distance from that side of the viewport to the near edge of the word. */
+  inset: number;
+  top: number;
+  delay: number;
+}
+
+/**
+ * Reads only. One note for each block that loses sentences in this pass: the reasons (two at most),
+ * beside the first line that goes grey, in the left margin if it is empty and wide enough, else the
+ * right, else nowhere. "Empty" is asked of the page itself: whatever is at that point must be what
+ * the block sits in, not a sidebar beside it.
+ */
+function whyNotes(doc: Document, state: DocState, onScreen: Array<Fresh & { rect: DOMRect }>, reaches: (y: number) => number): WhyNote[] {
+  const win = doc.defaultView;
+  if (!win) return [];
+  const vw = doc.documentElement.clientWidth || win.innerWidth || 0;
+  const vh = win.innerHeight || 0;
+  const byBlock = new Map<HTMLElement, { first: HTMLElement; words: string[] }>();
+  for (const m of onScreen) {
+    if (!m.fade) continue;
+    const j = state.judgment.get(m.id);
+    const block = m.span.closest<HTMLElement>(BLOCK);
+    if (!j || !block) continue;
+    const word = reasonWord(j);
+    const entry = byBlock.get(block);
+    if (!entry) byBlock.set(block, { first: m.span, words: [word] });
+    else if (!entry.words.includes(word) && entry.words.length < 2) entry.words.push(word);
+  }
+  const free = (x: number, y: number, block: HTMLElement) => {
+    if (typeof doc.elementFromPoint !== "function") return true;
+    const hit = doc.elementFromPoint(x, y);
+    return !hit || hit.contains(block);
+  };
+  const notes: WhyNote[] = [];
+  for (const [block, { first, words }] of byBlock) {
+    const line = first.getClientRects()[0] ?? first.getBoundingClientRect();
+    const box = block.getBoundingClientRect();
+    const text = words.join(" · ");
+    const width = text.length * WHY_CHAR_PX;
+    const top = line.top + (line.height - WHY_FONT_PX) / 2;
+    if (line.height === 0 || top < 0 || top > vh - WHY_FONT_PX) continue;
+    const last = notes[notes.length - 1];
+    if (last && last.text === text && top - last.top < WHY_REPEAT_PX) continue;
+    const mid = top + WHY_FONT_PX / 2;
+    const leftEdge = box.left - WHY_GAP_PX;
+    const rightEdge = box.right + WHY_GAP_PX;
+    const delay = reaches(line.top);
+    if (leftEdge - width >= WHY_GAP_PX / 2 && free(leftEdge - width / 2, mid, block)) notes.push({ text, side: "left", inset: vw - leftEdge, top, delay });
+    else if (rightEdge + width <= vw - WHY_GAP_PX / 2 && free(rightEdge + width / 2, mid, block)) notes.push({ text, side: "right", inset: rightEdge, top, delay });
+  }
+  return notes;
+}
+
+/** Writes the notes and takes them away once the last has played, or at the first scroll: they are fixed to the window, and the text is not. */
+function showWhys(doc: Document, state: DocState, notes: WhyNote[]) {
+  if (notes.length === 0) return;
+  const host = doc.body ?? doc.documentElement;
+  let longest = 0;
+  for (const n of notes) {
+    const el = doc.createElement("div");
+    el.className = `osso-why osso-why-${n.side}`;
+    el.setAttribute("aria-hidden", "true");
+    el.textContent = n.text;
+    el.style.top = `${Math.round(n.top)}px`;
+    el.style.setProperty(n.side === "left" ? "right" : "left", `${Math.round(n.inset)}px`);
+    el.style.setProperty("--osso-why-delay", `${n.delay}ms`);
+    host.appendChild(el);
+    state.whys.push(el);
+    longest = Math.max(longest, n.delay);
+  }
+  const clear = () => clearWhys(doc, state);
+  if (!state.whyScroll) {
+    state.whyScroll = clear;
+    doc.addEventListener("scroll", clear, { capture: true, passive: true });
+  }
+  if (state.whyTimer) clearTimeout(state.whyTimer);
+  state.whyTimer = setTimeout(clear, longest + WHY_MS + 50);
+}
+
+function clearWhys(doc: Document, state: DocState) {
+  if (state.whyTimer) clearTimeout(state.whyTimer);
+  state.whyTimer = null;
+  if (state.whyScroll) doc.removeEventListener("scroll", state.whyScroll, true);
+  state.whyScroll = null;
+  for (const el of state.whys) el.remove();
+  state.whys = [];
+}
 
 /**
  * Once the front has passed, what it needed has done its job: drop it so reveal, pin and threshold
  * changes move every sentence together, and mark the root settled (osso.css shortens the
  * transition from there on).
  */
-function scheduleSettle(doc: Document, state: DocState, ms: number) {
+function scheduleSettle(doc: Document, state: DocState, after: number) {
   const root = doc.documentElement;
   root.classList.remove("osso-settled");
   if (state.settleTimer) clearTimeout(state.settleTimer);
   state.settleTimer = setTimeout(() => {
     state.settleTimer = null;
-    for (const s of state.waved) dropProperty(s, "--osso-delay");
+    for (const s of state.waved) for (const name of WAVE_PROPERTIES) dropProperty(s, name);
     state.waved = [];
     for (const s of state.swept) {
       s.classList.remove("osso-sweep", "osso-wipe");
@@ -271,7 +457,7 @@ function scheduleSettle(doc: Document, state: DocState, ms: number) {
     }
     state.swept = [];
     root.classList.add("osso-settled");
-  }, ms + SETTLE_MS + 50);
+  }, after + 50);
 }
 
 /** Whether the span's block knows the author's ink (paintBlocks wrote it): the wipe needs it for the part not yet swept. */
@@ -428,7 +614,7 @@ function paintBlocks(doc: Document) {
 export function applyJudgment(
   doc: Document,
   judgment: PageJudgment,
-  opts: { threshold: number; animations: boolean },
+  opts: { threshold: number; animations: boolean; strike?: boolean },
 ): Counts {
   const state = stateOf(doc);
   // Merge rather than replace: a later apply may carry only the sentences a mutation added, and a
@@ -452,6 +638,7 @@ export function applyJudgment(
 
   // Writes.
   root.classList.add("osso-on");
+  root.classList.toggle("osso-strike", opts.strike !== false);
   root.classList.toggle("osso-still", !opts.animations);
   const counts = render(doc, state, wave);
   if (!wave && !state.settleTimer) root.classList.add("osso-settled");
@@ -598,8 +785,7 @@ function chipOf(doc: Document, state: DocState): HTMLElement {
 function chipContent(doc: Document, j: SentenceJudgment, pinned: boolean, rule: string | null): Node[] {
   const label = doc.createElement("span");
   label.className = "osso-chip-label";
-  const kind = SENTENCE_KINDS[j.kind];
-  label.textContent = rule !== null ? `kept by ${rule}` : pinned ? "pinned" : kind && !kind.substantive ? kind.label : "aside";
+  label.textContent = rule !== null ? `kept by ${rule}` : pinned ? "pinned" : reasonWord(j);
   return [label];
 }
 
@@ -869,13 +1055,14 @@ export function clearRender(doc: Document): void {
     if (state.settleTimer) clearTimeout(state.settleTimer);
     if (state.instantTimer) clearTimeout(state.instantTimer);
     if (state.hitTimer) clearTimeout(state.hitTimer);
+    clearWhys(doc, state);
     state.chip?.remove();
     states.delete(doc);
   }
-  doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still");
+  doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still", "osso-strike");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
     s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe");
-    dropProperty(s, "--osso-delay");
+    for (const name of WAVE_PROPERTIES) dropProperty(s, name);
     for (const name of FRONT_PROPERTIES) dropProperty(s, name);
   }
   for (const b of doc.querySelectorAll<HTMLElement>(BLOCK)) {
@@ -883,5 +1070,5 @@ export function clearRender(doc: Document): void {
     dropProperty(b, "--osso-ink");
     b.classList.remove("osso-dark");
   }
-  for (const chip of doc.querySelectorAll(".osso-chip")) chip.remove();
+  for (const el of doc.querySelectorAll(".osso-chip, .osso-why")) el.remove();
 }
