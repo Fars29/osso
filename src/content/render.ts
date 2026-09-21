@@ -26,21 +26,23 @@ const BLOCK = "[data-osso-block]";
 
 /**
  * Settle: a wave down the page, one sentence after another, capped so a long chunk still settles in
- * about a second. Each sentence judged in a pass, kept or not, gets the sweep on its delay: a comet
- * of marrow, a thin bright head with a tail thinning out behind it, the judge passing over the
- * text. Where the grey falls it is drawn in behind the comet's head (the wipe) rather than faded in
- * all at once; inside a link, or without the block's ink, it falls back to the SETTLE_MS colour
- * transition. Chunks land one after another and each brings its own wave, so the page is seen
- * being read from the top down at the speed the model answers.
+ * about a second and a half. Each sentence judged in a pass, kept or not, gets the sweep on its
+ * delay, and the sweep is made of light, not paint: the glyphs are painted through a text-clipped
+ * gradient whose feathered front travels along the sentence. On a sentence the grey falls on, the
+ * ink is washed out behind the front (the wipe); on a kept one a veil of light crosses and it is
+ * ink again. Inside a link, without the block's ink, or over an emoji (a colour glyph cannot be
+ * painted through a gradient) the grey falls back to the SETTLE_MS colour transition. Chunks land
+ * one after another and each brings its own wave, so the page is seen being read from the top
+ * down at the speed the model answers.
  */
-export const WAVE_STEP_MS = 16;
-export const WAVE_MAX_MS = 500;
-export const SETTLE_MS = 650;
+export const WAVE_STEP_MS = 26;
+export const WAVE_MAX_MS = 700;
+export const SETTLE_MS = 1100;
 /** The sweep's length (osso.css matches); shorter than SETTLE_MS, so the settle timer covers it. */
-export const SWEEP_MS = 480;
+export const SWEEP_MS = 1100;
 /** How long the page's read-out stays once the judgment is complete. */
 const HUD_LINGER_MS = 2200;
-const HUD_COUNT_MS = 320;
+const HUD_COUNT_MS = 420;
 /** Threshold re-render runs at 200 ms with no stagger (see osso.css `osso-instant`). */
 const INSTANT_MS = 200;
 /** The rule-hit underline draws in over 240 ms and fades over 1.2 s (osso.css); the class comes off once that has played. */
@@ -48,6 +50,12 @@ export const RULE_HIT_MS = 240 + 1200;
 const CHIP_DELAY_MS = 250;
 /** Hover chip keeps this far from the text it describes and from a viewport edge; one and a half of it from the block's edge. */
 const CHIP_GAP_PX = 8;
+/** Colour glyphs, which a text-clipped gradient cannot paint. */
+const EMOJI = /\p{Extended_Pictographic}/u;
+const SVG_NS = "http://www.w3.org/2000/svg";
+/** The read-out's ring: radius and circumference of the 16 px progress circle. */
+const RING_R = 6.5;
+const RING_C = 2 * Math.PI * RING_R;
 
 /**
  * Contrast targets for the fade grey. The spec names `#b9b9b9` on white and `#5c5c5c` on near-black;
@@ -209,11 +217,13 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
       for (const s of spans) {
         s.style.setProperty("--osso-delay", `${delay}ms`);
         state.waved.push(s);
-        if (fresh) {
+        // Glyphs painted through a gradient lose their own colours: a span holding an emoji keeps
+        // the plain colour transition instead of vanishing for a second.
+        if (fresh && !EMOJI.test(s.textContent ?? "")) {
           s.classList.add("osso-sweep");
-          // Where the grey falls, it is drawn in behind the comet's head rather than faded in all
-          // at once. Not inside a link (its ink is the link's, not the block's), and not without
-          // the block's ink to draw the unswept part in.
+          // Where the grey falls, the ink is washed out behind the front rather than faded all at
+          // once. Not inside a link (its ink is the link's, not the block's), and not without the
+          // block's ink to paint the part the front has not reached.
           if (fade && !pinned && !s.closest("a") && hasInk(s)) s.classList.add("osso-wipe");
           state.swept.push(s);
         }
@@ -427,27 +437,17 @@ export function applyJudgment(
 }
 
 /**
- * The page's own read-out while it is being judged: how many sentences the model has answered
- * for, climbing as the chunks land, then the total and the time it took. It is how the speed is
- * said out loud. Only with animations on; gone a moment after the judgment is complete.
+ * The page's own read-out while it is being judged: a small capsule, low and centred, with a ring
+ * that fills as the chunks land and closes into a tick, the count of sentences answered for, then
+ * the total and the time the model took. It is how the speed is said out loud. Only with
+ * animations on; gone a moment after the judgment is complete.
  */
 export function showProgress(doc: Document, p: { judged: number; total: number; ms?: number }, animations: boolean): void {
   if (!animations || prefersReducedMotion(doc) || !doc.body) return;
   const state = stateOf(doc);
   let hud = state.hud;
   if (!hud || !hud.isConnected) {
-    hud = doc.createElement("div");
-    hud.className = "osso-hud";
-    // Hidden from assistive tech and from our own segmenter, which skips aria-hidden subtrees.
-    hud.setAttribute("aria-hidden", "true");
-    const dot = doc.createElement("i");
-    dot.className = "osso-hud-dot";
-    const n = doc.createElement("span");
-    n.className = "osso-hud-n";
-    n.textContent = "0";
-    const t = doc.createElement("span");
-    t.className = "osso-hud-t";
-    hud.append(dot, n, t);
+    hud = buildHud(doc);
     doc.body.appendChild(hud);
     state.hud = hud;
     state.hudShown = 0;
@@ -457,11 +457,46 @@ export function showProgress(doc: Document, p: { judged: number; total: number; 
   const done = p.ms !== undefined;
   const n = hud.querySelector<HTMLElement>(".osso-hud-n");
   const t = hud.querySelector<HTMLElement>(".osso-hud-t");
-  if (t) t.textContent = done ? `sentences · ${(Math.max(p.ms ?? 0, 50) / 1000).toFixed(1)} s` : `/ ${p.total} sentences`;
+  const arc = hud.querySelector<SVGElement>(".osso-hud-arc");
+  if (t) t.textContent = done ? `sentences · ${(Math.max(p.ms ?? 0, 50) / 1000).toFixed(1)} s` : `of ${p.total} sentences`;
+  const share = done || p.total <= 0 ? 1 : Math.min(1, p.judged / p.total);
+  if (arc) arc.style.strokeDashoffset = String(RING_C * (1 - share));
   hud.classList.toggle("osso-hud-done", done);
   if (n) countUp(doc, state, n, done ? p.total : p.judged);
   if (state.hudTimer) clearTimeout(state.hudTimer);
   state.hudTimer = done ? setTimeout(() => hideProgress(state), HUD_LINGER_MS) : null;
+}
+
+function buildHud(doc: Document): HTMLElement {
+  const hud = doc.createElement("div");
+  hud.className = "osso-hud";
+  // Hidden from assistive tech and from our own segmenter, which skips aria-hidden subtrees.
+  hud.setAttribute("aria-hidden", "true");
+  const ring = doc.createElementNS(SVG_NS, "svg");
+  ring.setAttribute("class", "osso-hud-ring");
+  ring.setAttribute("viewBox", "0 0 16 16");
+  const circle = (cls: string) => {
+    const c = doc.createElementNS(SVG_NS, "circle");
+    c.setAttribute("class", cls);
+    c.setAttribute("cx", "8");
+    c.setAttribute("cy", "8");
+    c.setAttribute("r", String(RING_R));
+    return c;
+  };
+  const arc = circle("osso-hud-arc");
+  arc.style.strokeDasharray = String(RING_C);
+  arc.style.strokeDashoffset = String(RING_C);
+  const tick = doc.createElementNS(SVG_NS, "path");
+  tick.setAttribute("class", "osso-hud-tick");
+  tick.setAttribute("d", "M5 8.3 L7.2 10.4 L11.2 5.9");
+  ring.append(circle("osso-hud-track"), arc, tick);
+  const n = doc.createElement("span");
+  n.className = "osso-hud-n";
+  n.textContent = "0";
+  const t = doc.createElement("span");
+  t.className = "osso-hud-t";
+  hud.append(ring, n, t);
+  return hud;
 }
 
 function countUp(doc: Document, state: DocState, el: HTMLElement, target: number) {
@@ -491,8 +526,8 @@ function hideProgress(state: DocState) {
   const hud = state.hud;
   if (!hud) return;
   state.hud = null;
-  hud.classList.remove("osso-hud-show");
-  setTimeout(() => hud.remove(), 320);
+  hud.classList.add("osso-hud-leave");
+  setTimeout(() => hud.remove(), 360);
 }
 
 /** A re-render with no stagger and a short settle: the slider, and a rule coming or going. */
