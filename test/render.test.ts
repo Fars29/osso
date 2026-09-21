@@ -190,7 +190,7 @@ describe("setThreshold", () => {
   it("re-renders from the stored judgment with no delay and marks the change instant", () => {
     vi.useFakeTimers();
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
-    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
     expect(setThreshold(document, 0.95)).toEqual({ total: 5, kept: 1, faded: 4 });
     expect(fadedIds()).toEqual([0, 1, 2, 3]);
     expect(spans(0)[0]!.style.getPropertyValue("--osso-delay")).toBe("");
@@ -668,7 +668,7 @@ describe("applyRules", () => {
     applyRules(document, { prices: { 1: 0.8 } }, ["prices"]);
     expect(root().classList.contains("osso-instant")).toBe(false);
     expect(root().classList.contains("osso-settled")).toBe(false);
-    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(WAVE_MAX_MS + SETTLE_MS + 100);
     expect(root().classList.contains("osso-settled")).toBe(true);
     applyRules(document, { deadlines: { 3: 0.9 } }, ["prices", "deadlines"]);
     expect(root().classList.contains("osso-instant")).toBe(true);

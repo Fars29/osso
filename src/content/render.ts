@@ -35,11 +35,11 @@ const BLOCK = "[data-osso-block]";
  * one after another and each brings its own wave, so the page is seen being read from the top
  * down at the speed the model answers.
  */
-export const WAVE_STEP_MS = 26;
-export const WAVE_MAX_MS = 700;
-export const SETTLE_MS = 1100;
+export const WAVE_STEP_MS = 45;
+export const WAVE_MAX_MS = 1300;
+export const SETTLE_MS = 1800;
 /** The sweep's length (osso.css matches); shorter than SETTLE_MS, so the settle timer covers it. */
-export const SWEEP_MS = 1100;
+export const SWEEP_MS = 1800;
 /** How long the page's read-out stays once the judgment is complete. */
 const HUD_LINGER_MS = 2200;
 const HUD_COUNT_MS = 420;

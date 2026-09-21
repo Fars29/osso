@@ -82,6 +82,7 @@ export async function saveKey(context, id, key) {
 export async function waitJudged(page) {
   await page.waitForFunction(() => document.documentElement.classList.contains("osso-on"), null, { timeout: JUDGE_TIMEOUT_MS });
   await page.waitForSelector(".osso-fade", { state: "attached", timeout: JUDGE_TIMEOUT_MS });
-  // Let the staggered settle finish so the screenshot shows the final greys.
-  await sleep(800);
+  // Let the wave finish so the screenshot shows the final greys: the root says when it has settled.
+  await page.waitForFunction(() => document.documentElement.classList.contains("osso-settled"), null, { timeout: 15_000 }).catch(() => {});
+  await sleep(150);
 }
