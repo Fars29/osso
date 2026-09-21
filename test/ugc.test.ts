@@ -96,3 +96,19 @@ describe("the items of a list a colon introduces", () => {
     expect(spans(doc, "#i")).toHaveLength(0);
   });
 });
+
+describe("a page too long to be read on someone's key without asking", () => {
+  it("is judged from the top down to the cap, between blocks, and left in ink after it; a later pass adds nothing", async () => {
+    const { MAX_SENTENCES_PER_PAGE } = await import("../src/shared/constants.ts");
+    const { segmentNewBlocks } = await import("../src/content/segment.ts");
+    const para = (i: number) => `<p id="p${i}">Clause ${i} says the subscriber must pay the fee by the first of the month. Clause ${i} also says that late payments carry a charge of two percent.</p>`;
+    const count = MAX_SENTENCES_PER_PAGE / 2 + 40;
+    const doc = page(`<article>${Array.from({ length: count }, (_, i) => para(i)).join("")}</article>`);
+    const { sentences, container } = segmentPage(doc);
+    expect(sentences.length).toBe(MAX_SENTENCES_PER_PAGE);
+    expect(spans(doc, `#p${MAX_SENTENCES_PER_PAGE / 2 - 1}`).length).toBe(2);
+    expect(spans(doc, `#p${MAX_SENTENCES_PER_PAGE / 2}`)).toHaveLength(0);
+    // The page grows (an infinite scroll): the cap is the page's, not the pass's.
+    expect(segmentNewBlocks(doc, container, sentences.length)).toHaveLength(0);
+  });
+});

@@ -24,13 +24,13 @@ So Osso asks, sentence by sentence, and strikes out the rest. Read what matters.
 
 Chrome, Edge or Brave. Two minutes, no store listing yet.
 
-1. Download the latest release zip and unpack it.
+1. Download the [latest release](https://github.com/Fars29/osso/releases/latest) zip and unpack it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the folder.
 3. Osso opens its Options page: paste your [TypeSafe key](https://typesafe.ai), press **Test**, then **Save**.
 
 That's it. Open any article.
 
-**Your key, your data.** Osso is free and open source, and runs on your own key, so there is no account, no server and no tracking. The page's title and main text go to `api.typesafe.ai` and nowhere else; never the URL. The key stays in your browser. A typical page costs about $0.001, and a page you have already read is free.
+**Your key, your data.** Osso is free and open source, and runs on your own key, so there is no account, no server and no tracking. The page's title and main text go to `api.typesafe.ai` and nowhere else; never the URL. The key stays in your browser. A typical page costs about $0.001, a page you have already read is free, and a page too long to be worth it (over 1,200 sentences) is only judged from the top down to that mark. The whole of it, in plain words: [PRIVACY.md](PRIVACY.md).
 
 ## Using it
 
@@ -76,4 +76,4 @@ TypeScript, no frameworks, no runtime dependencies. Everything else (the live en
 
 ## License
 
-GPL-3.0.
+GPL-3.0. Osso is an independent project, not affiliated with or endorsed by TypeSafe.

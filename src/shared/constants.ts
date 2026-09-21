@@ -7,6 +7,13 @@ export const USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
 
 /** Below this many sentences in the main content, a page is not worth judging. */
 export const MIN_SENTENCES = 8;
+/**
+ * The most sentences Osso will judge on one page. The key is the reader's and so is the bill: a
+ * long paper is 500–700 sentences and about a cent, and that is the size this is built for. A
+ * specification or a book on a single page can be twenty thousand, hundreds of requests and half a
+ * dollar, spent without being asked. Past this the page is left in ink, and the popup says so.
+ */
+export const MAX_SENTENCES_PER_PAGE = 1200;
 /** A sentence shorter than this (in words) is folded into its neighbour. */
 export const MIN_WORDS = 3;
 /**

@@ -7,7 +7,7 @@
  * The API key never comes here. The background answers `getSettings` with the key redacted to a
  * presence marker, which is all this side needs to know.
  */
-import { MIN_SENTENCES, MUTATION_DEBOUNCE_MS, REVEAL_HOLD_MS } from "../shared/constants.ts";
+import { MAX_SENTENCES_PER_PAGE, MIN_SENTENCES, MUTATION_DEBOUNCE_MS, REVEAL_HOLD_MS } from "../shared/constants.ts";
 import { hashText } from "../shared/hash.ts";
 import type {
   FromBackground,
@@ -232,7 +232,9 @@ async function start(): Promise<void> {
       return;
     }
     const packId = route(seg.meta);
-    report({ status: "judging", packId, pageKind: null, total: seg.sentences.length, kept: 0, faded: 0, ruleHits: {} });
+    // A page longer than the cap: what was wrapped is its beginning, and the popup says so.
+    const capped = seg.sentences.length >= MAX_SENTENCES_PER_PAGE;
+    report({ status: "judging", packId, pageKind: null, total: seg.sentences.length, kept: 0, faded: 0, ruleHits: {}, capped });
     const req: JudgeRequest = { meta: seg.meta, packId, contentHash: seg.contentHash, sentences: seg.sentences };
     // Chunks of this request are painted as they land (see onChunk); anything else is ignored.
     inflight = { contentHash: req.contentHash, gen, packId };

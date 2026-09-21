@@ -129,6 +129,8 @@ export interface TabState {
   revealed: boolean;
   /** Rule text → number of sentences it keeps on this page. A rule missing here has not been judged yet. */
   ruleHits: Record<string, number>;
+  /** The page is longer than MAX_SENTENCES_PER_PAGE: only its beginning was judged, the rest is left in ink. */
+  capped?: boolean;
 }
 
 /** Messages the content script (or UI pages) send to the background. */

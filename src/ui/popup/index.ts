@@ -92,8 +92,10 @@ function formatSeconds(ms: number): string {
 }
 
 function statusLine(s: TabState): string {
-  if (s.cached) return "from cache";
-  return `judged in ${formatSeconds(s.ms)} · ≈ ${formatCost(s.inputTokens)}`;
+  // A very long page is judged from the top down to the cap and no further: the reader is told, since the rest is in ink for that reason and no other.
+  const long = s.capped ? ` · long page, first ${s.total.toLocaleString("en-US")} sentences` : "";
+  if (s.cached) return `from cache${long}`;
+  return `judged in ${formatSeconds(s.ms)} · ≈ ${formatCost(s.inputTokens)}${long}`;
 }
 
 // ---- the big number -------------------------------------------------------

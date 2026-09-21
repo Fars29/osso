@@ -15,7 +15,7 @@
  * node that is in the document afterwards. `Node.normalize()` is never called, because it would also
  * merge the page's own adjacent text nodes and detach the ones the framework updates.
  */
-import { MIN_WORDS } from "../shared/constants.ts";
+import { MAX_SENTENCES_PER_PAGE, MIN_WORDS } from "../shared/constants.ts";
 import { hashText } from "../shared/hash.ts";
 import type { PageMeta, SentenceInput } from "../shared/types.ts";
 
@@ -901,6 +901,9 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
   const sentences: SentenceInput[] = [];
   let id = startId;
   for (let n = 0; n < blocks.length; n++) {
+    // Ids count the page's sentences across every pass, so this is the page's cap and not the pass's.
+    // It falls between blocks, never inside one.
+    if (id >= MAX_SENTENCES_PER_PAGE) break;
     const block = blocks[n]!;
     if (shown && !shown[n]) continue;
     if (block.segments.length === 0) continue;
