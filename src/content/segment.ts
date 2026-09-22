@@ -396,11 +396,18 @@ const ABBREVIATION_SET = new Set(
 );
 
 /**
- * A terminator run, then any closing quotes or brackets that belong to the sentence. Beyond the
- * Latin set: the CJK full stop, exclamation and question marks, the Arabic question mark, the Urdu
- * full stop and the Devanagari danda, so a page in those scripts splits into sentences at all.
+ * The footnote markers a wiki glues to the full stop: ".[16]", ".[5][7]", ".[citation needed]".
+ * Without them "…as a dietary fad.[10] The United States…" ran on as one sentence, and on
+ * Wikipedia 43 to 68% of an article was judged in lumps of two to five sentences.
  */
-const TERMINATOR = /[.!?…。！？؟۔।॥]+[)\]"'”’»›」』）】]*/gu;
+const FOOTNOTES = String.raw`(?:\[[^\[\]\n]{1,30}\])*`;
+/**
+ * A terminator run, then any closing quotes or brackets and footnote markers that belong to the
+ * sentence. Beyond the Latin set: the CJK full stop, exclamation and question marks, the Arabic
+ * question mark, the Urdu full stop and the Devanagari danda, so a page in those scripts splits
+ * into sentences at all.
+ */
+const TERMINATOR = new RegExp(String.raw`[.!?…。！？؟۔।॥]+[)\]"'”’»›」』）】]*` + FOOTNOTES, "gu");
 /** Full-width punctuation sits flush against the next sentence: no whitespace is expected after it. */
 const FLUSH_TERMINATOR = /[。！？]/u;
 /** What may open the next sentence: capital, digit, opening quote or bracket. Caseless scripts are handled in isStarter. */
@@ -413,9 +420,13 @@ const WORD = /[\p{L}\p{N}]+(?:['’]\p{L}+)?/gu;
 /** Scripts written without spaces between words: each character counts as a word for the length rules. */
 const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/gu;
 
+/** A footnote marker glued to the word before it ("fad.[10]", "Mercury,[17]"): a reference, not a word. */
+const GLUED_FOOTNOTE = /(?<=\S)\[[^\[\]\n]{1,30}\]/gu;
+
 export function countWords(text: string): number {
-  const cjk = text.match(CJK_CHAR);
-  const rest = (cjk ? text.replace(CJK_CHAR, " ") : text).match(WORD);
+  const bare = text.includes("[") ? text.replace(GLUED_FOOTNOTE, " ") : text;
+  const cjk = bare.match(CJK_CHAR);
+  const rest = (cjk ? bare.replace(CJK_CHAR, " ") : bare).match(WORD);
   return (cjk ? cjk.length : 0) + (rest ? rest.length : 0);
 }
 
@@ -437,12 +448,18 @@ function isAbbreviation(token: string): boolean {
   return CASE_SENSITIVE_ABBREVIATIONS.has(token);
 }
 
-/** Whether a lone period at `index` (the period itself) closes a sentence, judging by the word before it. */
-function periodEndsSentence(text: string, index: number): boolean {
+/**
+ * Whether a lone period at `index` (the period itself) closes a sentence, judging by the word before
+ * it. `footnoted` when a footnote marker follows the period: that is the writer's full stop ("Saturn
+ * V.[45]", "Apollo 8.[50]", "July 27.[209]"), so a letter or a short number before it is no initial
+ * or enumerator, and only a true abbreviation ("e.g.[3]", "et al.[12]") keeps the sentence open.
+ */
+function periodEndsSentence(text: string, index: number, footnoted = false): boolean {
   let start = index;
   while (start > 0 && TOKEN_CHAR.test(text[start - 1]!)) start--;
   const token = text.slice(start, index);
   if (token.length === 0) return true;
+  if (footnoted) return !isAbbreviation(token) && !isAbbreviation(token.slice(token.lastIndexOf(".") + 1));
   if (SINGLE_LETTER.test(token)) return false;
   if (ENUMERATOR.test(token)) return false;
   if (isAbbreviation(token)) return false;
@@ -474,7 +491,7 @@ function lineBoundaries(text: string, lineStart: number, lineEnd: number, out: n
     while (next < line.length && isWhitespace(line[next]!)) next++;
     if (next >= line.length) break;
     if (!isStarter(line, next)) continue;
-    if (run[0] === "." && (run.length === 1 || !/^[.!?…]/.test(run[1]!)) && !periodEndsSentence(line, m.index)) continue;
+    if (run[0] === "." && (run.length === 1 || !/^[.!?…]/.test(run[1]!)) && !periodEndsSentence(line, m.index, run.includes("["))) continue;
     out.push(lineStart + next);
     TERMINATOR.lastIndex = next;
   }
@@ -746,7 +763,7 @@ function withoutLabel(ranges: SentenceRange[], label: number, text: string): Sen
 /** A caption's opening: "Fig 1.", "Figure 2:", "Table 3.", "Tabella 1", "Scheme 4". */
 const CAPTION = /^\s*(fig(ure|ura)?s?|tab(le|ella)?s?|scheme|box|chart|equation|eq)\.?\s*\d+/i;
 const TAIL_LABEL_MAX_WORDS = 3;
-const ENDS_SENTENCE = /[.!?…。！？]["'”’»)\]]*\s*$/u;
+const ENDS_SENTENCE = new RegExp(String.raw`[.!?…。！？]["'”’»)\]]*` + FOOTNOTES + String.raw`\s*$`, "u");
 const LEAD_IN = /:\s*$/;
 /**
  * A block that is a short question and nothing else: the heading of the answer under it, in an FAQ.

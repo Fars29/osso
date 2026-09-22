@@ -64,6 +64,31 @@ describe("splitSentences", () => {
     expect(pieces("Version 4.2 ships next week. and it is the last of the series.")).toHaveLength(1);
   });
 
+  it("cuts after the footnote markers a wiki glues to the full stop", () => {
+    expect(
+      pieces(
+        "It has not been studied, leading some academics to call it a fad.[10] The institute states that research is limited.[11][12] The ministry says it may aid weight loss.[citation needed] Nothing else is known yet.",
+      ),
+    ).toEqual([
+      "It has not been studied, leading some academics to call it a fad.[10]",
+      "The institute states that research is limited.[11][12]",
+      "The ministry says it may aid weight loss.[citation needed]",
+      "Nothing else is known yet.",
+    ]);
+    // With a footnote after it, a period after a letter or a short number is the writer's full stop, not an initial or an enumerator.
+    expect(pieces("It was comparable to the Saturn V.[45] Seeing these failures, the Soviets changed their plan.")).toHaveLength(2);
+    expect(pieces("Aldrin was the backup for Apollo 8.[50] Apollo 11 was the second crewed landing attempt.")).toHaveLength(2);
+    expect(pieces("The crew landed in Houston on July 27.[209] The astronauts then went into quarantine.")).toHaveLength(2);
+    // A marker is no licence to cut where the period alone would not: after an abbreviation, or before a lower-case word.
+    expect(pieces("Staple foods, e.g.[3] Rice and wheat, were rationed across the country.")).toHaveLength(1);
+    expect(pieces("The figure was revised.[4] and nobody noticed for a year.")).toHaveLength(1);
+  });
+
+  it("does not take a short last sentence with a footnote for a label", () => {
+    // "It ended.[5]" ends like a sentence; read as a tag ("Edited", "Read more") it was dropped from the page.
+    expect(pieces("The mission was a success for everyone involved. It ended.[5]")).toEqual(["The mission was a success for everyone involved. It ended.[5]"]);
+  });
+
   it("splits on newlines and on an ellipsis only before a capital", () => {
     expect(pieces("First line of the block\nSecond line of the block")).toEqual(["First line of the block", "Second line of the block"]);
     expect(pieces("I was not so sure… I am still not sure about that. And then… nothing at all happened.")).toEqual([
