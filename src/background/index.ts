@@ -24,6 +24,7 @@ import { HIGHLIGHT_VERSION, MAX_SENTENCES_PER_REQUEST, RECENT_REQUESTS } from ".
 import { getPack } from "../packs/index.ts";
 import { ApiError, judgeHighlights, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeOptions, type JudgeResult } from "./api.ts";
 import { clearCache, getCached, mergeHighlights, mergeRules, putCached } from "./cache.ts";
+import { knownUnits, rememberUnits } from "./units.ts";
 import {
   addStats,
   getSettings,
@@ -237,6 +238,7 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
       result = await judgeHighlights(entry.req, getPack(entry.req.packId), missing, {
         apiKey: settings.apiKey,
         maxSentencesPerRequest: settings.maxSentencesPerRequest,
+        units: await knownUnits(missing).catch(() => ({})),
       });
     } catch (err) {
       const e = err instanceof ApiError ? err : new ApiError("server", err instanceof Error ? err.message : String(err));
@@ -245,6 +247,7 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
     }
     Object.assign(entry.spans, result.spans);
     spent = { inputTokens: result.inputTokens, ms: result.ms };
+    await bestEffort(() => rememberUnits(result.units));
     const fullPage = entry.req.sentences[0]?.id === 0;
     if (fullPage && result.chunkErrors.length === 0) await bestEffort(() => mergeHighlights(contentHash, result.spans));
     await bestEffort(() => addStats({ inputTokens: result.inputTokens }));
@@ -254,7 +257,8 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
     const byId = entry.spans[t];
     if (byId) out[t] = byId;
   }
-  return { type: "highlightJudgment", contentHash, spans: out, ...spent };
+  const units = await knownUnits(terms).catch(() => ({}));
+  return { type: "highlightJudgment", contentHash, spans: out, units, ...spent };
 }
 
 /**

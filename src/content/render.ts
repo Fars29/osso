@@ -7,7 +7,7 @@
  * each judged block carries `data-osso-block`. We add classes, custom properties and one chip; we
  * never unwrap.
  */
-import type { HighlightSpans, PageJudgment, RevealKey, RuleResults, SentenceJudgment } from "../shared/types.ts";
+import type { HighlightSpans, HighlightUnit, PageJudgment, RevealKey, RuleResults, SentenceJudgment } from "../shared/types.ts";
 import { RULE_THRESHOLD, SENTENCE_KINDS } from "../shared/constants.ts";
 
 export interface Counts {
@@ -114,6 +114,8 @@ interface DocState {
   /** Every highlight this page has seen, and the terms in force, in the reader's order. */
   marks: HighlightSpans;
   activeTerms: string[];
+  /** How each term is marked; a term missing here is marked in words. */
+  markUnits: Record<string, HighlightUnit>;
   /** Sentence id → the first active term that marks it. A marked sentence is never faded. */
   marked: Map<number, string>;
   /** The colours the reader chose: the marker, the ink over it, and a grey to use instead of the one picked per block. */
@@ -150,6 +152,7 @@ function stateOf(doc: Document): DocState {
       activeRules: [],
       marks: {},
       activeTerms: [],
+      markUnits: {},
       marked: new Map(),
       markColor: "",
       fadeColor: "",
@@ -1109,7 +1112,9 @@ export function clearRender(doc: Document): void {
     releaseWaiting(state);
     if (state.instantTimer) clearTimeout(state.instantTimer);
     if (state.hitTimer) clearTimeout(state.hitTimer);
-    highlightApi(doc.defaultView)?.css.highlights.delete(MARK_REGISTRY);
+    const api = highlightApi(doc.defaultView);
+    api?.css.highlights.delete(MARK_REGISTRY);
+    api?.css.highlights.delete(LINE_REGISTRY);
     state.chip?.remove();
     states.delete(doc);
   }
@@ -1132,19 +1137,27 @@ export function clearRender(doc: Document): void {
 // ---------------------------------------------------------------------------------------------
 // The marker: where a highlight term was found, painted over the page without touching it
 
-/** The registry name the stylesheet paints (`::highlight(osso-mark)`). */
+/** The registry names the stylesheet paints: `::highlight(osso-mark)` for words, `osso-mark-line` for whole sentences. */
 const MARK_REGISTRY = "osso-mark";
+const LINE_REGISTRY = "osso-mark-line";
 
 interface HighlightApi {
   highlights: { set(name: string, value: unknown): void; delete(name: string): void };
 }
 
 /** The browser's Custom Highlight API, when it has one: it paints ranges with no element of ours in the page at all. */
-function highlightApi(win: Window | null): { css: HighlightApi; make: (ranges: Range[]) => unknown } | null {
+function highlightApi(win: Window | null): { css: HighlightApi; make: (ranges: Range[], priority?: number) => unknown } | null {
   const css = (win as unknown as { CSS?: HighlightApi })?.CSS;
-  const ctor = (win as unknown as { Highlight?: new (...ranges: Range[]) => unknown })?.Highlight;
+  const ctor = (win as unknown as { Highlight?: new (...ranges: Range[]) => { priority?: number } })?.Highlight;
   if (!css?.highlights || typeof ctor !== "function") return null;
-  return { css, make: (ranges) => new ctor(...ranges) };
+  return {
+    css,
+    make: (ranges, priority = 0) => {
+      const h = new ctor(...ranges);
+      h.priority = priority;
+      return h;
+    },
+  };
 }
 
 /**
@@ -1193,9 +1206,10 @@ function rangesFor(doc: Document, spans: HTMLElement[], sentence: string, ranges
   if (shift < 0) return [];
   const out: Range[] = [];
   for (const [from, to] of ranges) {
-    const a = from - shift;
-    const b = to - shift;
-    if (a < 0 || b > at.length || b <= a) continue;
+    // What falls in a part of the sentence the page does not hold (a run-in label) is left out, the rest is marked.
+    const a = Math.max(0, from - shift);
+    const b = Math.min(at.length, to - shift);
+    if (b <= a) continue;
     const start = at[a]!;
     const end = at[b - 1]!;
     const range = doc.createRange();
@@ -1214,9 +1228,16 @@ function rangesFor(doc: Document, spans: HTMLElement[], sentence: string, ranges
  * What the reader asked to see, marked on the page. A sentence that carries a mark is never faded:
  * asking to see something and then greying it would be two answers to one question.
  */
-export function applyHighlights(doc: Document, spans: HighlightSpans, activeTerms: string[], sentences: Map<number, string>): Counts {
+export function applyHighlights(
+  doc: Document,
+  spans: HighlightSpans,
+  activeTerms: string[],
+  sentences: Map<number, string>,
+  units: Record<string, HighlightUnit> = {},
+): Counts {
   const state = stateOf(doc);
   for (const [term, byId] of Object.entries(spans)) state.marks[term] = { ...state.marks[term], ...byId };
+  Object.assign(state.markUnits, units);
   state.activeTerms = [...activeTerms];
   paintMarks(doc, state, sentences);
   return state.entrances > 0 ? render(doc, state, false) : renderInstant(doc, state);
@@ -1228,20 +1249,25 @@ function paintMarks(doc: Document, state: DocState, sentences: Map<number, strin
   const byId = spansById(doc);
   const marked = new Map<number, string>();
   const ranges: Range[] = [];
+  const lines: Range[] = [];
   for (const term of state.activeTerms) {
+    const into = state.markUnits[term] === "sentence" ? lines : ranges;
     for (const [id, offsets] of Object.entries(state.marks[term] ?? {})) {
       const key = Number(id);
       const wrappers = byId.get(key);
       const text = sentences.get(key);
       if (!wrappers || !text || offsets.length === 0) continue;
       if (!marked.has(key)) marked.set(key, term);
-      if (api) ranges.push(...rangesFor(doc, wrappers, text, offsets));
+      if (api) into.push(...rangesFor(doc, wrappers, text, offsets));
     }
   }
   state.marked = marked;
   if (!api) return;
+  // Words over a wash, where a sentence carries both: the thing itself stays the brightest mark.
   if (ranges.length === 0) api.css.highlights.delete(MARK_REGISTRY);
-  else api.css.highlights.set(MARK_REGISTRY, api.make(ranges));
+  else api.css.highlights.set(MARK_REGISTRY, api.make(ranges, 1));
+  if (lines.length === 0) api.css.highlights.delete(LINE_REGISTRY);
+  else api.css.highlights.set(LINE_REGISTRY, api.make(lines));
 }
 
 /** How many sentences on this page carry a mark: what the popup's second figure is out of. */

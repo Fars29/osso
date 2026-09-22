@@ -65,6 +65,8 @@ export type RuleResults = Record<string, Record<number, number>>;
  * actually is and a word that occurs twice is not marked twice over.
  */
 export type HighlightSpans = Record<string, Record<number, [number, number][]>>;
+/** How a term is marked: the few words that name it, or the whole sentence that states it. */
+export type HighlightUnit = "words" | "sentence";
 
 /** Everything the content script knows about a page before judging it; packs route on this. */
 export interface PageMeta {
@@ -195,7 +197,15 @@ export type FromBackground =
   | { type: "judgment"; judgment: PageJudgment }
   | { type: "ruleJudgment"; contentHash: string; rules: RuleResults }
   /** `inputTokens` and `ms` are what this answer cost the model now: 0 when it came from memory or the cache. */
-  | { type: "highlightJudgment"; contentHash: string; spans: HighlightSpans; inputTokens?: number; ms?: number }
+  | {
+      type: "highlightJudgment";
+      contentHash: string;
+      spans: HighlightSpans;
+      /** How each term is marked, so the page can paint a whole sentence differently from a word. */
+      units?: Record<string, HighlightUnit>;
+      inputTokens?: number;
+      ms?: number;
+    }
   | { type: "tabState"; state: TabState | null }
   | { type: "keyTest"; ok: boolean; error?: string; ms?: number }
   | { type: "ok" }

@@ -104,6 +104,7 @@ describe("what is stored", () => {
 /** The browser's Custom Highlight API, reduced to what the renderer asks of it. */
 class FakeHighlight {
   ranges: Range[];
+  priority = 0;
   constructor(...ranges: Range[]) {
     this.ranges = ranges;
   }
@@ -183,6 +184,32 @@ describe("marking the page", () => {
     // Back again with no new answer: the page still knows where it was.
     applyHighlights(document, {}, ["ingredients"], SENTENCES);
     expect(registry.get("osso-mark")?.size).toBe(1);
+  });
+
+  it("paints a term a sentence states as a wash over its whole sentence, apart from the words, which stay on top", () => {
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: false });
+    applyHighlights(
+      document,
+      { reasons: { 1: [[0, SENTENCES.get(1)!.length]] }, ingredients: { 0: [[13, 24]] } },
+      ["reasons", "ingredients"],
+      SENTENCES,
+      { reasons: "sentence", ingredients: "words" },
+    );
+    expect(registry.get("osso-mark-line")!.ranges.map(String)).toEqual(["Serve at once."]);
+    expect(registry.get("osso-mark")!.ranges.map(String)).toEqual(["white sugar"]);
+    expect(registry.get("osso-mark")!.priority).toBeGreaterThan(registry.get("osso-mark-line")!.priority);
+    expect(markHits(document)).toEqual({ reasons: 1, ingredients: 1 });
+    // Taken away, the wash comes off with its term.
+    applyHighlights(document, {}, ["ingredients"], SENTENCES);
+    expect(registry.has("osso-mark-line")).toBe(false);
+    expect(registry.get("osso-mark")?.size).toBe(1);
+  });
+
+  it("marks what the page holds of a whole sentence whose run-in label the page does not wrap", () => {
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: false });
+    const read = "Tip: Serve at once.";
+    applyHighlights(document, { reasons: { 1: [[0, read.length]] } }, ["reasons"], new Map([[1, read]]), { reasons: "sentence" });
+    expect(registry.get("osso-mark-line")!.ranges.map(String)).toEqual(["Serve at once."]);
   });
 
   it("marks nothing rather than the wrong thing when the page does not hold what the model read", () => {

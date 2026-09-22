@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { KEEP_QUESTION, KIND_QUESTION, PAGE_KINDS, PAGE_KIND_QUESTION, RULE_QUESTION, SENTENCE_KINDS } from "../src/shared/constants.ts";
+import {
+  HIGHLIGHT_QUESTION,
+  HIGHLIGHT_UNIT_QUESTION,
+  KEEP_QUESTION,
+  KIND_QUESTION,
+  PAGE_KINDS,
+  PAGE_KIND_QUESTION,
+  RULE_QUESTION,
+  SENTENCE_KINDS,
+} from "../src/shared/constants.ts";
 import { buildRequestBody } from "../src/background/api.ts";
 import { PACKS } from "../src/packs/index.ts";
 import type { PageMeta } from "../src/shared/types.ts";
@@ -19,6 +28,16 @@ const ours: Array<[string, string]> = [
   ["rule instructions", RULE_QUESTION.instructions(PLACEHOLDER, PLACEHOLDER)],
   ["rule true", RULE_QUESTION.criteriaTrue(PLACEHOLDER)],
   ["rule false", RULE_QUESTION.criteriaFalse(PLACEHOLDER)],
+  ["highlight gate instructions", HIGHLIGHT_QUESTION.gateInstructions(PLACEHOLDER, PLACEHOLDER)],
+  ["highlight gate true", HIGHLIGHT_QUESTION.gateTrue(PLACEHOLDER)],
+  ["highlight gate false", HIGHLIGHT_QUESTION.gateFalse(PLACEHOLDER)],
+  ["highlight word instructions", HIGHLIGHT_QUESTION.wordInstructions(PLACEHOLDER, PLACEHOLDER)],
+  ["highlight word true", HIGHLIGHT_QUESTION.wordTrue(PLACEHOLDER, PLACEHOLDER)],
+  ["highlight word false", HIGHLIGHT_QUESTION.wordFalse(PLACEHOLDER, PLACEHOLDER)],
+  ["highlight unit state", HIGHLIGHT_UNIT_QUESTION.state],
+  ["highlight unit instructions", HIGHLIGHT_UNIT_QUESTION.instructions(PLACEHOLDER)],
+  ["highlight unit true", HIGHLIGHT_UNIT_QUESTION.criteriaTrue],
+  ["highlight unit false", HIGHLIGHT_UNIT_QUESTION.criteriaFalse],
   ...Object.entries(SENTENCE_KINDS).map(([k, v]): [string, string] => [`sentence kind ${k}`, v.description]),
   ...Object.entries(PAGE_KINDS).map(([k, v]): [string, string] => [`page kind ${k}`, v.description]),
   ...PACKS.flatMap((p): Array<[string, string]> => [

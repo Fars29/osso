@@ -17,6 +17,8 @@ import {
   HIGHLIGHT_QUESTION,
   HIGHLIGHT_STANDOUT,
   HIGHLIGHT_THRESHOLD,
+  HIGHLIGHT_UNIT_QUESTION,
+  HIGHLIGHT_UNIT_THRESHOLD,
   HIGHLIGHT_WORDS_PER_REQUEST,
   KEEP_QUESTION,
   KIND_QUESTION,
@@ -32,6 +34,7 @@ import {
 } from "../shared/constants.ts";
 import type {
   HighlightSpans,
+  HighlightUnit,
   JudgeRequest,
   PageJudgment,
   PageKind,
@@ -224,6 +227,10 @@ function noulOf(answers: Record<string, unknown>, key: string): number {
 
 function wordKey(j: number): string {
   return `w${j}`;
+}
+
+function unitKey(ti: number): string {
+  return `unit_${ti}`;
 }
 
 /** Rule questions are keyed by the rule's index in the request, so the rule's text never has to survive a round trip as a key. */
@@ -646,9 +653,46 @@ interface HighlightWork {
 
 export interface HighlightResult {
   spans: HighlightSpans;
+  /** The units this call had to ask for, to be kept: a term whose unit could not be learned is absent. */
+  units: Record<string, HighlightUnit>;
   inputTokens: number;
   ms: number;
   chunkErrors: ChunkError[];
+}
+
+/** The unit question for each term, in one request with no page in it: the answer is about the term. */
+export function buildUnitRequestBody(terms: string[]): { state: { task: string }; model: string; questions: Record<string, unknown> } {
+  const questions: Record<string, unknown> = {};
+  terms.forEach((term, ti) => {
+    questions[unitKey(ti)] = {
+      type: "noul",
+      instructions: HIGHLIGHT_UNIT_QUESTION.instructions(term),
+      criteria: { true: HIGHLIGHT_UNIT_QUESTION.criteriaTrue, false: HIGHLIGHT_UNIT_QUESTION.criteriaFalse },
+    };
+  });
+  return { state: { task: HIGHLIGHT_UNIT_QUESTION.state }, model: MODEL, questions };
+}
+
+/**
+ * Asks how each term is marked. A term the reply does not answer fails the whole request rather
+ * than defaulting quietly: its marks would then be found as words and kept as if that were decided.
+ */
+async function askUnits(terms: string[], opts: Omit<JudgeOptions, "onChunk">): Promise<PoolResult<Record<string, HighlightUnit>>> {
+  if (terms.length === 0) return { results: [], chunkErrors: [], inputTokens: 0 };
+  const plan: ChunkPlan<Record<string, HighlightUnit>> = {
+    build: () => buildUnitRequestBody(terms),
+    parse: (_chunk, answers) => {
+      const units: Record<string, HighlightUnit> = {};
+      terms.forEach((term, ti) => {
+        const p = finite((answers?.[unitKey(ti)] as { noul?: unknown } | undefined)?.noul);
+        if (p === null) throw new ApiError("server", `No answer for how to mark «${term}»`);
+        units[term] = p >= HIGHLIGHT_UNIT_THRESHOLD ? "sentence" : "words";
+      });
+      return units;
+    },
+    failed: () => ({}),
+  };
+  return runPool([[]], plan, opts);
 }
 
 function highlightState(sentences: SentenceInput[], meta: PageMeta, pack: PackLike): Record<string, string> {
@@ -664,13 +708,13 @@ export async function judgeHighlights(
   req: JudgeRequest,
   pack: PackLike,
   terms: string[],
-  opts: Omit<JudgeOptions, "onChunk">,
+  opts: Omit<JudgeOptions, "onChunk"> & { units?: Record<string, HighlightUnit> },
 ): Promise<HighlightResult> {
   if (!opts.apiKey) throw new ApiError("no-key", "No API key");
   const t0 = performance.now();
   const spans: HighlightSpans = {};
   for (const term of terms) spans[term] = {};
-  if (terms.length === 0 || req.sentences.length === 0) return { spans, inputTokens: 0, ms: 0, chunkErrors: [] };
+  if (terms.length === 0 || req.sentences.length === 0) return { spans, units: {}, inputTokens: 0, ms: 0, chunkErrors: [] };
 
   // Round one: which sentences mention the thing at all.
   const gateChunks = chunkSentences(req.sentences, ruleChunkSize(opts.maxSentencesPerRequest, terms.length));
@@ -694,7 +738,12 @@ export async function judgeHighlights(
     },
     failed: () => ({}),
   };
-  const gate = await runPool(gateChunks, gatePlan, opts);
+  // How each term is marked, asked beside round one for the terms not yet known, so it adds no wait of its own.
+  const known = opts.units ?? {};
+  const [gate, asked] = await Promise.all([runPool(gateChunks, gatePlan, opts), askUnits(terms.filter((t) => !known[t]), opts)]);
+  const learned = asked.results[0] ?? {};
+  // A term whose unit could not be learned is marked in words this once, as it was before there was a choice.
+  const unitOf = (term: string): HighlightUnit => known[term] ?? learned[term] ?? "words";
 
   // Round two: which words, inside those sentences only.
   const byId = new Map(req.sentences.map((s) => [s.id, s]));
@@ -704,13 +753,25 @@ export async function judgeHighlights(
     for (const id of ids) {
       const sentence = byId.get(id);
       if (!sentence) continue;
+      // A term a sentence states is marked as the sentence round one found: there are no words to ask about.
+      if (unitOf(term) === "sentence") {
+        spans[term]![id] = [[0, sentence.text.length]];
+        continue;
+      }
       const words = highlightWords(sentence.text);
       for (let i = 0; i < words.length; i += HIGHLIGHT_WORDS_PER_REQUEST) {
         work.push({ term, sentence, words: words.slice(i, i + HIGHLIGHT_WORDS_PER_REQUEST) });
       }
     }
   }
-  if (work.length === 0) return { spans, inputTokens: gate.inputTokens, ms: Math.round(performance.now() - t0), chunkErrors: gate.chunkErrors };
+  const done = (extra: { inputTokens: number; chunkErrors: ChunkError[] }): HighlightResult => ({
+    spans,
+    units: learned,
+    inputTokens: gate.inputTokens + asked.inputTokens + extra.inputTokens,
+    ms: Math.round(performance.now() - t0),
+    chunkErrors: [...gate.chunkErrors, ...asked.chunkErrors, ...extra.chunkErrors],
+  });
+  if (work.length === 0) return done({ inputTokens: 0, chunkErrors: [] });
 
   const wordPlan: ChunkPlan<[number, number][]> = {
     // The sentence is the state of its own request, so each question is a few words long. Measured
@@ -753,10 +814,5 @@ export async function judgeHighlights(
     byTerm[w.sentence.id] = stitchSpans(w.sentence.text, [...(byTerm[w.sentence.id] ?? []), ...found], highlightWords(w.sentence.text));
   });
 
-  return {
-    spans,
-    inputTokens: gate.inputTokens + words.inputTokens,
-    ms: Math.round(performance.now() - t0),
-    chunkErrors: [...gate.chunkErrors, ...words.chunkErrors],
-  };
+  return done(words);
 }

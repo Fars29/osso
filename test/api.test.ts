@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { API_URL, KEEP_QUESTION, MODEL, PAGE_KINDS, RULE_QUESTION, SENTENCE_KINDS } from "../src/shared/constants.ts";
+import { API_URL, HIGHLIGHT_UNIT_QUESTION, KEEP_QUESTION, MODEL, PAGE_KINDS, RULE_QUESTION, SENTENCE_KINDS } from "../src/shared/constants.ts";
 import type { JudgeRequest, PageMeta, SentenceInput } from "../src/shared/types.ts";
 import {
   ApiError,
   buildRequestBody,
   buildRuleRequestBody,
   chunkSentences,
+  judgeHighlights,
   judgePage,
   judgeRules,
   parseAnswers,
@@ -658,5 +659,66 @@ describe("judgeRules", () => {
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(out.failedIds).toEqual([]);
     expect(Object.keys(out.rules.prices!)).toHaveLength(5);
+  });
+});
+
+describe("judgeHighlights: words or whole sentences", () => {
+  const opts = { apiKey: "sk", maxSentencesPerRequest: 60, sleep: noSleep };
+  /** Round one finds every term in sentences 2 and 5, round two in each one's first word; the unit question says «consequences» is a sentence. */
+  function highlightReply(init: RequestInit | undefined, answerUnits = true): Response {
+    const body = bodyOf(init);
+    const answers: Record<string, unknown> = {};
+    for (const [k, q] of Object.entries(body.questions)) {
+      const instructions = (q as { instructions: string }).instructions;
+      if (k.startsWith("unit_")) {
+        if (answerUnits) answers[k] = { noul: instructions.includes("«consequences»") ? 0.8 : 0.2 };
+      } else if (/^g\d+_\d+$/.test(k)) {
+        answers[k] = { noul: [2, 5].includes(Number(k.split("_")[1])) ? 0.9 : 0.1 };
+      } else if (/^w\d+$/.test(k)) {
+        answers[k] = { noul: k === "w0" ? 0.9 : 0.1 };
+      }
+    }
+    return reply(200, { answers, usage: { input_tokens: 10 } });
+  }
+  const kindOf = (init: RequestInit | undefined) => {
+    const keys = Object.keys(bodyOf(init).questions);
+    return keys.some((k) => k.startsWith("unit_")) ? "unit" : keys.some((k) => /^w\d+$/.test(k)) ? "words" : "gate";
+  };
+
+  it("asks once, beside round one, how each term is marked; a term a sentence states is marked as its whole sentences, with no word round", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => highlightReply(init));
+    const all = sents(10);
+    const out = await judgeHighlights(request(all), recipePack, ["consequences", "ingredients"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(out.units).toEqual({ consequences: "sentence", ingredients: "words" });
+    expect(out.spans.consequences).toEqual({ 2: [[0, all[2]!.text.length]], 5: [[0, all[5]!.text.length]] });
+    expect(out.spans.ingredients).toEqual({ 2: [[0, "Sentence".length]], 5: [[0, "Sentence".length]] });
+    const kinds = fetchImpl.mock.calls.map(([, init]) => kindOf(init));
+    expect(kinds.filter((k) => k === "unit")).toHaveLength(1);
+    expect(kinds.filter((k) => k === "gate")).toHaveLength(1);
+    // Words are asked only for the term named by words, in the two sentences round one found.
+    const wordStates = fetchImpl.mock.calls.filter(([, init]) => kindOf(init) === "words").map(([, init]) => (bodyOf(init).state as { looking_for?: string }).looking_for);
+    expect(wordStates).toEqual(["ingredients", "ingredients"]);
+    // The unit question is about the term alone: no page in it.
+    const unitBody = bodyOf(fetchImpl.mock.calls.find(([, init]) => kindOf(init) === "unit")![1]);
+    expect(unitBody.state).toEqual({ task: HIGHLIGHT_UNIT_QUESTION.state });
+    expect(JSON.stringify(unitBody)).not.toContain("Sentence number");
+    expect(out.chunkErrors).toEqual([]);
+    expect(out.inputTokens).toBe(10 * fetchImpl.mock.calls.length);
+  });
+
+  it("asks nothing about a term whose unit it was given", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => highlightReply(init));
+    const out = await judgeHighlights(request(sents(10)), recipePack, ["consequences"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch, units: { consequences: "sentence" } });
+    expect(fetchImpl.mock.calls.map(([, init]) => kindOf(init))).toEqual(["gate"]);
+    expect(out.units).toEqual({});
+    expect(Object.keys(out.spans.consequences!)).toEqual(["2", "5"]);
+  });
+
+  it("a reply that leaves a unit out fails that request: the term is marked in words this once, and the failure is said so nothing is kept", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => highlightReply(init, false));
+    const out = await judgeHighlights(request(sents(10)), recipePack, ["consequences"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(out.units).toEqual({});
+    expect(out.spans.consequences).toEqual({ 2: [[0, "Sentence".length]], 5: [[0, "Sentence".length]] });
+    expect(out.chunkErrors).toMatchObject([{ code: "server" }]);
   });
 });

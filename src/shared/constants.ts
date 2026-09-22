@@ -60,9 +60,10 @@ export const MAX_HIGHLIGHTS = 3;
  * Which wording the marks in the cache were found with. Marks are kept beside a page's judgment so
  * a second visit costs nothing, but marks found by an older question are an older answer: bump this
  * whenever HIGHLIGHT_QUESTION or the rules that turn answers into marks change, and those pages are
- * asked again. (2: the question asks what the thing is, not whether the word is the thing.)
+ * asked again. (2: the question asks what the thing is, not whether the word is the thing. 3: a
+ * term a sentence states is marked as its whole sentences.)
  */
-export const HIGHLIGHT_VERSION = 2;
+export const HIGHLIGHT_VERSION = 3;
 export const MAX_HIGHLIGHT_LENGTH = 80;
 export const HIGHLIGHT_THRESHOLD = 0.5;
 /**
@@ -101,6 +102,28 @@ export const HIGHLIGHT_QUESTION = {
   wordTrue: (word: string, term: string) => `Yes: «${word}» is one of the words carrying the «${term}» itself.`,
   wordFalse: (word: string, term: string) => `No: «${word}» only names or introduces the «${term}», or belongs to something else in the sentence.`,
 } as const;
+
+/**
+ * Whether a term is marked in words or as whole sentences. A name, an amount or an ingredient is a
+ * few words, and marking its sentence would bury it; a consequence, a reason or a risk is said by a
+ * clause, and marking its words cuts it apart (on a report, "consequences" came back as *disavanzo*
+ * … *3,1miliardi* … *all'incremento*). The answer is about the term, not the page, so it is asked
+ * once, with no page in the state, and kept. Measured on 70 terms in English and Italian, asked
+ * twice each: things came back between 0.06 and 0.34, statements between 0.51 and 0.90, and no
+ * term moved more than 0.11 between the two asks. Asked as a Choice instead, the same question
+ * flipped "conseguenze" between the two answers.
+ */
+export const HIGHLIGHT_UNIT_QUESTION = {
+  state: "Deciding how to highlight what a reader asked to see on a web page.",
+  instructions: (term: string) =>
+    `A reader wants every «${term}» on a page highlighted. Is a «${term}» something a whole sentence states, rather than something a few words name?`,
+  criteriaTrue:
+    "Yes: a sentence states it, like a consequence, a cause, a reason, a risk, a finding, a promise, an argument or an instruction; the reader wants the sentence that says it marked.",
+  criteriaFalse:
+    "No: a few words name it, like a person, a place, a number, an amount, a date, an object or a substance; the reader wants those words marked, not the sentence around them.",
+} as const;
+/** At or above this a term is marked as whole sentences. A wrong "words" is today's marker; a wrong "sentence" buries a name, so ties go to words. */
+export const HIGHLIGHT_UNIT_THRESHOLD = 0.5;
 /** Judge requests the background remembers by content hash, so a rule added later can be judged without the page resending its text. */
 export const RECENT_REQUESTS = 50;
 

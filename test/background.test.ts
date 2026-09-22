@@ -95,7 +95,11 @@ function highlightReply(init: RequestInit | undefined): Response {
   const body = JSON.parse(String(init?.body)) as { questions: Record<string, unknown> };
   const answers: Record<string, unknown> = {};
   for (const k of Object.keys(body.questions)) {
-    if (k.startsWith("g")) answers[k] = { noul: Number(k.split("_")[1]) === 2 ? 0.9 : 0.1 };
+    if (k.startsWith("unit_")) {
+      // «reasons» is stated by a sentence; every other term is named by words.
+      const instructions = (body.questions[k] as { instructions: string }).instructions;
+      answers[k] = { noul: instructions.includes("«reasons»") ? 0.8 : 0.2 };
+    } else if (k.startsWith("g")) answers[k] = { noul: Number(k.split("_")[1]) === 2 ? 0.9 : 0.1 };
     else if (k.startsWith("w")) answers[k] = { noul: k === "w0" ? 0.9 : 0.1 };
   }
   return reply(200, { answers, usage: { input_tokens: 30 } });
@@ -106,7 +110,7 @@ function anyReply(init: RequestInit | undefined): Response {
   const body = JSON.parse(String(init?.body)) as { questions: Record<string, unknown> };
   const keys = Object.keys(body.questions);
   if (keys.some((k) => k.startsWith("rule_"))) return ruleReply(init);
-  if (keys.some((k) => /^(g\d+_\d+|w\d+)$/.test(k))) return highlightReply(init);
+  if (keys.some((k) => /^(g\d+_\d+|w\d+|unit_\d+)$/.test(k))) return highlightReply(init);
   return okReply(init);
 }
 
@@ -575,5 +579,22 @@ describe("highlights", () => {
     const after = await getCached("hash-old");
     expect(after?.spansVersion).toBe(HIGHLIGHT_VERSION);
     expect(after?.spans).toEqual({ ingredients: { 2: [[0, 8]] } });
+  });
+
+  it("how a term is marked is learned once and kept for every page after", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    const unitAsks = () =>
+      fetchMock.mock.calls.filter(([, init]) => Object.keys((JSON.parse(String(init?.body)) as { questions: Record<string, unknown> }).questions).some((k) => k.startsWith("unit_"))).length;
+    await send({ type: "judge", req: request(sents(12), "hash-u1") }, PAGE);
+    const first = await send({ type: "judgeHighlights", contentHash: "hash-u1", terms: ["reasons"] }, PAGE);
+    expect(first).toMatchObject({ units: { reasons: "sentence" }, spans: { reasons: { 2: [[0, "Sentence 2 of the page.".length]] } } });
+    expect(unitAsks()).toBe(1);
+
+    // Another page, a worker that has forgotten both: the unit is still known, and not asked for.
+    forgetRecentPages();
+    await send({ type: "judge", req: request(sents(12, 40), "hash-u2") }, PAGE);
+    const second = await send({ type: "judgeHighlights", contentHash: "hash-u2", terms: ["Reasons"] }, PAGE);
+    expect(second).toMatchObject({ units: { Reasons: "sentence" } });
+    expect(unitAsks()).toBe(1);
   });
 });
