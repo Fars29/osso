@@ -573,7 +573,7 @@ export async function testKey(apiKey: string, fetchImpl?: typeof fetch): Promise
 const HIGHLIGHT_STOP = new Set(
   (
     "a an and are as at be been being but by can for from had has have he her his i if in is it its me my no not of on or our she so than that the their them there these they this those to too us was we were what when which who will with you your " +
-    "ad agli ai al alla alle allo anche che chi ci coi col come con cui da dagli dai dal dalla dalle dallo degli dei del della delle dello di e ed gli ha hanno il io la le lei lo loro ma mi ne negli nei nel nella nelle nello noi non per piu quando quel quella quelle quelli quello se si sono su sugli sui sul sulla sulle sullo suo ti tra tu tuo un una uno vi voi"
+    "ad agli ai al alla alle allo anche che chi ci coi col come con cui da dagli dai dal dalla dalle dallo degli dei del della delle dello di e ed gli ha hanno il io la le lei lo loro ma mi ne negli nei nel nella nelle nello noi non per piu quando quel quella quelle quelli quello se si sono su sugli sui sul sulla sulle sullo suo ti tra tu tuo un una uno vi voi più perché così né già è"
   )
     .split(/\s+/)
     .filter(Boolean),
@@ -602,27 +602,37 @@ export function highlightWords(text: string): WordSpan[] {
   return out;
 }
 
+/** The furthest two marks can be apart and still be one thing: a few small words, not half a sentence. */
+const STITCH_MAX_GAP = 24;
+/** What ends a stretch wherever it falls: the writer put it there. */
+const STITCH_BREAK = /[.,;:!?()[\]"«»]/;
+
 /**
- * Marked words with only a space or a hyphen between them are one thing: "white sugar", not "white"
- * and "sugar". Anything else keeps them apart, because a comma or a colon is a boundary the writer
- * put there: marking across "Baking powder: baking powder is the secret" reads as one long smear.
+ * Marks that only unasked words and spaces part are one stretch. The little words of a clause are
+ * never asked about ("un aumento dei mutui e una spesa più alta" is asked as aumento, mutui, spesa,
+ * alta), so without this a consequence would be marked in four pieces. A word that WAS asked and
+ * refused ends the stretch, and so does punctuation: "sugar, salted butter" stays two things, and
+ * "Baking powder: baking powder" is a label and a sentence, not one long smear.
  */
-export function mergeSpans(text: string, spans: [number, number][]): [number, number][] {
+export function stitchSpans(text: string, marked: [number, number][], asked: WordSpan[]): [number, number][] {
   const out: [number, number][] = [];
-  for (const span of [...spans].sort((a, b) => a[0] - b[0])) {
+  for (const span of [...marked].sort((a, b) => a[0] - b[0])) {
     const last = out[out.length - 1];
     if (!last) {
       out.push([span[0], span[1]]);
       continue;
     }
-    // Overlapping, or parted by nothing but a space or a hyphen: one stretch.
-    const between = span[0] >= last[1] ? text.slice(last[1], span[0]) : "";
-    if (span[0] < last[1] || (between.length <= 2 && /^[ -]*$/.test(between))) last[1] = Math.max(last[1], span[1]);
+    if (span[0] < last[1]) {
+      last[1] = Math.max(last[1], span[1]);
+      continue;
+    }
+    const gap = text.slice(last[1], span[0]);
+    const refused = asked.some((w) => w.start >= last[1] && w.end <= span[0]);
+    if (!refused && gap.length <= STITCH_MAX_GAP && !STITCH_BREAK.test(gap)) last[1] = span[1];
     else out.push([span[0], span[1]]);
   }
   return out;
 }
-
 interface HighlightWork {
   term: string;
   sentence: SentenceInput;
@@ -730,7 +740,8 @@ export async function judgeHighlights(
     if (!found || found.length === 0) return;
     const w = work[i]!;
     const byTerm = spans[w.term]!;
-    byTerm[w.sentence.id] = mergeSpans(w.sentence.text, [...(byTerm[w.sentence.id] ?? []), ...found]);
+    // The whole sentence's words, not just this request's slice: a long sentence is asked in several rounds.
+    byTerm[w.sentence.id] = stitchSpans(w.sentence.text, [...(byTerm[w.sentence.id] ?? []), ...found], highlightWords(w.sentence.text));
   });
 
   return {

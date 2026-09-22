@@ -68,7 +68,9 @@ export const HIGHLIGHT_WORDS_PER_REQUEST = 40;
 
 /**
  * Round one, the gate: which sentences mention the thing at all. Round two: which words in such a
- * sentence are part of it. The word question names no sentence because the sentence is the state of
+ * sentence carry it. Round two asks what the thing IS, not whether the word is the thing: asked the
+ * first way, "conseguenze" marked the word "conseguenze" and left the consequence alone, which is
+ * what the browser's own find already does. The word question names no sentence because the sentence is the state of
  * its own request, which is what makes the second round affordable (measured: half the tokens of
  * repeating the sentence in every question, same answers).
  */
@@ -76,9 +78,9 @@ export const HIGHLIGHT_QUESTION = {
   gateInstructions: (sentence: string, term: string) => `Consider this sentence from the page: «${sentence}». Does it mention any «${term}»?`,
   gateTrue: (term: string) => `Yes: the sentence names or states at least one «${term}» a reader could point at.`,
   gateFalse: (term: string) => `No: nothing in the sentence is a «${term}».`,
-  wordInstructions: (word: string, term: string) => `In the sentence, is «${word}» part of a «${term}»?`,
-  wordTrue: (word: string, term: string) => `Yes: «${word}» is part of a «${term}» that the sentence names.`,
-  wordFalse: (word: string, term: string) => `No: «${word}» is not part of a «${term}».`,
+  wordInstructions: (word: string, term: string) => `In the sentence, does «${word}» belong to the words that say what the «${term}» is?`,
+  wordTrue: (word: string, term: string) => `Yes: «${word}» is one of the words carrying the «${term}» itself.`,
+  wordFalse: (word: string, term: string) => `No: «${word}» only names or introduces the «${term}», or belongs to something else in the sentence.`,
 } as const;
 /** Judge requests the background remembers by content hash, so a rule added later can be judged without the page resending its text. */
 export const RECENT_REQUESTS = 50;

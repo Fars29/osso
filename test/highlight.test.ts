@@ -4,7 +4,7 @@
  * read, and the page holds the same text with its own whitespace, so the mapping is the risky part.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { highlightWords, mergeSpans } from "../src/background/api.ts";
+import { highlightWords, stitchSpans } from "../src/background/api.ts";
 import { normalizeColour, normalizeHighlights } from "../src/background/settings.ts";
 import { MAX_HIGHLIGHTS } from "../src/shared/constants.ts";
 import { applyHighlights, clearRender, markHits } from "../src/content/render.ts";
@@ -35,24 +35,43 @@ describe("which words are worth a question", () => {
 });
 
 describe("words that are one thing", () => {
-  const text = "Use 300 g of white sugar, salted butter: butter is best.";
-  const at = (word: string): [number, number] => [text.indexOf(word), text.indexOf(word) + word.length];
+  const words = (text: string) => highlightWords(text);
+  const at = (text: string, word: string): [number, number] => [text.indexOf(word), text.indexOf(word) + word.length];
+
+  it("keeps a clause whole by stepping over the little words nobody was asked about", () => {
+    const text = "Le conseguenze sarebbero un aumento dei mutui e una spesa più alta.";
+    const marked = ["aumento", "mutui", "spesa", "alta"].map((w) => at(text, w));
+    const out = stitchSpans(text, marked, words(text));
+    expect(out).toHaveLength(1);
+    expect(text.slice(out[0]![0], out[0]![1])).toBe("aumento dei mutui e una spesa più alta");
+  });
 
   it("joins what only a space or a hyphen parts", () => {
-    expect(mergeSpans(text, [at("white"), at("sugar")])).toEqual([[text.indexOf("white"), text.indexOf("sugar") + 5]]);
-    const hyphen = "mini-chocolate chips melt";
-    expect(mergeSpans(hyphen, [[0, 14], [15, 20]])).toEqual([[0, 20]]);
+    const text = "Add white sugar and mini-chocolate chips.";
+    const out = stitchSpans(text, [at(text, "white"), at(text, "sugar")], words(text));
+    expect(text.slice(out[0]![0], out[0]![1])).toBe("white sugar");
   });
 
-  it("keeps apart what the writer parted: a comma, a colon", () => {
-    expect(mergeSpans(text, [at("sugar"), at("salted")])).toHaveLength(2);
-    const colon = "Milk: milk adds moisture";
-    expect(mergeSpans(colon, [[0, 4], [6, 10]])).toHaveLength(2);
+  it("stops where a word was asked about and refused", () => {
+    const text = "Whisk the flour with three teaspoons of milk.";
+    const out = stitchSpans(text, [at(text, "flour"), at(text, "milk")], words(text));
+    // "three" and "teaspoons" were asked and left out, so the two are not one thing.
+    expect(out).toHaveLength(2);
   });
 
-  it("puts them in order and folds one inside another into one", () => {
-    expect(mergeSpans(text, [[10, 15], [4, 7]])).toEqual([[4, 7], [10, 15]]);
-    expect(mergeSpans(text, [[4, 12], [6, 9]])).toEqual([[4, 12]]);
+  it("stops at the punctuation the writer put there", () => {
+    const text = "Milk: milk adds moisture, salted butter adds richness.";
+    expect(stitchSpans(text, [[0, 4], [6, 10]], words(text))).toHaveLength(2);
+    const comma = "Use sugar, salt and pepper.";
+    expect(stitchSpans(comma, [at(comma, "sugar"), at(comma, "salt")], words(comma))).toHaveLength(2);
+  });
+
+  it("puts them in order, and folds an overlap into one", () => {
+    const text = "Whisk the flour with three teaspoons of milk.";
+    const flour = at(text, "flour");
+    const milk = at(text, "milk");
+    expect(stitchSpans(text, [milk, flour], words(text))).toEqual([flour, milk]);
+    expect(stitchSpans(text, [flour, [flour[0] + 2, flour[1] + 6]], words(text))).toEqual([[flour[0], flour[1] + 6]]);
   });
 });
 

@@ -37,7 +37,7 @@ Free and open source, and it runs on a key of your own: no account, no server, n
 | **Click** a struck sentence | Pins it back for this visit. |
 | **The slider** | How strict, from gentle to bare. Instant, no new request. |
 | **keep …** | What to always keep, in your own words: *prices*, *deadlines*, *allergens*. |
-| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *dates*. Osso finds them and paints them, and never strikes a sentence it marked. |
+| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *consequences*. Osso looks for the thing, not the word, and never strikes a sentence it marked. |
 | **On this site** | Turns Osso off for a site. **Alt+Shift+O** does the same. |
 
 ![The popup after a page is judged](docs/screenshots/popup-done.png)
@@ -52,7 +52,7 @@ Osso stays out of the way where a page is your workspace rather than someone's w
 
 The page's main text is split into sentences; headings, labels, tables, code and navigation are never touched. Each sentence goes to Jev with its neighbours as context and comes back with the probability that it carries what the reader came for. Below the slider, it fades. Each batch is painted as it arrives, and what is further down waits until you scroll to it, so you watch it go.
 
-A highlight is the same question twice: which sentences mention the thing, and then, inside those, which words are it.
+A highlight is the same question asked twice: which sentences mention the thing, and then, inside those, which words say what it is. It looks for the thing, not for the word: ask for *consequences* and it marks what the consequences are, on a page where that word never appears.
 
 On 99 hand-labelled sentences in English and Italian the question separates substance from filler with an AUC of 0.998. The question itself, the numbers, and what real pages taught us: [how it works](docs/how-it-works.md) · [calibration](docs/calibration.md).
 
