@@ -9,7 +9,7 @@ import {
   MAX_HIGHLIGHT_LENGTH, DEFAULT_SETTINGS, MIN_SENTENCES, PAGE_KINDS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
 import type { Settings, TabState } from "../../shared/types.ts";
 import { getSettings, getTabStateFromBackground, getTabStateFromTab, patchSettings, sendToBackground, sendToTab } from "../messaging.ts";
-import { MARK_EXAMPLES, MARK_FULL_HINT, ruleField, ruleList, type RuleCount } from "../rules.ts";
+import { MARK_EXAMPLES, MARK_FULL_HINT, MARK_TITLE, ruleField, ruleList, type RuleCount } from "../rules.ts";
 
 type View = "loading" | "cannot" | "no-key" | "invalid-key" | "disabled" | "off" | "skipped" | "error" | "judging" | "idle" | "done" | "ready" | "held";
 
@@ -52,6 +52,10 @@ const ui = {
   ruleList: el<HTMLUListElement>("rule-list"),
   mark: el<HTMLInputElement>("mark"),
   markList: el<HTMLUListElement>("mark-list"),
+  marks: el<HTMLElement>("v-marks"),
+  markCount: el<HTMLElement>("marks"),
+  markBone: el<HTMLElement>("mark-bone"),
+  markStatus: el<HTMLElement>("marks-status"),
   count: el<HTMLDivElement>("v-count"),
   kept: el<HTMLSpanElement>("kept"),
   total: el<HTMLSpanElement>("total"),
@@ -97,7 +101,7 @@ const field = ruleField(ui.rule, {
 });
 
 // The same widget, a shorter list: each term costs a second look at the page.
-const markChips = ruleList(ui.markList, { onRemove: (term) => void removeHighlight(term) });
+const markChips = ruleList(ui.markList, { onRemove: (term) => void removeHighlight(term), title: MARK_TITLE });
 const markField = ruleField(ui.mark, {
   rules: () => model.settings.highlights,
   onAdd: (term) => void addHighlight(term),
@@ -159,6 +163,8 @@ function countTo(target: number) {
 
 function show(view: View) {
   ui.root.dataset.state = view;
+  // The second figure belongs to a judged page; every other view starts without it.
+  if (view !== "done") ui.marks.hidden = true;
   const numeric = view === "done" || view === "judging" || view === "idle" || view === "loading";
   ui.count.hidden = !numeric;
   ui.note.hidden = numeric;
@@ -234,6 +240,36 @@ function renderChip(s: TabState | null) {
   const known = kind !== null && (s?.status === "done" || s?.status === "judging");
   ui.chip.hidden = !known;
   if (known) ui.chip.textContent = PAGE_KINDS[kind].label;
+}
+
+/**
+ * The second figure: how many things the highlight terms marked, and in how many of the page's
+ * sentences. Shown only while there is a term to count for; "…" until the page has answered.
+ */
+function renderMarks(s: TabState | null) {
+  const terms = model.settings.highlights;
+  const on = !!s && terms.length > 0 && (s.status === "done" || s.status === "judging");
+  ui.marks.hidden = !on;
+  if (!on || !s) return;
+  ui.markBone.style.setProperty("--mark", model.settings.markColor);
+  const counted = terms.filter((t) => typeof s.markHits?.[t] === "number");
+  if (counted.length < terms.length) {
+    ui.markCount.textContent = "…";
+    ui.markCount.classList.add("pulse");
+    ui.markStatus.textContent = counted.length === 0 ? "looking…" : "";
+    if (counted.length === 0) {
+      ui.markBone.style.width = "0%";
+      return;
+    }
+  } else {
+    ui.markCount.classList.remove("pulse");
+  }
+  const marks = counted.reduce((n, t) => n + (s.markHits?.[t] ?? 0), 0);
+  const sentences = s.markedSentences ?? 0;
+  if (counted.length === terms.length) ui.markCount.textContent = String(marks);
+  ui.markBone.style.width = s.total > 0 ? `${(100 * sentences) / s.total}%` : "0%";
+  ui.markStatus.textContent =
+    marks === 0 ? "nothing on this page" : `in ${sentences} of ${s.total} ${s.total === 1 ? "sentence" : "sentences"}`;
 }
 
 function renderNumbers(s: TabState) {
@@ -326,6 +362,7 @@ function render() {
     case "done":
       show("done");
       renderNumbers(s);
+      renderMarks(s);
       return;
   }
 }

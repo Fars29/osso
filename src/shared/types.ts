@@ -52,6 +52,8 @@ export interface PageJudgment {
   rules?: RuleResults;
   /** Where each highlight term was found on this page. Absent on records stored before highlights existed. */
   spans?: HighlightSpans;
+  /** HIGHLIGHT_VERSION the spans were found with; spans of any other version are not served. */
+  spansVersion?: number;
 }
 
 /** Rule text → sentence id → probability that the sentence carries what the rule asks for. */
@@ -157,6 +159,8 @@ export interface TabState {
   ruleHits: Record<string, number>;
   /** Highlight term → number of stretches marked on this page. A term missing here has not been looked for yet. */
   markHits?: Record<string, number>;
+  /** Sentences on this page that carry at least one mark, whatever the term. */
+  markedSentences?: number;
   /** The reader marked this site "always": in run mode `click` it is read as it loads. */
   always?: boolean;
   /** The page is longer than MAX_SENTENCES_PER_PAGE: only its beginning was judged, the rest is left in ink. */

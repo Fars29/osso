@@ -5,10 +5,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { FromBackground, JudgeRequest, PageMeta, SentenceInput, TabState, ToBackground } from "../src/shared/types.ts";
-import { DEFAULT_SETTINGS } from "../src/shared/constants.ts";
+import { DEFAULT_SETTINGS, HIGHLIGHT_VERSION } from "../src/shared/constants.ts";
 import { SETTINGS_KEY } from "../src/background/settings.ts";
-import { cacheSize } from "../src/background/cache.ts";
-import "../src/background/index.ts";
+import { cacheSize, getCached, putCached } from "../src/background/cache.ts";
+import { forgetRecentPages } from "../src/background/index.ts";
 
 type ChromeMock = ReturnType<typeof import("./setup.ts").installChromeMock>;
 type AnyMock = Mock<(...args: unknown[]) => unknown>;
@@ -87,10 +87,27 @@ function ruleReply(init: RequestInit | undefined): Response {
   return reply(200, { answers, usage: { input_tokens: 40 } });
 }
 
-/** Keep or rule request, by what the body asks. */
+/**
+ * Answers highlight questions: round one finds the thing in sentence 2 only, round two in its
+ * first word. "Sentence 2 of the page." asks about "Sentence" and "page", so the mark is [0, 8].
+ */
+function highlightReply(init: RequestInit | undefined): Response {
+  const body = JSON.parse(String(init?.body)) as { questions: Record<string, unknown> };
+  const answers: Record<string, unknown> = {};
+  for (const k of Object.keys(body.questions)) {
+    if (k.startsWith("g")) answers[k] = { noul: Number(k.split("_")[1]) === 2 ? 0.9 : 0.1 };
+    else if (k.startsWith("w")) answers[k] = { noul: k === "w0" ? 0.9 : 0.1 };
+  }
+  return reply(200, { answers, usage: { input_tokens: 30 } });
+}
+
+/** Keep, rule or highlight request, by what the body asks. */
 function anyReply(init: RequestInit | undefined): Response {
   const body = JSON.parse(String(init?.body)) as { questions: Record<string, unknown> };
-  return Object.keys(body.questions).some((k) => k.startsWith("rule_")) ? ruleReply(init) : okReply(init);
+  const keys = Object.keys(body.questions);
+  if (keys.some((k) => k.startsWith("rule_"))) return ruleReply(init);
+  if (keys.some((k) => /^(g\d+_\d+|w\d+)$/.test(k))) return highlightReply(init);
+  return okReply(init);
 }
 
 const ruleKeysOf = (init: RequestInit | undefined) =>
@@ -520,5 +537,41 @@ describe("rules", () => {
     await flush();
     expect(rulesMsgs()).toHaveLength(2);
     expect(rulesMsgs()[1]).toEqual([1, { type: "rulesChanged", rules: [] }]);
+  });
+});
+
+describe("highlights", () => {
+  it("marks found once are served from the cache after the worker has forgotten the page", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await send({ type: "judge", req: request(sents(12), "hash-hl") }, PAGE);
+    const first = await send({ type: "judgeHighlights", contentHash: "hash-hl", terms: ["ingredients"] }, PAGE);
+    expect(first).toEqual({ type: "highlightJudgment", contentHash: "hash-hl", spans: { ingredients: { 2: [[0, 8]] } } });
+    const asked = fetchMock.mock.calls.length;
+    expect(asked).toBeGreaterThan(1);
+
+    // A worker stopped and started again: only the cache remembers the page now.
+    forgetRecentPages();
+    expect(await send({ type: "judge", req: request(sents(12), "hash-hl") }, PAGE)).toMatchObject({ judgment: { cached: true } });
+    const again = await send({ type: "judgeHighlights", contentHash: "hash-hl", terms: ["ingredients"] }, PAGE);
+    expect(again).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledTimes(asked);
+  });
+
+  it("marks found with an older question are asked again, and dropped from the record rather than merged", async () => {
+    await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
+    await send({ type: "judge", req: request(sents(12), "hash-old") }, PAGE);
+    const stored = await getCached("hash-old");
+    expect(stored).not.toBeNull();
+    // What an older wording left behind: a term marked somewhere else, and one no longer asked for.
+    await putCached("hash-old", { ...stored!, spans: { ingredients: { 5: [[0, 8]] }, prices: { 1: [[0, 8]] } }, spansVersion: HIGHLIGHT_VERSION - 1 });
+    forgetRecentPages();
+    await send({ type: "judge", req: request(sents(12), "hash-old") }, PAGE);
+    const before = fetchMock.mock.calls.length;
+    const r = await send({ type: "judgeHighlights", contentHash: "hash-old", terms: ["ingredients"] }, PAGE);
+    expect(r).toMatchObject({ spans: { ingredients: { 2: [[0, 8]] } } });
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
+    const after = await getCached("hash-old");
+    expect(after?.spansVersion).toBe(HIGHLIGHT_VERSION);
+    expect(after?.spans).toEqual({ ingredients: { 2: [[0, 8]] } });
   });
 });

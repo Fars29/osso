@@ -401,3 +401,75 @@ describe("options rules", () => {
     window.dispatchEvent(new Event("pagehide"));
   });
 });
+
+describe("a worker older than the page asking it", () => {
+  /**
+   * The popup and the options are fresh on every open; the background worker keeps running the
+   * code it started with until the extension reloads. A worker from before a setting existed answers
+   * without it, and the pages that ask must take the default rather than read a field that is not
+   * there. This is the crash a reader saw: "Cannot read properties of undefined (reading 'forEach')".
+   */
+  const fromOlderWorker = (): Settings => {
+    const s: Record<string, unknown> = { ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices"] };
+    for (const field of ["highlights", "markColor", "fadeColor", "mode", "strike"]) delete s[field];
+    return s as unknown as Settings;
+  };
+
+  it("fills in what it does not know with the defaults", async () => {
+    scriptBackground(fromOlderWorker(), done);
+    const settings = await getSettings();
+    expect(settings?.highlights).toEqual([]);
+    expect(settings?.markColor).toBe(DEFAULT_SETTINGS.markColor);
+    expect(settings?.fadeColor).toBe("");
+    expect(settings?.mode).toBe("auto");
+    expect(settings?.rules).toEqual(["prices"]);
+  });
+
+  it("does not bring the popup down", async () => {
+    scriptBackground(fromOlderWorker(), done);
+    await openPopup();
+    expect(document.getElementById("popup")?.dataset.state).toBe("done");
+    expect(text("kept")).toBe("14");
+    expect(visible("rules")).toBe(true);
+  });
+
+  it("does not bring the options page down", async () => {
+    scriptBackground(fromOlderWorker(), done);
+    await openOptions();
+    expect((document.getElementById("markColor") as HTMLInputElement).value).toBe(DEFAULT_SETTINGS.markColor);
+  });
+});
+
+describe("popup: what the highlights found", () => {
+  it("shows how many things were highlighted, and in how many sentences", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] }, { ...done, markHits: { consequences: 13 }, markedSentences: 5 });
+    await openPopup();
+    expect(visible("v-marks")).toBe(true);
+    expect(text("marks")).toBe("13");
+    expect(text("marks-of")).toBe("highlighted");
+    expect(text("marks-status")).toBe("in 5 of 41 sentences");
+    const bar = document.getElementById("mark-bone")!;
+    expect(bar.style.width).toBe(`${(100 * 5) / 41}%`);
+    expect(bar.style.getPropertyValue("--mark")).toBe(DEFAULT_SETTINGS.markColor);
+  });
+
+  it("says so plainly when a term found nothing", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] }, { ...done, markHits: { consequences: 0 }, markedSentences: 0 });
+    await openPopup();
+    expect(text("marks")).toBe("0");
+    expect(text("marks-status")).toBe("nothing on this page");
+  });
+
+  it("waits with an ellipsis while the page is still looking", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] }, done);
+    await openPopup();
+    expect(text("marks")).toBe("…");
+    expect(text("marks-status")).toBe("looking…");
+  });
+
+  it("is not there at all without a highlight term", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x" }, done);
+    await openPopup();
+    expect(visible("v-marks")).toBe(false);
+  });
+});

@@ -7,7 +7,7 @@
  * The API key never comes here. The background answers `getSettings` with the key redacted to a
  * presence marker, which is all this side needs to know.
  */
-import { MAX_SENTENCES_PER_PAGE, MIN_SENTENCES, MUTATION_DEBOUNCE_MS, REVEAL_HOLD_MS } from "../shared/constants.ts";
+import { MAX_SENTENCES_PER_PAGE, MIN_SENTENCES, MUTATION_DEBOUNCE_MS, REVEAL_HOLD_MS, withDefaults } from "../shared/constants.ts";
 import { hashText } from "../shared/hash.ts";
 import type {
   FromBackground,
@@ -33,6 +33,7 @@ import {
   counts,
   installInteractions,
   markHits as readMarkHits,
+  markedCount,
   ruleHits,
   setReveal,
   setThreshold,
@@ -165,7 +166,7 @@ function report(patch: Partial<TabState>, reason?: string): void {
 
 /** Counts as the popup wants them: the numbers, plus what each rule keeps. */
 function tally(c: Counts): Partial<TabState> {
-  return { ...c, ruleHits: ruleHits(document), markHits: readMarkHits(document) };
+  return { ...c, ruleHits: ruleHits(document), markHits: readMarkHits(document), markedSentences: markedCount(document) };
 }
 
 function reasonOf(reply: FromBackground | null): string {
@@ -220,7 +221,7 @@ async function start(asked = false): Promise<void> {
     if (!live()) return;
     // Without a worker there is nobody to report to either; the page stays as the author left it.
     if (got?.type !== "settings") return;
-    settings = got.settings;
+    settings = withDefaults(got.settings);
     if (!settings.enabled) {
       report({ status: "disabled" }, "Osso is off");
       return;

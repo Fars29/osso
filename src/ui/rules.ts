@@ -58,7 +58,12 @@ function countText(c: RuleCount): string {
  * after a count arrives changes one number, not the whole row, and only a chip that is new to
  * the list plays its entrance.
  */
-export function ruleList(ul: HTMLUListElement, opts: { onRemove(rule: string): void }): RuleListHandle {
+/** What a rule chip's number means; a highlight chip passes its own. */
+const KEPT_TITLE = (n: number) => `${n} ${n === 1 ? "sentence" : "sentences"} kept on this page`;
+export const MARK_TITLE = (n: number) => `${n} ${n === 1 ? "thing" : "things"} highlighted on this page`;
+
+export function ruleList(ul: HTMLUListElement, opts: { onRemove(rule: string): void; title?: (n: number) => string }): RuleListHandle {
+  const titleOf = opts.title ?? KEPT_TITLE;
   const chips = new Map<string, HTMLLIElement>();
   const doc = ul.ownerDocument;
 
@@ -109,7 +114,7 @@ export function ruleList(ul: HTMLUListElement, opts: { onRemove(rule: string): v
         }
         el.hidden = text === "";
         el.classList.toggle("muted", c === 0 || c === "judging" || c === "unknown");
-        li.title = typeof c === "number" ? `${c} ${c === 1 ? "sentence" : "sentences"} kept on this page` : "";
+        li.title = typeof c === "number" ? titleOf(c) : "";
       });
       ul.hidden = rules.length === 0;
     },

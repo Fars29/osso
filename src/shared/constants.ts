@@ -56,8 +56,25 @@ export const MAX_RULE_LENGTH = 80;
  * nothing to do with the term, and the second round is paid only on the few that do.
  */
 export const MAX_HIGHLIGHTS = 3;
+/**
+ * Which wording the marks in the cache were found with. Marks are kept beside a page's judgment so
+ * a second visit costs nothing, but marks found by an older question are an older answer: bump this
+ * whenever HIGHLIGHT_QUESTION or the rules that turn answers into marks change, and those pages are
+ * asked again. (2: the question asks what the thing is, not whether the word is the thing.)
+ */
+export const HIGHLIGHT_VERSION = 2;
 export const MAX_HIGHLIGHT_LENGTH = 80;
 export const HIGHLIGHT_THRESHOLD = 0.5;
+/**
+ * Round two does not decide whether the thing is in the sentence (round one did); it finds where.
+ * So a word that stands out from the rest of its sentence is marked even below the threshold: at
+ * least HIGHLIGHT_FLOOR, and at least HIGHLIGHT_STANDOUT of the sentence's best word. Measured on a
+ * report: "L'incremento dell'1,73%… è influenzato dai provvedimenti di rivalutazione" passed round
+ * one at 0.74, and its two words for the increase came back at 0.40 and 0.45 against 0.14 to 0.28
+ * for the rest. A sentence where nothing stands out (the best word at 0.29) is still left alone.
+ */
+export const HIGHLIGHT_FLOOR = 0.35;
+export const HIGHLIGHT_STANDOUT = 0.75;
 /**
  * The most sentences one term will look inside on a page. A term that matches everything ("words")
  * would otherwise ask a question per word of the whole page; past this the rest is left unmarked.
@@ -70,20 +87,32 @@ export const HIGHLIGHT_WORDS_PER_REQUEST = 40;
  * Round one, the gate: which sentences mention the thing at all. Round two: which words in such a
  * sentence carry it. Round two asks what the thing IS, not whether the word is the thing: asked the
  * first way, "conseguenze" marked the word "conseguenze" and left the consequence alone, which is
- * what the browser's own find already does. The word question names no sentence because the sentence is the state of
+ * what the browser's own find already does. The gate had the same fault one round earlier: asked
+ * whether a sentence "mentions any consequences", it passed the one sentence on a page that said
+ * "conseguenze" and none of the three that said what followed from what. The word question names no sentence because the sentence is the state of
  * its own request, which is what makes the second round affordable (measured: half the tokens of
  * repeating the sentence in every question, same answers).
  */
 export const HIGHLIGHT_QUESTION = {
-  gateInstructions: (sentence: string, term: string) => `Consider this sentence from the page: «${sentence}». Does it mention any «${term}»?`,
-  gateTrue: (term: string) => `Yes: the sentence names or states at least one «${term}» a reader could point at.`,
-  gateFalse: (term: string) => `No: nothing in the sentence is a «${term}».`,
+  gateInstructions: (sentence: string, term: string) => `Consider this sentence from the page: «${sentence}». Does it tell the reader about any «${term}»?`,
+  gateTrue: (term: string) => `Yes: something the sentence says is a «${term}», whether or not it uses that word.`,
+  gateFalse: (term: string) => `No: nothing the sentence says is a «${term}»; using the word alone does not count.`,
   wordInstructions: (word: string, term: string) => `In the sentence, does «${word}» belong to the words that say what the «${term}» is?`,
   wordTrue: (word: string, term: string) => `Yes: «${word}» is one of the words carrying the «${term}» itself.`,
   wordFalse: (word: string, term: string) => `No: «${word}» only names or introduces the «${term}», or belongs to something else in the sentence.`,
 } as const;
 /** Judge requests the background remembers by content hash, so a rule added later can be judged without the page resending its text. */
 export const RECENT_REQUESTS = 50;
+
+/**
+ * Settings as a page receives them, completed. The popup and the options open fresh every time;
+ * the background worker runs the code it started with until the extension reloads, so after an
+ * update a page can be newer than the worker it asks. Whatever the worker does not know yet takes
+ * its default here, instead of arriving as undefined and bringing the page down.
+ */
+export function withDefaults(settings: Settings): Settings {
+  return { ...DEFAULT_SETTINGS, ...settings };
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: "",

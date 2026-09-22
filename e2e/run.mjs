@@ -307,7 +307,11 @@ try {
     return n;
   });
   assert(struckMark === 0, `recipe: ${struckMark} marked stretch(es) sit on struck text`);
-  console.log(`[osso e2e] highlight "${TERM}": ${marks.count} marks, e.g. ${JSON.stringify(marks.texts.slice(0, 4))}`);
+  // The popup's second figure: how many things were marked, in how many of the page's sentences.
+  const marked = await untilTabState(ext, (s) => typeof s.markHits?.[TERM] === "number" && (s.markedSentences ?? 0) > 0, `markHits["${TERM}"]`);
+  assert(marked.markHits[TERM] >= marked.markedSentences, `recipe: ${marked.markHits[TERM]} marks in ${marked.markedSentences} sentences`);
+  assert(marked.markedSentences <= marked.total, `recipe: ${marked.markedSentences} marked sentences of ${marked.total}`);
+  console.log(`[osso e2e] highlight "${TERM}": ${marks.count} marks (${marked.markHits[TERM]} counted, in ${marked.markedSentences} of ${marked.total} sentences), e.g. ${JSON.stringify(marks.texts.slice(0, 4))}`);
 
   // Taken away, the marker comes off the page at once and costs nothing to put back.
   await ext.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { highlights: [] } }));

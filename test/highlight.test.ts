@@ -29,6 +29,11 @@ describe("which words are worth a question", () => {
     expect(highlightWords("Serves 4 people, approx. 20 min.").map((w) => w.word)).toEqual(["Serves", "people", "approx", "20", "min"]);
   });
 
+  it("keeps the percent sign with its number", () => {
+    const text = "L'incremento dell'1,73% rispetto al 2024, e una flessione del 30,77%.";
+    expect(highlightWords(text).map((w) => w.word)).toEqual(["L'incremento", "dell'1,73%", "rispetto", "2024", "flessione", "30,77%"]);
+  });
+
   it("asks about Italian function words no more than English ones", () => {
     expect(highlightWords("Il governatore della Banca d'Italia ha parlato").map((w) => w.word)).toEqual(["governatore", "Banca", "d'Italia", "parlato"]);
   });

@@ -20,7 +20,7 @@ import type {
   ToBackground,
   ToContent,
 } from "../shared/types.ts";
-import { MAX_SENTENCES_PER_REQUEST, RECENT_REQUESTS } from "../shared/constants.ts";
+import { HIGHLIGHT_VERSION, MAX_SENTENCES_PER_REQUEST, RECENT_REQUESTS } from "../shared/constants.ts";
 import { getPack } from "../packs/index.ts";
 import { ApiError, judgeHighlights, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeOptions, type JudgeResult } from "./api.ts";
 import { clearCache, getCached, mergeHighlights, mergeRules, putCached } from "./cache.ts";
@@ -71,6 +71,11 @@ let storageWarned = false;
  * order: a hash asked for again moves to the end.
  */
 const recent = new Map<string, { req: JudgeRequest; rules: RuleResults; spans: HighlightSpans }>();
+
+/** A worker that is stopped and started again remembers no page; the tests say so with this. */
+export function forgetRecentPages(): void {
+  recent.clear();
+}
 
 function remember(req: JudgeRequest): { req: JudgeRequest; rules: RuleResults; spans: HighlightSpans } {
   const known = recent.get(req.contentHash);
@@ -168,6 +173,8 @@ async function judge(req: JudgeRequest, tabId?: number): Promise<FromBackground>
     const hit = await getCached(req.contentHash);
     if (hit) {
       entry.rules = { ...hit.rules, ...entry.rules };
+      // Marks come back from the cache too, when they were found with the question asked today.
+      if (hit.spans && hit.spansVersion === HIGHLIGHT_VERSION) entry.spans = { ...hit.spans, ...entry.spans };
       await addStats({ cacheHits: 1 }).catch(() => undefined);
       return { type: "judgment", judgment: { ...hit, rules: entry.rules } };
     }
@@ -197,7 +204,7 @@ async function judge(req: JudgeRequest, tabId?: number): Promise<FromBackground>
     return { type: "error", code: relayCode(first.code), error: first.message };
   }
   // Rules judged while the model was thinking (they run in parallel on first load) ride along.
-  const stored: PageJudgment = { ...judgment, rules: entry.rules };
+  const stored: PageJudgment = { ...judgment, rules: entry.rules, spans: entry.spans, spansVersion: HIGHLIGHT_VERSION };
   // The model has answered and the user has paid for it: a full cache or a failed counter write
   // must not turn that into an error on the page, and one refusal must not cost the other write.
   if (fullPage && stored.failedIds.length === 0) await bestEffort(() => putCached(req.contentHash, stored));
@@ -212,12 +219,6 @@ async function judge(req: JudgeRequest, tabId?: number): Promise<FromBackground>
   return { type: "judgment", judgment: stored };
 }
 
-/**
- * Judge rules over a page already judged. Rules the page's record already carries are answered
- * from memory; only the rest go to the model, in one batched request. What comes back joins the
- * remembered entry and, for a whole page with no failed chunk, the cache, so removing and
- * re-adding a rule never costs a second request.
- */
 /**
  * Where the reader's terms are on the page. Like the rules, a term already answered for this page
  * costs nothing, and what comes back is merged into the cached judgment so a second visit is free.
@@ -254,6 +255,12 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
   return { type: "highlightJudgment", contentHash, spans: out };
 }
 
+/**
+ * Judge rules over a page already judged. Rules the page's record already carries are answered
+ * from memory; only the rest go to the model, in one batched request. What comes back joins the
+ * remembered entry and, for a whole page with no failed chunk, the cache, so removing and
+ * re-adding a rule never costs a second request.
+ */
 async function judgeRulesFor(contentHash: string, asked: string[]): Promise<FromBackground> {
   const entry = recent.get(contentHash);
   if (!entry) return { type: "error", code: "unknown-page", error: "This page has not been judged yet" };

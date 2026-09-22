@@ -89,9 +89,29 @@ export async function saveKey(context, id, key) {
   await page.close();
 }
 
+/**
+ * Whether the worker has put a number (or "!") on the page's badge: it does once the whole page has
+ * answered, and not before. Chunks are painted as they land and the root settles between them, so
+ * the first fade and "osso-settled" alone can be a page half judged.
+ */
+async function wholePageAnswered(page) {
+  const worker = page.context().serviceWorkers()[0];
+  if (!worker) return true;
+  // Without the tabs permission a web tab's url reads undefined; the extension's own pages never wear a badge.
+  return worker.evaluate(async (url) => {
+    for (const tab of await chrome.tabs.query({})) {
+      if (tab.id === undefined || (tab.url !== undefined && tab.url !== url)) continue;
+      if (await chrome.action.getBadgeText({ tabId: tab.id })) return true;
+    }
+    return false;
+  }, page.url());
+}
+
 export async function waitJudged(page) {
   await page.waitForFunction(() => document.documentElement.classList.contains("osso-on"), null, { timeout: JUDGE_TIMEOUT_MS });
   await page.waitForSelector(".osso-fade", { state: "attached", timeout: JUDGE_TIMEOUT_MS });
+  const t0 = performance.now();
+  while (!(await wholePageAnswered(page)) && performance.now() - t0 < JUDGE_TIMEOUT_MS) await sleep(100);
   // Let the wave finish so the screenshot shows the final greys: the root says when it has settled.
   await page.waitForFunction(() => document.documentElement.classList.contains("osso-settled"), null, { timeout: 15_000 }).catch(() => {});
   await sleep(150);

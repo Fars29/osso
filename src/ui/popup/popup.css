@@ -137,6 +137,26 @@ body {
   min-height: 1.45em;
 }
 
+/* The second figure: what the highlight terms found. A step down from the first, divided from it by
+   a hairline, its bar in the marker's own colour so it reads as the marker's before a word is read. */
+.marks {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.big.small {
+  font-size: 30px;
+}
+
+.mark-bone {
+  margin-top: 10px;
+}
+
+.mark-bone i {
+  background: var(--mark, #ffd24a);
+}
+
 .note-title {
   font-size: 15px;
   line-height: 1.35;

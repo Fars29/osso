@@ -13,6 +13,7 @@ import type {
   ToBackground,
   ToContent,
 } from "../shared/types.ts";
+import { withDefaults } from "../shared/constants.ts";
 
 /** Ask the background and expect a `FromBackground` reply; rejects when the worker gives none. */
 export async function sendToBackground<T extends FromBackground>(msg: ToBackground): Promise<T> {
@@ -38,7 +39,7 @@ export async function sendToTab(tabId: number, msg: ToContent): Promise<FromCont
 
 export async function getSettings(): Promise<Settings | null> {
   const r = await quiet(sendToBackground<FromBackground>({ type: "getSettings" }));
-  return r?.type === "settings" ? r.settings : null;
+  return r?.type === "settings" ? withDefaults(r.settings) : null;
 }
 
 export async function patchSettings(patch: Partial<Settings>): Promise<boolean> {

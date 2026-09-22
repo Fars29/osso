@@ -7,7 +7,7 @@
  * millisecond would otherwise tie, and tests could not pin the eviction order.
  */
 import type { HighlightSpans, PageJudgment, RuleResults } from "../shared/types.ts";
-import { CACHE_MAX_PAGES } from "../shared/constants.ts";
+import { HIGHLIGHT_VERSION, CACHE_MAX_PAGES } from "../shared/constants.ts";
 
 export const CACHE_PREFIX = "osso:cache:";
 export const CACHE_INDEX_KEY = "osso:cacheIndex";
@@ -115,7 +115,9 @@ export function mergeHighlights(contentHash: string, spans: HighlightSpans): Pro
     const got = await chrome.storage.local.get(key);
     const stored = got[key];
     if (!isJudgment(stored)) return false;
-    const merged: PageJudgment = { ...stored, spans: { ...stored.spans, ...spans } };
+    // Marks found by another wording are dropped, not merged: they answered a different question.
+    const kept = stored.spansVersion === HIGHLIGHT_VERSION ? stored.spans : {};
+    const merged: PageJudgment = { ...stored, spans: { ...kept, ...spans }, spansVersion: HIGHLIGHT_VERSION };
     await chrome.storage.local.set({ [key]: merged });
     return true;
   });

@@ -13,7 +13,9 @@
  */
 import {
   API_URL,
+  HIGHLIGHT_FLOOR,
   HIGHLIGHT_QUESTION,
+  HIGHLIGHT_STANDOUT,
   HIGHLIGHT_THRESHOLD,
   HIGHLIGHT_WORDS_PER_REQUEST,
   KEEP_QUESTION,
@@ -579,8 +581,11 @@ const HIGHLIGHT_STOP = new Set(
     .filter(Boolean),
 );
 
-/** A run of letters or digits, allowing the punctuation that lives inside a word rather than after it. */
-const HIGHLIGHT_WORD = /[\p{L}\p{N}][\p{L}\p{N}'’.,-]*/gu;
+/**
+ * A run of letters or digits, allowing the punctuation that lives inside a word rather than after it,
+ * and a percent sign that closes one: "1,73%" is marked whole, not as "1,73" and a stray sign.
+ */
+const HIGHLIGHT_WORD = /[\p{L}\p{N}][\p{L}\p{N}'’.,-]*%?/gu;
 const TRAILING_PUNCT = /[.,'’-]+$/;
 
 export interface WordSpan {
@@ -723,9 +728,13 @@ export async function judgeHighlights(
       return { state: { ...highlightState([w.sentence], req.meta, pack), looking_for: w.term }, model: MODEL, questions };
     },
     parse: (_chunk, answers, i) => {
+      const words = work[i]!.words;
+      const p = words.map((_, j) => noulOf(answers, wordKey(j)));
+      const best = Math.max(0, ...p);
       const found: [number, number][] = [];
-      work[i]!.words.forEach((span, j) => {
-        if (noulOf(answers, wordKey(j)) >= HIGHLIGHT_THRESHOLD) found.push([span.start, span.end]);
+      words.forEach((span, j) => {
+        const pj = p[j]!;
+        if (pj >= HIGHLIGHT_THRESHOLD || (pj >= HIGHLIGHT_FLOOR && pj >= best * HIGHLIGHT_STANDOUT)) found.push([span.start, span.end]);
       });
       return found;
     },

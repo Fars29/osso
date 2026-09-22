@@ -1244,6 +1244,16 @@ function paintMarks(doc: Document, state: DocState, sentences: Map<number, strin
   else api.css.highlights.set(MARK_REGISTRY, api.make(ranges));
 }
 
+/** How many sentences on this page carry a mark: what the popup's second figure is out of. */
+export function markedCount(doc: Document): number {
+  const state = states.get(doc);
+  if (!state) return 0;
+  const present = spansById(doc);
+  let n = 0;
+  for (const id of state.marked.keys()) if (present.has(id)) n++;
+  return n;
+}
+
 /** How many stretches each active term marks on this page: what the popup counts under the field. */
 export function markHits(doc: Document): Record<string, number> {
   const out: Record<string, number> = {};
