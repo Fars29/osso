@@ -50,10 +50,19 @@ export interface PageJudgment {
    * rules existed.
    */
   rules?: RuleResults;
+  /** Where each highlight term was found on this page. Absent on records stored before highlights existed. */
+  spans?: HighlightSpans;
 }
 
 /** Rule text → sentence id → probability that the sentence carries what the rule asks for. */
 export type RuleResults = Record<string, Record<number, number>>;
+
+/**
+ * Highlight term → sentence id → the stretches of that sentence to mark, as [start, end) offsets
+ * into the sentence's own text. Offsets rather than words, so the page is marked where the thing
+ * actually is and a word that occurs twice is not marked twice over.
+ */
+export type HighlightSpans = Record<string, Record<number, [number, number][]>>;
 
 /** Everything the content script knows about a page before judging it; packs route on this. */
 export interface PageMeta {
@@ -106,6 +115,12 @@ export interface Settings {
   thresholdRev: number;
   /** What the reader must always keep, in their own words: ≤ MAX_RULES, each trimmed, ≤ MAX_RULE_LENGTH, unique ignoring case. Global. */
   rules: string[];
+  /** What to mark on the page, in their own words ("candidate names", "ingredients"): ≤ MAX_HIGHLIGHTS. Global. */
+  highlights: string[];
+  /** The marker's colour, as #rrggbb. The ink over it is chosen for contrast, so any colour stays readable. */
+  markColor: string;
+  /** The colour of struck text, as #rrggbb, or "" for the grey Osso picks per block from its background. */
+  fadeColor: string;
 }
 
 export interface Stats {
@@ -140,6 +155,8 @@ export interface TabState {
   revealed: boolean;
   /** Rule text → number of sentences it keeps on this page. A rule missing here has not been judged yet. */
   ruleHits: Record<string, number>;
+  /** Highlight term → number of stretches marked on this page. A term missing here has not been looked for yet. */
+  markHits?: Record<string, number>;
   /** The reader marked this site "always": in run mode `click` it is read as it loads. */
   always?: boolean;
   /** The page is longer than MAX_SENTENCES_PER_PAGE: only its beginning was judged, the rest is left in ink. */
@@ -157,6 +174,8 @@ export type ToBackground =
   | { type: "judge"; req: JudgeRequest }
   /** Judge only these rules on the page last judged with this hash; the background still has its sentences. */
   | { type: "judgeRules"; contentHash: string; rules: string[] }
+  /** Look for these terms on the page last judged with this hash, and say where they are. */
+  | { type: "judgeHighlights"; contentHash: string; terms: string[] }
   | { type: "tabState"; state: TabState }
   | { type: "getTabState"; tabId: number }
   | { type: "testKey"; apiKey: string }
@@ -168,6 +187,7 @@ export type FromBackground =
   | { type: "hostEnabled"; enabled: boolean; always: boolean }
   | { type: "judgment"; judgment: PageJudgment }
   | { type: "ruleJudgment"; contentHash: string; rules: RuleResults }
+  | { type: "highlightJudgment"; contentHash: string; spans: HighlightSpans }
   | { type: "tabState"; state: TabState | null }
   | { type: "keyTest"; ok: boolean; error?: string; ms?: number }
   | { type: "ok" }
@@ -181,6 +201,8 @@ export type ToContent =
   | { type: "setEnabledHere"; enabled: boolean }
   /** The rules changed (added, removed, or both); the page judges the new ones and drops the rest at once. */
   | { type: "rulesChanged"; rules: string[] }
+  /** The highlight terms changed; the page looks for the new ones and drops the marks of the rest. */
+  | { type: "highlightsChanged"; highlights: string[] }
   /** One chunk of a judge request the page is waiting on, as soon as the model answers it: the page paints it at once. */
   | { type: "judgmentChunk"; contentHash: string; sentences: SentenceJudgment[]; failedIds: number[] }
   /** The reader asked for this page: read it now, whatever the run mode, unless it is a page Osso never reads. */

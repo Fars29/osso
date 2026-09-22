@@ -247,6 +247,53 @@ textarea {
   pointer-events: none;
 }
 
+/* A colour well: the browser's own picker, wearing Osso's border instead of the platform's. */
+.swatch {
+  display: inline-flex;
+  flex: none;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--paper);
+  transition: border-color var(--t);
+}
+
+.swatch:hover {
+  border-color: var(--ink-3);
+}
+
+.swatch input[type="color"] {
+  width: 46px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.swatch input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.swatch input[type="color"]::-webkit-color-swatch {
+  border: 0;
+  border-radius: 4px;
+}
+
+/* The picker sits beside the choice and steps back while Osso is choosing for you. */
+.fade-choice {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+}
+
+.fade-choice.auto .swatch {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* ---- key -------------------------------------------------------------- */
 
 .keyrow {

@@ -12,6 +12,7 @@ import { hashText } from "../shared/hash.ts";
 import type {
   FromBackground,
   FromContent,
+  HighlightSpans,
   JudgeRequest,
   PageJudgment,
   PageKind,
@@ -25,11 +26,13 @@ import type {
 } from "../shared/types.ts";
 import { route } from "../packs/index.ts";
 import {
+  applyHighlights,
   applyJudgment,
   applyRules,
   clearRender,
   counts,
   installInteractions,
+  markHits as readMarkHits,
   ruleHits,
   setReveal,
   setThreshold,
@@ -81,6 +84,11 @@ interface Mounted {
   nextId: number;
   /** Every rule result this view has, active or not; a rule missing here is one to ask for. */
   ruleResults: RuleResults;
+  /** Every highlight this view has, and the terms last painted, so a term unchanged is not asked again. */
+  markResults: HighlightSpans;
+  appliedTerms: string[];
+  /** Sentence id → its text, which a mark needs to line its offsets up with the page. */
+  sentenceText: Map<number, string>;
   /** The rules last painted, so a settings change that left them alone repaints nothing. */
   applied: string[];
   /** Characters of text outside the container at mount, the baseline for `outgrown`. */
@@ -157,7 +165,7 @@ function report(patch: Partial<TabState>, reason?: string): void {
 
 /** Counts as the popup wants them: the numbers, plus what each rule keeps. */
 function tally(c: Counts): Partial<TabState> {
-  return { ...c, ruleHits: ruleHits(document) };
+  return { ...c, ruleHits: ruleHits(document), markHits: readMarkHits(document) };
 }
 
 function reasonOf(reply: FromBackground | null): string {
@@ -180,8 +188,8 @@ function wrapped<T>(fn: () => T): T {
   }
 }
 
-function renderOptions(s: Settings): { threshold: number; animations: boolean; strike: boolean } {
-  return { threshold: s.threshold, animations: s.animations, strike: s.strike };
+function renderOptions(s: Settings): { threshold: number; animations: boolean; strike: boolean; markColor: string; fadeColor: string } {
+  return { threshold: s.threshold, animations: s.animations, strike: s.strike, markColor: s.markColor, fadeColor: s.fadeColor };
 }
 
 function interactions(s: Settings): () => void {
@@ -289,6 +297,7 @@ async function start(asked = false): Promise<void> {
     mount(seg.container, seg.meta, packId, req, reply.judgment);
     if (ruling) queueRules(() => firstRules(ruling, gen));
     queueRules(syncRules);
+    queueRules(syncHighlights);
   } catch (err) {
     if (live()) fail(err);
   } finally {
@@ -316,6 +325,9 @@ function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeR
     nextId: req.sentences.length,
     ruleResults,
     applied: [...s.rules],
+    markResults: {},
+    appliedTerms: [],
+    sentenceText: new Map(req.sentences.map((x) => [x.id, x.text])),
     outsideChars: Math.max(0, textLength(document.body) - textLength(container)),
     uninstall: interactions(s),
   };
@@ -389,6 +401,42 @@ function paintRules(m: Mounted): void {
   if (!s || mounted !== m) return;
   m.applied = [...s.rules];
   report(tally(applyRules(document, m.ruleResults, s.rules)));
+}
+
+/** Paints the terms in force with every mark the page has, and tells the popup how many each one found. */
+function paintMarks(m: Mounted): void {
+  const s = settings;
+  if (!s || mounted !== m) return;
+  m.appliedTerms = [...s.highlights];
+  report(tally(applyHighlights(document, m.markResults, s.highlights, m.sentenceText)));
+}
+
+/**
+ * Brings the page in line with the highlight terms in force. A term with no answer yet is asked
+ * for (two rounds in the worker: the sentences first, then the words inside them); a term taken
+ * away stops being painted at once and costs nothing to put back.
+ */
+async function syncHighlights(): Promise<void> {
+  const m = mounted;
+  const s = settings;
+  if (!m || !s) return;
+  const gen = generation;
+  const active = s.highlights;
+  const missing = active.filter((t) => !Object.prototype.hasOwnProperty.call(m.markResults, t));
+  if (missing.length === 0 && sameRules(active, m.appliedTerms)) return;
+  if (missing.length > 0) {
+    let reply = await ask({ type: "judgeHighlights", contentHash: m.req.contentHash, terms: missing });
+    if (gen !== generation) return;
+    if (reply?.type === "error" && reply.code === "unknown-page") {
+      // The worker restarted and forgot this page's sentences; the cache still has the judgment, so asking again jogs its memory.
+      await ask({ type: "judge", req: m.req });
+      if (gen !== generation) return;
+      reply = await ask({ type: "judgeHighlights", contentHash: m.req.contentHash, terms: missing });
+      if (gen !== generation) return;
+    }
+    if (reply?.type === "highlightJudgment") Object.assign(m.markResults, reply.spans);
+  }
+  paintMarks(m);
 }
 
 /** The rule reply that went out with the first judgment lands here, on the page it was asked for. */
@@ -603,6 +651,7 @@ async function onSettled(): Promise<void> {
       return segmentNewBlocks(document, m.container, m.nextId);
     });
     m.nextId += added.length;
+    for (const x of added) m.sentenceText.set(x.id, x.text);
     pending.push(...added.filter((s) => !carriesAccountNumber(s.text)));
     if (pending.length === 0 || mutationRequests >= MAX_MUTATION_REQUESTS) {
       // Nothing to ask, or nothing more we will ask on this view: the counts the popup shows may still have moved.
@@ -738,6 +787,10 @@ function onMessage(msg: ToContent): FromContent {
         growthRetries = 0;
         void start(true);
       }
+      return { type: "tabState", state };
+    case "highlightsChanged":
+      if (settings) settings = { ...settings, highlights: msg.highlights };
+      queueRules(syncHighlights);
       return { type: "tabState", state };
     case "rulesChanged":
       if (settings) settings = { ...settings, rules: msg.rules };

@@ -13,9 +13,13 @@
  */
 import {
   API_URL,
+  HIGHLIGHT_QUESTION,
+  HIGHLIGHT_THRESHOLD,
+  HIGHLIGHT_WORDS_PER_REQUEST,
   KEEP_QUESTION,
   KIND_QUESTION,
   MAX_CONCURRENT_REQUESTS,
+  MAX_HIGHLIGHT_SENTENCES,
   MAX_RETRIES,
   MODEL,
   PAGE_KIND_QUESTION,
@@ -25,6 +29,7 @@ import {
   SENTENCE_KINDS,
 } from "../shared/constants.ts";
 import type {
+  HighlightSpans,
   JudgeRequest,
   PageJudgment,
   PageKind,
@@ -203,6 +208,20 @@ export function parseAnswers(chunk: SentenceInput[], answers: Record<string, any
     if (isPageKind(choice)) return { sentences, failedIds, pageKind: { kind: choice, confidence: clamp01(finite(pk?.confidence) ?? 0) } };
   }
   return { sentences, failedIds };
+}
+
+/** A gate answer is keyed by the term's index and the sentence; a word answer only by its place in its own request. */
+function gateKey(ti: number, id: number): string {
+  return `g${ti}_${id}`;
+}
+/** One Noul answer, whatever the response put there. */
+function noulOf(answers: Record<string, unknown>, key: string): number {
+  const answer = answers?.[key] as { noul?: unknown } | undefined;
+  return clamp01(finite(answer?.noul) ?? 0);
+}
+
+function wordKey(j: number): string {
+  return `w${j}`;
 }
 
 /** Rule questions are keyed by the rule's index in the request, so the rule's text never has to survive a round trip as a key. */
@@ -541,4 +560,183 @@ export async function testKey(apiKey: string, fetchImpl?: typeof fetch): Promise
     const err = e instanceof ApiError ? e : new ApiError("network", e instanceof Error ? e.message : String(e));
     return { ok: false, ms: elapsed(), error: err.message };
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Highlights: which words on the page are the thing the reader asked to see
+
+/**
+ * Words worth asking about. Punctuation and the commonest English and Italian function words are
+ * dropped before anything is sent: they are never part of what a reader means by "candidate names"
+ * or "ingredients", and every word asked is a question paid for.
+ */
+const HIGHLIGHT_STOP = new Set(
+  (
+    "a an and are as at be been being but by can for from had has have he her his i if in is it its me my no not of on or our she so than that the their them there these they this those to too us was we were what when which who will with you your " +
+    "ad agli ai al alla alle allo anche che chi ci coi col come con cui da dagli dai dal dalla dalle dallo degli dei del della delle dello di e ed gli ha hanno il io la le lei lo loro ma mi ne negli nei nel nella nelle nello noi non per piu quando quel quella quelle quelli quello se si sono su sugli sui sul sulla sulle sullo suo ti tra tu tuo un una uno vi voi"
+  )
+    .split(/\s+/)
+    .filter(Boolean),
+);
+
+/** A run of letters or digits, allowing the punctuation that lives inside a word rather than after it. */
+const HIGHLIGHT_WORD = /[\p{L}\p{N}][\p{L}\p{N}'’.,-]*/gu;
+const TRAILING_PUNCT = /[.,'’-]+$/;
+
+export interface WordSpan {
+  start: number;
+  end: number;
+  word: string;
+}
+
+/** The stretches of a sentence worth asking about, in order, with trailing punctuation trimmed off each. */
+export function highlightWords(text: string): WordSpan[] {
+  const out: WordSpan[] = [];
+  for (const m of text.matchAll(HIGHLIGHT_WORD)) {
+    // The pattern swallows the punctuation that can sit inside a word; what turns out to be trailing is given back, so a mark ends at the word and not after it.
+    const word = m[0].replace(TRAILING_PUNCT, "");
+    if (word.length < 2) continue;
+    if (HIGHLIGHT_STOP.has(word.toLowerCase())) continue;
+    out.push({ start: m.index, end: m.index + word.length, word });
+  }
+  return out;
+}
+
+/**
+ * Marked words with only a space or a hyphen between them are one thing: "white sugar", not "white"
+ * and "sugar". Anything else keeps them apart, because a comma or a colon is a boundary the writer
+ * put there: marking across "Baking powder: baking powder is the secret" reads as one long smear.
+ */
+export function mergeSpans(text: string, spans: [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const span of [...spans].sort((a, b) => a[0] - b[0])) {
+    const last = out[out.length - 1];
+    if (!last) {
+      out.push([span[0], span[1]]);
+      continue;
+    }
+    // Overlapping, or parted by nothing but a space or a hyphen: one stretch.
+    const between = span[0] >= last[1] ? text.slice(last[1], span[0]) : "";
+    if (span[0] < last[1] || (between.length <= 2 && /^[ -]*$/.test(between))) last[1] = Math.max(last[1], span[1]);
+    else out.push([span[0], span[1]]);
+  }
+  return out;
+}
+
+interface HighlightWork {
+  term: string;
+  sentence: SentenceInput;
+  words: WordSpan[];
+}
+
+export interface HighlightResult {
+  spans: HighlightSpans;
+  inputTokens: number;
+  ms: number;
+  chunkErrors: ChunkError[];
+}
+
+function highlightState(sentences: SentenceInput[], meta: PageMeta, pack: PackLike): Record<string, string> {
+  return { page_kind_hint: pack.stateHint, title: meta.title, language: meta.lang, text: sentences.map((s) => s.text).join(" ") };
+}
+
+/**
+ * Round one over the whole page, round two over what round one found. The gate is what keeps this
+ * affordable: on a news page four sentences in twenty-five mention a person, so the second round is
+ * paid on those four. A term that matches everything is capped at MAX_HIGHLIGHT_SENTENCES.
+ */
+export async function judgeHighlights(
+  req: JudgeRequest,
+  pack: PackLike,
+  terms: string[],
+  opts: Omit<JudgeOptions, "onChunk">,
+): Promise<HighlightResult> {
+  if (!opts.apiKey) throw new ApiError("no-key", "No API key");
+  const t0 = performance.now();
+  const spans: HighlightSpans = {};
+  for (const term of terms) spans[term] = {};
+  if (terms.length === 0 || req.sentences.length === 0) return { spans, inputTokens: 0, ms: 0, chunkErrors: [] };
+
+  // Round one: which sentences mention the thing at all.
+  const gateChunks = chunkSentences(req.sentences, ruleChunkSize(opts.maxSentencesPerRequest, terms.length));
+  const gatePlan: ChunkPlan<Record<string, number[]>> = {
+    build: (chunk) => {
+      const questions: Record<string, unknown> = {};
+      terms.forEach((term, ti) => {
+        const criteria = { true: HIGHLIGHT_QUESTION.gateTrue(term), false: HIGHLIGHT_QUESTION.gateFalse(term) };
+        for (const s of chunk) {
+          questions[gateKey(ti, s.id)] = { type: "noul", instructions: HIGHLIGHT_QUESTION.gateInstructions(s.text, term), criteria };
+        }
+      });
+      return { state: highlightState(chunk, req.meta, pack), model: MODEL, questions };
+    },
+    parse: (chunk, answers) => {
+      const hits: Record<string, number[]> = {};
+      terms.forEach((term, ti) => {
+        hits[term] = chunk.filter((s) => noulOf(answers, gateKey(ti, s.id)) >= HIGHLIGHT_THRESHOLD).map((s) => s.id);
+      });
+      return hits;
+    },
+    failed: () => ({}),
+  };
+  const gate = await runPool(gateChunks, gatePlan, opts);
+
+  // Round two: which words, inside those sentences only.
+  const byId = new Map(req.sentences.map((s) => [s.id, s]));
+  const work: HighlightWork[] = [];
+  for (const term of terms) {
+    const ids = gate.results.flatMap((r) => r?.[term] ?? []).slice(0, MAX_HIGHLIGHT_SENTENCES);
+    for (const id of ids) {
+      const sentence = byId.get(id);
+      if (!sentence) continue;
+      const words = highlightWords(sentence.text);
+      for (let i = 0; i < words.length; i += HIGHLIGHT_WORDS_PER_REQUEST) {
+        work.push({ term, sentence, words: words.slice(i, i + HIGHLIGHT_WORDS_PER_REQUEST) });
+      }
+    }
+  }
+  if (work.length === 0) return { spans, inputTokens: gate.inputTokens, ms: Math.round(performance.now() - t0), chunkErrors: gate.chunkErrors };
+
+  const wordPlan: ChunkPlan<[number, number][]> = {
+    // The sentence is the state of its own request, so each question is a few words long. Measured
+    // against repeating the sentence inside every question: half the tokens, the same answers.
+    build: (_chunk, i) => {
+      const w = work[i]!;
+      const questions: Record<string, unknown> = {};
+      w.words.forEach((span, j) => {
+        questions[wordKey(j)] = {
+          type: "noul",
+          instructions: HIGHLIGHT_QUESTION.wordInstructions(span.word, w.term),
+          criteria: { true: HIGHLIGHT_QUESTION.wordTrue(span.word, w.term), false: HIGHLIGHT_QUESTION.wordFalse(span.word, w.term) },
+        };
+      });
+      return { state: { ...highlightState([w.sentence], req.meta, pack), looking_for: w.term }, model: MODEL, questions };
+    },
+    parse: (_chunk, answers, i) => {
+      const found: [number, number][] = [];
+      work[i]!.words.forEach((span, j) => {
+        if (noulOf(answers, wordKey(j)) >= HIGHLIGHT_THRESHOLD) found.push([span.start, span.end]);
+      });
+      return found;
+    },
+    failed: () => [],
+  };
+  const words = await runPool(
+    work.map((w) => [w.sentence]),
+    wordPlan,
+    opts,
+  );
+  words.results.forEach((found, i) => {
+    if (!found || found.length === 0) return;
+    const w = work[i]!;
+    const byTerm = spans[w.term]!;
+    byTerm[w.sentence.id] = mergeSpans(w.sentence.text, [...(byTerm[w.sentence.id] ?? []), ...found]);
+  });
+
+  return {
+    spans,
+    inputTokens: gate.inputTokens + words.inputTokens,
+    ms: Math.round(performance.now() - t0),
+    chunkErrors: [...gate.chunkErrors, ...words.chunkErrors],
+  };
 }

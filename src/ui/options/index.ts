@@ -4,11 +4,13 @@
  * deserves a deliberate act. If the background is not answering the page still renders with
  * the defaults and says so once, quietly.
  */
-import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
+import {
+  MAX_HIGHLIGHTS,
+  MAX_HIGHLIGHT_LENGTH, DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
 import type { FromBackground, RevealKey, RunMode, Settings, Stats, ToBackground } from "../../shared/types.ts";
 import { getSettings, getStats, patchSettings, sendToBackground } from "../messaging.ts";
 import { SETTINGS_KEY } from "../../background/settings.ts";
-import { ruleField, ruleList } from "../rules.ts";
+import { MARK_EXAMPLES, MARK_FULL_HINT, ruleField, ruleList } from "../rules.ts";
 
 /**
  * Local adapter: the shared contract has no message to reset usage counters. Sent as an
@@ -43,6 +45,11 @@ const ui = {
   strike: el<HTMLInputElement>("strike"),
   rule: el<HTMLInputElement>("rule"),
   ruleList: el<HTMLUListElement>("rule-list"),
+  mark: el<HTMLInputElement>("mark"),
+  markList: el<HTMLUListElement>("mark-list"),
+  markColor: el<HTMLInputElement>("markColor"),
+  fadeColor: el<HTMLInputElement>("fadeColor"),
+  fadeMode: el<HTMLElement>("fadeMode"),
   behaviourSaved: el<HTMLSpanElement>("behaviour-saved"),
   denied: el<HTMLTextAreaElement>("denied"),
   allowed: el<HTMLTextAreaElement>("allowed"),
@@ -64,6 +71,17 @@ let settings: Settings = { ...DEFAULT_SETTINGS };
 let connected = false;
 
 const chips = ruleList(ui.ruleList, { onRemove: (rule) => void saveRules(settings.rules.filter((r) => r !== rule)) });
+const markChips = ruleList(ui.markList, { onRemove: (term) => void saveHighlights(settings.highlights.filter((t) => t !== term)) });
+const markField = ruleField(ui.mark, {
+  rules: () => settings.highlights,
+  onAdd: (term) => void saveHighlights([...settings.highlights, term]),
+  onDuplicate: (existing) => markChips.flash(existing),
+  max: MAX_HIGHLIGHTS,
+  maxLength: MAX_HIGHLIGHT_LENGTH,
+  examples: MARK_EXAMPLES,
+  fullHint: MARK_FULL_HINT,
+});
+
 const field = ruleField(ui.rule, {
   rules: () => settings.rules,
   onAdd: (rule) => void saveRules([...settings.rules, rule]),
@@ -88,6 +106,14 @@ async function save(patch: Partial<Settings>, badge: HTMLElement): Promise<boole
   flash(badge, ok ? "Saved" : "Not saved");
   if (!ok) offline();
   return ok;
+}
+
+/** The grey the picker shows while Osso is choosing one per page: the fade on a white background. */
+const AUTO_FADE_SWATCH = "#b9b9b9";
+
+async function saveHighlights(highlights: string[]) {
+  await save({ highlights }, ui.behaviourSaved);
+  renderRules();
 }
 
 async function saveRules(rules: string[]) {
@@ -148,6 +174,7 @@ function renderSettings() {
   for (const radio of ui.mode.querySelectorAll<HTMLInputElement>("input[type=radio]")) radio.checked = radio.value === settings.mode;
   ui.animations.checked = settings.animations;
   ui.strike.checked = settings.strike;
+  renderColours();
   ui.denied.value = settings.deniedHosts.join("\n");
   ui.allowed.value = settings.allowedHosts.join("\n");
   renderRules();
@@ -160,6 +187,19 @@ function renderSettings() {
 function renderRules() {
   chips.render(settings.rules);
   field.refresh();
+  markChips.render(settings.highlights);
+  markField.refresh();
+}
+
+/** The picker only has a say when the reader has taken the choice off Auto. */
+function renderColours() {
+  const custom = settings.fadeColor !== "";
+  ui.markColor.value = settings.markColor;
+  ui.fadeColor.value = custom ? settings.fadeColor : AUTO_FADE_SWATCH;
+  for (const radio of ui.fadeMode.querySelectorAll<HTMLInputElement>("input[type=radio]")) {
+    radio.checked = radio.value === (custom ? "custom" : "auto");
+  }
+  ui.fadeMode.parentElement?.classList.toggle("auto", !custom);
 }
 
 function renderThreshold() {
@@ -298,6 +338,18 @@ function wire() {
   });
   ui.animations.addEventListener("change", () => void save({ animations: ui.animations.checked }, ui.behaviourSaved));
   ui.strike.addEventListener("change", () => void save({ strike: ui.strike.checked }, ui.behaviourSaved));
+  ui.markColor.addEventListener("change", () => {
+    void save({ markColor: ui.markColor.value }, ui.behaviourSaved);
+  });
+  ui.fadeColor.addEventListener("change", () => {
+    void save({ fadeColor: ui.fadeColor.value }, ui.behaviourSaved).then(renderColours);
+  });
+  ui.fadeMode.addEventListener("change", () => {
+    const chosen = ui.fadeMode.querySelector<HTMLInputElement>("input[type=radio]:checked");
+    if (!chosen) return;
+    const fadeColor = chosen.value === "custom" ? ui.fadeColor.value : "";
+    void save({ fadeColor }, ui.behaviourSaved).then(renderColours);
+  });
 
   ui.denied.addEventListener("blur", () => {
     const deniedHosts = parseHosts(ui.denied.value);

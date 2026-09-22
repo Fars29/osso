@@ -314,6 +314,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 
 /* ---- rules: one field, chips beneath ---------------------------------- */
 
+/* The two fields stack with a little air between them. */
+.rules {
+  display: grid;
+  gap: 8px;
+}
+
 /* The field reads as a sentence: "keep" in the wordmark's italic, then the reader's words. */
 .rule-field {
   display: flex;
@@ -341,8 +347,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   cursor: default;
 }
 
+/* Both fields read as one sentence each, and their first words line up: keep …, highlight …. */
 .rule-prefix {
   flex: none;
+  min-width: 58px;
   font-family: var(--font-display);
   font-style: italic;
   font-size: 15px;

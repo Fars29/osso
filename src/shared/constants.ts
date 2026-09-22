@@ -49,6 +49,37 @@ export const THRESHOLD_MAX = 0.9;
 export const RULE_THRESHOLD = 0.5;
 export const MAX_RULES = 8;
 export const MAX_RULE_LENGTH = 80;
+
+/**
+ * A highlight is a rule with one more stage: the rule finds the sentences, the highlight then finds
+ * the words inside them. It is asked in two rounds because a page is mostly sentences that have
+ * nothing to do with the term, and the second round is paid only on the few that do.
+ */
+export const MAX_HIGHLIGHTS = 3;
+export const MAX_HIGHLIGHT_LENGTH = 80;
+export const HIGHLIGHT_THRESHOLD = 0.5;
+/**
+ * The most sentences one term will look inside on a page. A term that matches everything ("words")
+ * would otherwise ask a question per word of the whole page; past this the rest is left unmarked.
+ */
+export const MAX_HIGHLIGHT_SENTENCES = 60;
+/** Words asked about in one request. The sentence rides in the state, so the questions are short. */
+export const HIGHLIGHT_WORDS_PER_REQUEST = 40;
+
+/**
+ * Round one, the gate: which sentences mention the thing at all. Round two: which words in such a
+ * sentence are part of it. The word question names no sentence because the sentence is the state of
+ * its own request, which is what makes the second round affordable (measured: half the tokens of
+ * repeating the sentence in every question, same answers).
+ */
+export const HIGHLIGHT_QUESTION = {
+  gateInstructions: (sentence: string, term: string) => `Consider this sentence from the page: «${sentence}». Does it mention any «${term}»?`,
+  gateTrue: (term: string) => `Yes: the sentence names or states at least one «${term}» a reader could point at.`,
+  gateFalse: (term: string) => `No: nothing in the sentence is a «${term}».`,
+  wordInstructions: (word: string, term: string) => `In the sentence, is «${word}» part of a «${term}»?`,
+  wordTrue: (word: string, term: string) => `Yes: «${word}» is part of a «${term}» that the sentence names.`,
+  wordFalse: (word: string, term: string) => `No: «${word}» is not part of a «${term}».`,
+} as const;
 /** Judge requests the background remembers by content hash, so a rule added later can be judged without the page resending its text. */
 export const RECENT_REQUESTS = 50;
 
@@ -65,6 +96,9 @@ export const DEFAULT_SETTINGS: Settings = {
   allowedHosts: [],
   maxSentencesPerRequest: MAX_SENTENCES_PER_REQUEST,
   rules: [],
+  highlights: [],
+  markColor: "#ffd24a",
+  fadeColor: "",
   thresholdRev: 2,
 };
 

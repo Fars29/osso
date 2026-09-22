@@ -4,11 +4,14 @@
  * keeps on the current page; the options page shows the list alone. Everything here is DOM and
  * callbacks; saving is the caller's.
  */
-import { MAX_RULE_LENGTH, MAX_RULES } from "../shared/constants.ts";
+import { MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH, MAX_RULE_LENGTH, MAX_RULES } from "../shared/constants.ts";
 import { normalizeRule } from "../background/settings.ts";
 
 /** What the empty field suggests, in turn, so a first-time reader sees what a rule sounds like. */
 export const RULE_EXAMPLES: readonly string[] = ["prices", "deadlines", "allergens", "what I have to do", "names of people"];
+/** What a reader might want marked: a thing you could point at on the page, not a topic. */
+export const MARK_EXAMPLES: readonly string[] = ["candidate names", "ingredients", "dates", "amounts of money", "places"];
+export const MARK_FULL_HINT = `${MAX_HIGHLIGHTS} at a time`;
 export const PLACEHOLDER_CYCLE_MS = 3000;
 /** How long the placeholder takes to fade out before the next example fades in (popup.css / options.css). */
 const PLACEHOLDER_SWAP_MS = 160;
@@ -119,6 +122,11 @@ export function ruleList(ul: HTMLUListElement, opts: { onRemove(rule: string): v
 
 export interface RuleFieldOptions {
   rules(): readonly string[];
+  /** The second field, for highlights, is the same widget with a shorter list and its own examples. */
+  max?: number;
+  maxLength?: number;
+  examples?: readonly string[];
+  fullHint?: string;
   onAdd(rule: string): void;
   /** The entry matched a rule already there; the caller usually flashes that chip. */
   onDuplicate(existing: string): void;
@@ -130,14 +138,18 @@ export interface RuleFieldOptions {
  * the owner after the list changes, and returns what the caller needs to stop the placeholder.
  */
 export function ruleField(input: HTMLInputElement, opts: RuleFieldOptions): { refresh(): void; stop(): void } {
-  input.maxLength = MAX_RULE_LENGTH;
+  const max = opts.max ?? MAX_RULES;
+  const maxLength = opts.maxLength ?? MAX_RULE_LENGTH;
+  const examplesOf = opts.examples ?? RULE_EXAMPLES;
+  const hint = opts.fullHint ?? FULL_HINT;
+  input.maxLength = maxLength;
   input.autocomplete = "off";
   input.spellcheck = false;
   let cycling: (() => void) | null = null;
   const win = input.ownerDocument.defaultView;
 
   function submit() {
-    const rule = normalizeRule(input.value);
+    const rule = input.value.replace(/\s+/g, " ").trim().slice(0, maxLength).trim();
     if (!rule) return;
     const existing = findRule(opts.rules(), rule);
     input.value = "";
@@ -163,17 +175,17 @@ export function ruleField(input: HTMLInputElement, opts: RuleFieldOptions): { re
   let shown = "";
   function refresh() {
     const rules = opts.rules();
-    const full = rules.length >= MAX_RULES;
+    const full = rules.length >= max;
     input.disabled = full;
     if (full) {
       cycling?.();
       cycling = null;
       shown = "";
-      input.placeholder = FULL_HINT;
+      input.placeholder = hint;
       return;
     }
     if (!win) return;
-    const examples = RULE_EXAMPLES.filter((e) => findRule(rules, e) === undefined);
+    const examples = examplesOf.filter((e) => findRule(rules, e) === undefined);
     const key = examples.join("\n");
     if (cycling && key === shown) return;
     cycling?.();

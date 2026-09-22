@@ -11,6 +11,7 @@
  */
 import type {
   FromBackground,
+  HighlightSpans,
   JudgeRequest,
   PageJudgment,
   RuleResults,
@@ -21,13 +22,14 @@ import type {
 } from "../shared/types.ts";
 import { MAX_SENTENCES_PER_REQUEST, RECENT_REQUESTS } from "../shared/constants.ts";
 import { getPack } from "../packs/index.ts";
-import { ApiError, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeOptions, type JudgeResult } from "./api.ts";
-import { clearCache, getCached, mergeRules, putCached } from "./cache.ts";
+import { ApiError, judgeHighlights, judgePage, judgeRules, testKey, type ApiErrorCode, type JudgeOptions, type JudgeResult } from "./api.ts";
+import { clearCache, getCached, mergeHighlights, mergeRules, putCached } from "./cache.ts";
 import {
   addStats,
   getSettings,
   getStats,
   isHostAlways, isHostEnabled, setHostAlways,
+  normalizeHighlights,
   normalizeRules,
   onSettingsChanged,
   resetStats,
@@ -55,7 +57,7 @@ const KEY_PRESENT = "•";
  * clearing the cache, reading another tab's state) belongs to our own pages; only our content
  * script can reach this listener today, so this is depth, not a door being closed.
  */
-const PAGE_MAY_SEND = new Set<string>(["getSettings", "isHostEnabled", "judge", "judgeRules", "tabState"]);
+const PAGE_MAY_SEND = new Set<string>(["getSettings", "isHostEnabled", "judge", "judgeRules", "judgeHighlights", "tabState"]);
 
 const tabStates = new Map<number, TabState>();
 /** The quota warning is worth one line, not one per page. */
@@ -68,12 +70,12 @@ let storageWarned = false;
  * so a rule the page already carries is answered without a request. Insertion order is the LRU
  * order: a hash asked for again moves to the end.
  */
-const recent = new Map<string, { req: JudgeRequest; rules: RuleResults }>();
+const recent = new Map<string, { req: JudgeRequest; rules: RuleResults; spans: HighlightSpans }>();
 
-function remember(req: JudgeRequest): { req: JudgeRequest; rules: RuleResults } {
+function remember(req: JudgeRequest): { req: JudgeRequest; rules: RuleResults; spans: HighlightSpans } {
   const known = recent.get(req.contentHash);
   recent.delete(req.contentHash);
-  const entry = { req, rules: known?.rules ?? {} };
+  const entry = { req, rules: known?.rules ?? {}, spans: known?.spans ?? {} };
   recent.set(req.contentHash, entry);
   while (recent.size > RECENT_REQUESTS) {
     const oldest = recent.keys().next().value;
@@ -216,6 +218,42 @@ async function judge(req: JudgeRequest, tabId?: number): Promise<FromBackground>
  * remembered entry and, for a whole page with no failed chunk, the cache, so removing and
  * re-adding a rule never costs a second request.
  */
+/**
+ * Where the reader's terms are on the page. Like the rules, a term already answered for this page
+ * costs nothing, and what comes back is merged into the cached judgment so a second visit is free.
+ */
+async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise<FromBackground> {
+  const entry = recent.get(contentHash);
+  if (!entry) return { type: "error", code: "unknown-page", error: "This page has not been judged yet" };
+  const terms = normalizeHighlights(asked);
+  const missing = terms.filter((t) => !Object.prototype.hasOwnProperty.call(entry.spans, t));
+  if (missing.length > 0) {
+    const settings = await getSettings();
+    if (!settings.apiKey) return { type: "error", code: "no-key", error: "No API key" };
+    let result;
+    try {
+      result = await judgeHighlights(entry.req, getPack(entry.req.packId), missing, {
+        apiKey: settings.apiKey,
+        maxSentencesPerRequest: settings.maxSentencesPerRequest,
+      });
+    } catch (err) {
+      const e = err instanceof ApiError ? err : new ApiError("server", err instanceof Error ? err.message : String(err));
+      if (e.code === "invalid-key") await setSettings({ apiKeyInvalid: true });
+      return { type: "error", code: relayCode(e.code), error: e.message };
+    }
+    Object.assign(entry.spans, result.spans);
+    const fullPage = entry.req.sentences[0]?.id === 0;
+    if (fullPage && result.chunkErrors.length === 0) await bestEffort(() => mergeHighlights(contentHash, result.spans));
+    await bestEffort(() => addStats({ inputTokens: result.inputTokens }));
+  }
+  const out: HighlightSpans = {};
+  for (const t of terms) {
+    const byId = entry.spans[t];
+    if (byId) out[t] = byId;
+  }
+  return { type: "highlightJudgment", contentHash, spans: out };
+}
+
 async function judgeRulesFor(contentHash: string, asked: string[]): Promise<FromBackground> {
   const entry = recent.get(contentHash);
   if (!entry) return { type: "error", code: "unknown-page", error: "This page has not been judged yet" };
@@ -281,6 +319,7 @@ async function handle(msg: Inbound, sender: chrome.runtime.MessageSender): Promi
       const after = await setSettings(msg.patch);
       // Rules are the one setting a page acts on at once, with a request; the rest ride the storage broadcast.
       if (!sameRules(before.rules, after.rules)) void toAllTabs({ type: "rulesChanged", rules: after.rules });
+      if (!sameRules(before.highlights, after.highlights)) void toAllTabs({ type: "highlightsChanged", highlights: after.highlights });
       return { type: "settings", settings: settingsFor(sender, after) };
     }
     case "getStats":
@@ -304,6 +343,8 @@ async function handle(msg: Inbound, sender: chrome.runtime.MessageSender): Promi
       return judge(msg.req, sender.tab?.id);
     case "judgeRules":
       return judgeRulesFor(msg.contentHash, Array.isArray(msg.rules) ? msg.rules : []);
+    case "judgeHighlights":
+      return judgeHighlightsFor(msg.contentHash, Array.isArray(msg.terms) ? msg.terms : []);
     case "tabState": {
       const tabId = sender.tab?.id;
       if (tabId !== undefined) {

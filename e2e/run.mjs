@@ -276,6 +276,48 @@ try {
   assert(cachedRule === 0, `recipe: adding the rule back made ${cachedRule} request(s)`);
   await setRules([]);
   await waitRule(true, "fade again after the second removal");
+
+  // The marker: a term of the reader's, found on the page and painted over the words themselves.
+  // The browser paints it from a registry, so what is asserted is what it was given, not a class of ours.
+  const TERM = "ingredients and their quantities";
+  await ext.evaluate((highlights) => chrome.runtime.sendMessage({ type: "setSettings", patch: { highlights } }), [TERM]);
+  let marks = { count: 0, texts: [] };
+  for (let i = 0; i < 80 && marks.count === 0; i++) {
+    await sleep(500);
+    marks = await page.evaluate(() => {
+      const h = CSS.highlights?.get("osso-mark");
+      const texts = [];
+      if (h) for (const r of h) texts.push(r.toString().replace(/\s+/g, " ").trim());
+      return { count: h ? h.size : 0, texts };
+    });
+  }
+  assert(marks.count > 0, `recipe: the highlight term marked nothing`);
+  const ingredientWords = ["flour", "orzo", "lemon", "stock", "onion", "garlic", "butter", "chicken", "parsley", "salt", "oil", "Parmigiano"];
+  const sensible = marks.texts.filter((t) => ingredientWords.some((w) => t.toLowerCase().includes(w.toLowerCase())) || /\d/.test(t));
+  assert(sensible.length >= 4, `recipe: the marks do not look like ingredients: ${JSON.stringify(marks.texts.slice(0, 10))}`);
+  // A marked sentence is never struck: asking to see a thing and then greying it is two answers to one question.
+  const struckMark = await page.evaluate(() => {
+    const h = CSS.highlights?.get("osso-mark");
+    if (!h) return -1;
+    let n = 0;
+    for (const r of h) {
+      const el = r.startContainer.parentElement?.closest(".osso-s");
+      if (el?.classList.contains("osso-fade")) n++;
+    }
+    return n;
+  });
+  assert(struckMark === 0, `recipe: ${struckMark} marked stretch(es) sit on struck text`);
+  console.log(`[osso e2e] highlight "${TERM}": ${marks.count} marks, e.g. ${JSON.stringify(marks.texts.slice(0, 4))}`);
+
+  // Taken away, the marker comes off the page at once and costs nothing to put back.
+  await ext.evaluate(() => chrome.runtime.sendMessage({ type: "setSettings", patch: { highlights: [] } }));
+  let cleared = 1;
+  for (let i = 0; i < 20 && cleared > 0; i++) {
+    await sleep(200);
+    cleared = await page.evaluate(() => CSS.highlights?.get("osso-mark")?.size ?? 0);
+  }
+  assert(cleared === 0, "recipe: the marks stayed after the term was removed");
+
   await ext.close();
 
   // Terms: the binding clauses are the substance; the auto-renewal sentence must stay in ink.

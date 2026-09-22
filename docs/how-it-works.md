@@ -21,6 +21,17 @@ None of these looks at what the page talks about. An article on banking says "ba
 
 They are heuristics, and the code and the copy both say so: a page built unusually can get through them, and then its visible text is sent like any other page's. Two things do not depend on them, because they are structural. The URL is never put in a request (`background/api.ts`), and form values are never read: `input`, `textarea`, `select`, `button` and `label` are in `SKIP_TAGS`, so what the reader types is not a text node the segmenter ever walks.
 
+## A highlight
+
+A term the reader types under *highlight* ("candidate names", "ingredients") is the same question asked twice:
+
+1. **Which sentences mention it at all.** One Noul per sentence over the whole page, batched like the keep question. On a news page four sentences in twenty-five mention a person, and that is what keeps the rest affordable.
+2. **Which words inside those are it.** One Noul per content word, and only for the sentences round one kept. Function words and punctuation are dropped before anything is sent, and the sentence rides in the state of its own request so each question is a few words long. Measured against repeating the sentence inside every question: half the tokens, the same answers.
+
+Marked words that only a space or a hyphen parts are joined into one stretch ("white sugar", not "white" and "sugar"); a comma or a colon keeps them apart, because the writer put it there. What comes back are offsets into the sentence, which the page turns into ranges and hands to the browser's Custom Highlight API: nothing of ours is added to the page, and nothing moves. A sentence a highlight marks is never struck, since asking to see a thing and then greying it is two answers to one question.
+
+One term roughly doubles what a page costs (measured: a 25-sentence news page went from 14.4k to 27.5k tokens, about $0.0006 more) and adds a second or two after the page is already stripped. A term that matches everything is capped at 60 sentences.
+
 ## The question, verbatim
 
 > Consider this sentence from the page: «S». Does this sentence itself carry practical content the reader came to this page for?

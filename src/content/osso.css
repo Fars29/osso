@@ -338,3 +338,12 @@ html.osso-still .osso-rule-hit {
     -webkit-text-fill-color: currentColor;
   }
 }
+
+/* The marker. The browser paints these ranges itself (CSS Custom Highlight API), so nothing of ours
+   is added to the page, nothing moves, and it comes off by emptying the registry. The ink over it is
+   chosen for the colour rather than by the site (render.ts paintMarkColour), so a dark marker on a
+   dark page is still readable. */
+::highlight(osso-mark) {
+  background-color: var(--osso-mark, #ffd24a);
+  color: var(--osso-mark-ink, #161616);
+}

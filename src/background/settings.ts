@@ -4,7 +4,7 @@
  * rest of the code did not plan for: the worst case is a field falling back to its default.
  */
 import type { RevealKey, Settings, Stats } from "../shared/types.ts";
-import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, LEGACY_DEFAULT_THRESHOLD, MAX_RULES, MAX_RULE_LENGTH, THRESHOLD_MAX, THRESHOLD_MIN } from "../shared/constants.ts";
+import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, LEGACY_DEFAULT_THRESHOLD, MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH, MAX_RULES, MAX_RULE_LENGTH, THRESHOLD_MAX, THRESHOLD_MIN } from "../shared/constants.ts";
 
 export const SETTINGS_KEY = "osso:settings";
 export const STATS_KEY = "osso:stats";
@@ -60,6 +60,31 @@ export function normalizeRule(text: string): string {
   return text.replace(/\s+/g, " ").trim().slice(0, MAX_RULE_LENGTH).trim();
 }
 
+/** The highlight terms as stored: same shape as the rules, a shorter list because each one costs a second look at the page. */
+export function normalizeHighlights(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of value) {
+    if (typeof v !== "string" || out.length >= MAX_HIGHLIGHTS) continue;
+    const term = v.replace(/\s+/g, " ").trim().slice(0, MAX_HIGHLIGHT_LENGTH).trim();
+    const key = term.toLowerCase();
+    if (!term || seen.has(key)) continue;
+    seen.add(key);
+    out.push(term);
+  }
+  return out;
+}
+
+/** A colour Osso will write into a page: #rgb or #rrggbb and nothing else, so no page ever receives a string we did not shape. */
+export function normalizeColour(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const hex = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(hex)) return hex;
+  if (/^#[0-9a-f]{3}$/.test(hex)) return "#" + [1, 2, 3].map((i) => hex[i]! + hex[i]!).join("");
+  return fallback;
+}
+
 /** The rule list as stored: normalised, unique ignoring case (first spelling wins), at most MAX_RULES. */
 export function normalizeRules(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -100,6 +125,10 @@ export function validate(raw: unknown): Settings {
       clamp(finiteOr(r.maxSentencesPerRequest, d.maxSentencesPerRequest), SENTENCES_MIN, SENTENCES_MAX),
     ),
     rules: normalizeRules(r.rules),
+    highlights: normalizeHighlights(r.highlights),
+    markColor: normalizeColour(r.markColor, d.markColor),
+    // "" is not a colour, it is the absence of one: Osso then picks a grey per block from its background.
+    fadeColor: r.fadeColor === "" ? "" : normalizeColour(r.fadeColor, d.fadeColor),
   };
 }
 

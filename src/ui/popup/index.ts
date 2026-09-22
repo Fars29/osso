@@ -4,10 +4,12 @@
  * when the content script answers, from the page itself. It must render something sensible when
  * neither answers.
  */
-import { DEFAULT_SETTINGS, MIN_SENTENCES, PAGE_KINDS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
+import {
+  MAX_HIGHLIGHTS,
+  MAX_HIGHLIGHT_LENGTH, DEFAULT_SETTINGS, MIN_SENTENCES, PAGE_KINDS, THRESHOLD_MAX, THRESHOLD_MIN, USD_PER_INPUT_TOKEN } from "../../shared/constants.ts";
 import type { Settings, TabState } from "../../shared/types.ts";
 import { getSettings, getTabStateFromBackground, getTabStateFromTab, patchSettings, sendToBackground, sendToTab } from "../messaging.ts";
-import { ruleField, ruleList, type RuleCount } from "../rules.ts";
+import { MARK_EXAMPLES, MARK_FULL_HINT, ruleField, ruleList, type RuleCount } from "../rules.ts";
 
 type View = "loading" | "cannot" | "no-key" | "invalid-key" | "disabled" | "off" | "skipped" | "error" | "judging" | "idle" | "done" | "ready" | "held";
 
@@ -48,6 +50,8 @@ const ui = {
   rules: el<HTMLElement>("rules"),
   rule: el<HTMLInputElement>("rule"),
   ruleList: el<HTMLUListElement>("rule-list"),
+  mark: el<HTMLInputElement>("mark"),
+  markList: el<HTMLUListElement>("mark-list"),
   count: el<HTMLDivElement>("v-count"),
   kept: el<HTMLSpanElement>("kept"),
   total: el<HTMLSpanElement>("total"),
@@ -90,6 +94,18 @@ const field = ruleField(ui.rule, {
   rules: () => model.settings.rules,
   onAdd: (rule) => void addRule(rule),
   onDuplicate: (existing) => chips.flash(existing),
+});
+
+// The same widget, a shorter list: each term costs a second look at the page.
+const markChips = ruleList(ui.markList, { onRemove: (term) => void removeHighlight(term) });
+const markField = ruleField(ui.mark, {
+  rules: () => model.settings.highlights,
+  onAdd: (term) => void addHighlight(term),
+  onDuplicate: (existing) => markChips.flash(existing),
+  max: MAX_HIGHLIGHTS,
+  maxLength: MAX_HIGHLIGHT_LENGTH,
+  examples: MARK_EXAMPLES,
+  fullHint: MARK_FULL_HINT,
 });
 
 // ---- formatting -----------------------------------------------------------
@@ -169,15 +185,27 @@ function countFor(rule: string): RuleCount {
   return model.rulePolls >= RULE_POLL_LIMIT ? "unknown" : "judging";
 }
 
+/** How many stretches a term marks on this page, or what the chip should say while it does not know yet. */
+function markCountFor(term: string): RuleCount {
+  const s = model.state;
+  if (!s || (s.status !== "done" && s.status !== "judging")) return null;
+  const n = s.markHits?.[term];
+  if (typeof n === "number") return n;
+  return model.rulePolls >= RULE_POLL_LIMIT ? "unknown" : "judging";
+}
+
 function renderRules(view: View) {
   const on = model.settingsLoaded && !NO_RULES_VIEWS.includes(view);
   ui.rules.hidden = !on;
   if (!on) {
     field.stop();
+    markField.stop();
     return;
   }
   chips.render(model.settings.rules, countFor);
   field.refresh();
+  markChips.render(model.settings.highlights, markCountFor);
+  markField.refresh();
   // The one field the reader talks to is ready to type in the moment there is a page to talk about.
   if (view === "done" && !model.focused && !ui.rule.disabled && document.activeElement === document.body) {
     model.focused = true;
@@ -329,7 +357,8 @@ async function refresh() {
 function rulesPending(): boolean {
   const s = model.state;
   if (!s || s.status !== "done") return false;
-  return model.settings.rules.some((r) => typeof s.ruleHits[r] !== "number");
+  if (model.settings.rules.some((r) => typeof s.ruleHits[r] !== "number")) return true;
+  return model.settings.highlights.some((t) => typeof s.markHits?.[t] !== "number");
 }
 
 function wantsPolling(): boolean {
@@ -397,6 +426,27 @@ async function turnOn() {
  * "…" until the page reports what the rule keeps. The background tells the page; the popup only
  * has to keep asking the page for its counts.
  */
+async function addHighlight(term: string) {
+  return saveHighlights([...model.settings.highlights, term]);
+}
+
+async function removeHighlight(term: string) {
+  return saveHighlights(model.settings.highlights.filter((t) => t !== term));
+}
+
+/** Saving is the whole of it: the background tells the page, and the page asks for what it does not have. */
+async function saveHighlights(highlights: string[]) {
+  model.settings = { ...model.settings, highlights };
+  model.rulePolls = 0;
+  render();
+  schedulePolling();
+  if (!(await patchSettings({ highlights }))) {
+    const fresh = await getSettings();
+    if (fresh) model.settings = fresh;
+    render();
+  }
+}
+
 async function saveRules(rules: string[]) {
   model.settings = { ...model.settings, rules };
   model.rulePolls = 0;

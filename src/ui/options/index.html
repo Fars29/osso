@@ -104,6 +104,34 @@
             </label>
             <ul class="rule-list" id="rule-list" hidden></ul>
           </div>
+
+          <div class="row row-rules">
+            <label class="row-label" for="mark">
+              Highlight<small class="muted">Things to mark on every page, in your own words. Osso finds the sentences that mention them, then the words inside: a marked sentence is never struck. Each term is a second look at the page, so a handful is plenty.</small>
+            </label>
+            <label class="rule-field" for="mark">
+              <span class="rule-prefix muted">highlight</span>
+              <input class="rule-input" id="mark" type="text" placeholder="candidate names" />
+            </label>
+            <ul class="rule-list" id="mark-list" hidden></ul>
+          </div>
+
+          <div class="row">
+            <span class="row-label">Marker colour<small class="muted">What a highlight is painted with. The ink over it is chosen for contrast, so any colour stays readable.</small></span>
+            <span class="swatch"><input type="color" id="markColor" aria-label="Marker colour" /></span>
+          </div>
+
+          <div class="row">
+            <span class="row-label" id="fade-label">Struck text<small class="muted">Auto reads each page and picks a grey that shows against its own background. Pick a colour if you would rather choose.</small></span>
+            <div class="fade-choice">
+              <div class="segmented segmented-2" id="fadeMode" role="radiogroup" aria-labelledby="fade-label">
+                <i class="segmented-thumb" aria-hidden="true"></i>
+                <label><input type="radio" name="fadeMode" value="auto" /><span>Auto</span></label>
+                <label><input type="radio" name="fadeMode" value="custom" /><span>Pick</span></label>
+              </div>
+              <span class="swatch"><input type="color" id="fadeColor" aria-label="Colour of struck text" /></span>
+            </div>
+          </div>
         </div>
       </section>
 

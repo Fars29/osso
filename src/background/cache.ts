@@ -6,7 +6,7 @@
  * Recency is a counter carried in the index rather than Date.now: two puts in the same
  * millisecond would otherwise tie, and tests could not pin the eviction order.
  */
-import type { PageJudgment, RuleResults } from "../shared/types.ts";
+import type { HighlightSpans, PageJudgment, RuleResults } from "../shared/types.ts";
 import { CACHE_MAX_PAGES } from "../shared/constants.ts";
 
 export const CACHE_PREFIX = "osso:cache:";
@@ -109,6 +109,18 @@ export function putCached(contentHash: string, judgment: PageJudgment): Promise<
  * only one, and the next load judges the rule again. No index touch: merging is not a read of
  * the page.
  */
+export function mergeHighlights(contentHash: string, spans: HighlightSpans): Promise<boolean> {
+  const key = keyFor(contentHash);
+  return serialized(async () => {
+    const got = await chrome.storage.local.get(key);
+    const stored = got[key];
+    if (!isJudgment(stored)) return false;
+    const merged: PageJudgment = { ...stored, spans: { ...stored.spans, ...spans } };
+    await chrome.storage.local.set({ [key]: merged });
+    return true;
+  });
+}
+
 export function mergeRules(contentHash: string, rules: RuleResults): Promise<boolean> {
   const key = keyFor(contentHash);
   return serialized(async () => {

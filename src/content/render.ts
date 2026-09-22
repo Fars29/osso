@@ -7,7 +7,7 @@
  * each judged block carries `data-osso-block`. We add classes, custom properties and one chip; we
  * never unwrap.
  */
-import type { PageJudgment, RevealKey, RuleResults, SentenceJudgment } from "../shared/types.ts";
+import type { HighlightSpans, PageJudgment, RevealKey, RuleResults, SentenceJudgment } from "../shared/types.ts";
 import { RULE_THRESHOLD, SENTENCE_KINDS } from "../shared/constants.ts";
 
 export interface Counts {
@@ -111,6 +111,14 @@ interface DocState {
   chip: HTMLElement | null;
   /** Every rule result this page has seen, active or not: removing a rule and adding it back costs nothing. */
   rules: RuleResults;
+  /** Every highlight this page has seen, and the terms in force, in the reader's order. */
+  marks: HighlightSpans;
+  activeTerms: string[];
+  /** Sentence id → the first active term that marks it. A marked sentence is never faded. */
+  marked: Map<number, string>;
+  /** The colours the reader chose: the marker, the ink over it, and a grey to use instead of the one picked per block. */
+  markColor: string;
+  fadeColor: string;
   /** The rules in force, in the user's order; the first that hits a sentence is the one the chip names. */
   activeRules: string[];
   /** Rule hits already shown, as `rule\u0000id`; only a hit not in here gets the underline. */
@@ -140,6 +148,11 @@ function stateOf(doc: Document): DocState {
       chip: null,
       rules: {},
       activeRules: [],
+      marks: {},
+      activeTerms: [],
+      marked: new Map(),
+      markColor: "",
+      fadeColor: "",
       seenHits: new Set(),
       hitSpans: new Set(),
       hitTimer: null,
@@ -209,7 +222,7 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
     const j = state.judgment.get(id);
     if (!j || state.failed.has(id)) continue;
     total++;
-    const fade = j.keep < state.threshold && ruleKeeping(state, id) === null;
+    const fade = j.keep < state.threshold && ruleKeeping(state, id) === null && !state.marked.has(id);
     const pinned = state.pinned.has(id);
     decided.push({ spans, fade, pinned });
     if (fade && !pinned) faded++;
@@ -603,8 +616,32 @@ function inkOf(el: Element, win: Window): RGB | null {
   }
 }
 
+/** #rrggbb to its three numbers; anything else is nothing. */
+function fromHex(hex: string): RGB | null {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1]!, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+/**
+ * The marker's colour on the root, with an ink chosen for it rather than by the page: a reader who
+ * picks a dark marker still reads what is under it, on any site.
+ */
+function paintMarkColour(doc: Document, markColor: string) {
+  const root = doc.documentElement;
+  const rgb = fromHex(markColor);
+  if (!rgb) {
+    dropProperty(root, "--osso-mark");
+    dropProperty(root, "--osso-mark-ink");
+    return;
+  }
+  root.style.setProperty("--osso-mark", markColor);
+  root.style.setProperty("--osso-mark-ink", luminance(rgb) > 0.42 ? "#161616" : "#ffffff");
+}
+
 /** Reads every block's background and ink first, then writes each block's grey: no interleaved layout thrash. */
-function paintBlocks(doc: Document) {
+function paintBlocks(doc: Document, fade: string) {
   const win = doc.defaultView;
   // Only blocks not painted yet: a chunk landing mid-wash must not re-read every paragraph on the page.
   const blocks = Array.from(doc.querySelectorAll<HTMLElement>(BLOCK)).filter((b) => b.style.getPropertyValue("--osso-grey") === "");
@@ -614,7 +651,7 @@ function paintBlocks(doc: Document) {
   blocks.forEach((b, i) => {
     const bg = bgs[i]!;
     const ink = inks[i];
-    b.style.setProperty("--osso-grey", ink ? pickGrey(bg, ink) : pickGrey(bg));
+    b.style.setProperty("--osso-grey", fade || (ink ? pickGrey(bg, ink) : pickGrey(bg)));
     if (ink) b.style.setProperty("--osso-ink", `rgb(${ink.r}, ${ink.g}, ${ink.b})`);
     b.classList.toggle("osso-dark", luminance(bg) < LIGHT_LUMINANCE);
   });
@@ -623,7 +660,7 @@ function paintBlocks(doc: Document) {
 export function applyJudgment(
   doc: Document,
   judgment: PageJudgment,
-  opts: { threshold: number; animations: boolean; strike?: boolean },
+  opts: { threshold: number; animations: boolean; strike?: boolean; markColor?: string; fadeColor?: string },
 ): Counts {
   const state = stateOf(doc);
   // Merge rather than replace: a later apply may carry only the sentences a mutation added, and a
@@ -636,13 +673,16 @@ export function applyJudgment(
   for (const id of judgment.failedIds) if (!judgedNow.has(id)) state.failed.add(id);
   state.threshold = opts.threshold;
   state.animations = opts.animations;
+  state.markColor = opts.markColor ?? "";
+  state.fadeColor = opts.fadeColor ?? "";
 
   const root = doc.documentElement;
   const wave = opts.animations && !prefersReducedMotion(doc);
 
   // Reads. The forced layout also gives freshly wrapped spans a "before" style, without which the
   // browser would jump straight to grey instead of transitioning.
-  paintBlocks(doc);
+  paintBlocks(doc, state.fadeColor);
+  paintMarkColour(doc, state.markColor);
   void root.getBoundingClientRect();
 
   // Writes.
@@ -793,17 +833,18 @@ function chipOf(doc: Document, state: DocState): HTMLElement {
  * An earlier chip put the kind beside p(keep) as a row of dots, and it read as a contradiction:
  * "fact", one dot lit. A fact can be true and beside the point; the reader asks why it is grey.
  */
-function chipContent(doc: Document, j: SentenceJudgment, pinned: boolean, rule: string | null): Node[] {
+function chipContent(doc: Document, j: SentenceJudgment, pinned: boolean, rule: string | null, mark: string | null): Node[] {
   const label = doc.createElement("span");
   label.className = "osso-chip-label";
   label.textContent = rule !== null ? `kept by ${rule}` : pinned ? "pinned" : reasonWord(j);
+  if (rule === null && !pinned && mark !== null) label.textContent = mark;
   return [label];
 }
 
 /** Only a sentence with something to explain gets a chip: grey, pinned back, or kept by a rule. Ink needs no note, and neither does a sentence still waiting for its front. */
 function explained(state: DocState, span: HTMLElement, id: number): boolean {
   if (span.classList.contains("osso-wait")) return false;
-  return span.classList.contains("osso-fade") || span.classList.contains("osso-pin") || ruleKeeping(state, id) !== null;
+  return span.classList.contains("osso-fade") || span.classList.contains("osso-pin") || ruleKeeping(state, id) !== null || state.marked.has(id);
 }
 
 interface Point {
@@ -883,7 +924,7 @@ function showChip(doc: Document, state: DocState, span: HTMLElement, id: number,
   if (!rect) return;
   const block = span.closest<HTMLElement>(BLOCK);
   const chip = chipOf(doc, state);
-  chip.replaceChildren(...chipContent(doc, j, state.pinned.has(id), ruleKeeping(state, id)));
+  chip.replaceChildren(...chipContent(doc, j, state.pinned.has(id), ruleKeeping(state, id), state.marked.get(id) ?? null));
   chip.classList.toggle("osso-chip-on-dark", block?.classList.contains("osso-dark") ?? false);
 
   // Reads, then writes. Measuring the chip here also flushes its style so the show transition plays.
@@ -1068,10 +1109,13 @@ export function clearRender(doc: Document): void {
     releaseWaiting(state);
     if (state.instantTimer) clearTimeout(state.instantTimer);
     if (state.hitTimer) clearTimeout(state.hitTimer);
+    highlightApi(doc.defaultView)?.css.highlights.delete(MARK_REGISTRY);
     state.chip?.remove();
     states.delete(doc);
   }
   doc.documentElement.classList.remove("osso-on", "osso-reveal", "osso-instant", "osso-settled", "osso-still", "osso-strike");
+  dropProperty(doc.documentElement, "--osso-mark");
+  dropProperty(doc.documentElement, "--osso-mark-ink");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
     s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe", "osso-wait", "osso-arrive");
     for (const name of WAVE_PROPERTIES) dropProperty(s, name);
@@ -1083,4 +1127,135 @@ export function clearRender(doc: Document): void {
     b.classList.remove("osso-dark");
   }
   for (const chip of doc.querySelectorAll(".osso-chip")) chip.remove();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The marker: where a highlight term was found, painted over the page without touching it
+
+/** The registry name the stylesheet paints (`::highlight(osso-mark)`). */
+const MARK_REGISTRY = "osso-mark";
+
+interface HighlightApi {
+  highlights: { set(name: string, value: unknown): void; delete(name: string): void };
+}
+
+/** The browser's Custom Highlight API, when it has one: it paints ranges with no element of ours in the page at all. */
+function highlightApi(win: Window | null): { css: HighlightApi; make: (ranges: Range[]) => unknown } | null {
+  const css = (win as unknown as { CSS?: HighlightApi })?.CSS;
+  const ctor = (win as unknown as { Highlight?: new (...ranges: Range[]) => unknown })?.Highlight;
+  if (!css?.highlights || typeof ctor !== "function") return null;
+  return { css, make: (ranges) => new ctor(...ranges) };
+}
+
+/**
+ * The text of a sentence as the model saw it, and where each of its characters lives in the page.
+ * The model was given whitespace collapsed to single spaces, so the same is rebuilt here and every
+ * character keeps a finger on the text node it came from; a mark is then a Range over those nodes.
+ */
+function charMap(spans: HTMLElement[]): { text: string; at: Array<{ node: Text; offset: number }> } {
+  let text = "";
+  const at: Array<{ node: Text; offset: number }> = [];
+  let gap = false;
+  for (const span of spans) {
+    const doc = span.ownerDocument;
+    const walker = doc.createTreeWalker(span, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+      const data = node.data;
+      for (let i = 0; i < data.length; i++) {
+        const ch = data[i]!;
+        if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === " ") {
+          gap = text.length > 0;
+          continue;
+        }
+        if (gap) {
+          text += " ";
+          at.push({ node, offset: i });
+          gap = false;
+        }
+        text += ch;
+        at.push({ node, offset: i });
+      }
+    }
+  }
+  return { text, at };
+}
+
+/**
+ * Turns [start, end) offsets into the sentence's own text into Ranges over the page. A run-in label
+ * goes to the model with its sentence but is never wrapped, so what the page holds can be a tail of
+ * what the model read: the two are lined up by looking for one inside the other, and a sentence
+ * that cannot be lined up is left unmarked rather than marked in the wrong place.
+ */
+function rangesFor(doc: Document, spans: HTMLElement[], sentence: string, ranges: [number, number][]): Range[] {
+  const { text, at } = charMap(spans);
+  if (text.length === 0) return [];
+  const shift = sentence.indexOf(text);
+  if (shift < 0) return [];
+  const out: Range[] = [];
+  for (const [from, to] of ranges) {
+    const a = from - shift;
+    const b = to - shift;
+    if (a < 0 || b > at.length || b <= a) continue;
+    const start = at[a]!;
+    const end = at[b - 1]!;
+    const range = doc.createRange();
+    try {
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset + 1);
+    } catch {
+      continue;
+    }
+    out.push(range);
+  }
+  return out;
+}
+
+/**
+ * What the reader asked to see, marked on the page. A sentence that carries a mark is never faded:
+ * asking to see something and then greying it would be two answers to one question.
+ */
+export function applyHighlights(doc: Document, spans: HighlightSpans, activeTerms: string[], sentences: Map<number, string>): Counts {
+  const state = stateOf(doc);
+  for (const [term, byId] of Object.entries(spans)) state.marks[term] = { ...state.marks[term], ...byId };
+  state.activeTerms = [...activeTerms];
+  paintMarks(doc, state, sentences);
+  return state.entrances > 0 ? render(doc, state, false) : renderInstant(doc, state);
+}
+
+/** Rebuilds the marked ids and hands the browser the ranges to paint. Reads the page, writes nothing into it. */
+function paintMarks(doc: Document, state: DocState, sentences: Map<number, string>) {
+  const api = highlightApi(doc.defaultView);
+  const byId = spansById(doc);
+  const marked = new Map<number, string>();
+  const ranges: Range[] = [];
+  for (const term of state.activeTerms) {
+    for (const [id, offsets] of Object.entries(state.marks[term] ?? {})) {
+      const key = Number(id);
+      const wrappers = byId.get(key);
+      const text = sentences.get(key);
+      if (!wrappers || !text || offsets.length === 0) continue;
+      if (!marked.has(key)) marked.set(key, term);
+      if (api) ranges.push(...rangesFor(doc, wrappers, text, offsets));
+    }
+  }
+  state.marked = marked;
+  if (!api) return;
+  if (ranges.length === 0) api.css.highlights.delete(MARK_REGISTRY);
+  else api.css.highlights.set(MARK_REGISTRY, api.make(ranges));
+}
+
+/** How many stretches each active term marks on this page: what the popup counts under the field. */
+export function markHits(doc: Document): Record<string, number> {
+  const out: Record<string, number> = {};
+  const state = states.get(doc);
+  if (!state) return out;
+  const present = spansById(doc);
+  for (const term of state.activeTerms) {
+    const byId = state.marks[term];
+    if (!byId) continue;
+    let n = 0;
+    for (const [id, offsets] of Object.entries(byId)) if (present.has(Number(id))) n += offsets.length;
+    out[term] = n;
+  }
+  return out;
 }
