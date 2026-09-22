@@ -6,6 +6,13 @@ body {
   overflow: hidden;
 }
 
+/* Chrome stops a popup at 600 px; a reader with many rules can go past it. The scrollbar that
+   then appears is a hairline in the page's own grey, not the system's slab. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--grey) transparent;
+}
+
 .popup {
   display: flex;
   flex-direction: column;
@@ -137,20 +144,18 @@ body {
   min-height: 1.45em;
 }
 
-/* The second figure: what the highlight terms found. A step down from the first, divided from it by
-   a hairline, its bar in the marker's own colour so it reads as the marker's before a word is read. */
-.marks {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+/* With a highlight term the page has two figures of one shape, side by side at one size: sentences
+   kept, sentences highlighted. Each keeps its own bar and its own cost, so neither is a footnote. */
+.count.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
 }
 
-.big.small {
-  font-size: 30px;
-}
-
-.mark-bone {
-  margin-top: 10px;
+/* A page past a thousand sentences is wider than a column: its total steps under the number. */
+.count.pair .figure {
+  flex-wrap: wrap;
+  row-gap: 0;
 }
 
 .mark-bone i {

@@ -30,18 +30,21 @@
 
       <section class="hero" aria-live="polite">
         <div class="count" id="v-count">
-          <p class="figure">
-            <span class="big" id="kept">…</span><span class="of" id="total"></span>
-          </p>
-          <p class="caption" id="caption">sentences kept</p>
-          <div class="bone" aria-hidden="true"><i id="bone"></i></div>
-          <p class="status muted" id="status"></p>
-
-          <!-- What the highlight terms found: the same figure, smaller, in the marker's colour. -->
-          <div class="marks" id="v-marks" hidden>
+          <div class="stat">
             <p class="figure">
-              <span class="big small" id="marks">…</span><span class="of" id="marks-of">highlighted</span>
+              <span class="big" id="kept">…</span><span class="of" id="total"></span>
             </p>
+            <p class="caption" id="caption">sentences kept</p>
+            <div class="bone" aria-hidden="true"><i id="bone"></i></div>
+            <p class="status muted" id="status"></p>
+          </div>
+
+          <!-- What the highlight terms found, in the same shape beside it: its bar is the marker's colour. -->
+          <div class="stat marks" id="v-marks" hidden>
+            <p class="figure">
+              <span class="big" id="marks">…</span><span class="of" id="marks-of"></span>
+            </p>
+            <p class="caption">highlighted</p>
             <div class="bone mark-bone" aria-hidden="true"><i id="mark-bone"></i></div>
             <p class="status muted" id="marks-status"></p>
           </div>

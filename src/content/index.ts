@@ -88,6 +88,9 @@ interface Mounted {
   /** Every highlight this view has, and the terms last painted, so a term unchanged is not asked again. */
   markResults: HighlightSpans;
   appliedTerms: string[];
+  /** What finding those marks cost on this page view, for the popup. */
+  markTokens: number;
+  markMs: number;
   /** Sentence id → its text, which a mark needs to line its offsets up with the page. */
   sentenceText: Map<number, string>;
   /** The rules last painted, so a settings change that left them alone repaints nothing. */
@@ -166,7 +169,14 @@ function report(patch: Partial<TabState>, reason?: string): void {
 
 /** Counts as the popup wants them: the numbers, plus what each rule keeps. */
 function tally(c: Counts): Partial<TabState> {
-  return { ...c, ruleHits: ruleHits(document), markHits: readMarkHits(document), markedSentences: markedCount(document) };
+  return {
+    ...c,
+    ruleHits: ruleHits(document),
+    markHits: readMarkHits(document),
+    markedSentences: markedCount(document),
+    markTokens: mounted?.markTokens ?? 0,
+    markMs: mounted?.markMs ?? 0,
+  };
 }
 
 function reasonOf(reply: FromBackground | null): string {
@@ -328,6 +338,8 @@ function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeR
     applied: [...s.rules],
     markResults: {},
     appliedTerms: [],
+    markTokens: 0,
+    markMs: 0,
     sentenceText: new Map(req.sentences.map((x) => [x.id, x.text])),
     outsideChars: Math.max(0, textLength(document.body) - textLength(container)),
     uninstall: interactions(s),
@@ -435,7 +447,11 @@ async function syncHighlights(): Promise<void> {
       reply = await ask({ type: "judgeHighlights", contentHash: m.req.contentHash, terms: missing });
       if (gen !== generation) return;
     }
-    if (reply?.type === "highlightJudgment") Object.assign(m.markResults, reply.spans);
+    if (reply?.type === "highlightJudgment") {
+      Object.assign(m.markResults, reply.spans);
+      m.markTokens += reply.inputTokens ?? 0;
+      m.markMs += reply.ms ?? 0;
+    }
   }
   paintMarks(m);
 }

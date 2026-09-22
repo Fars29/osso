@@ -161,6 +161,9 @@ export interface TabState {
   markHits?: Record<string, number>;
   /** Sentences on this page that carry at least one mark, whatever the term. */
   markedSentences?: number;
+  /** What finding the marks has cost on this page view, in tokens and model time; 0 when they came from the cache. */
+  markTokens?: number;
+  markMs?: number;
   /** The reader marked this site "always": in run mode `click` it is read as it loads. */
   always?: boolean;
   /** The page is longer than MAX_SENTENCES_PER_PAGE: only its beginning was judged, the rest is left in ink. */
@@ -191,7 +194,8 @@ export type FromBackground =
   | { type: "hostEnabled"; enabled: boolean; always: boolean }
   | { type: "judgment"; judgment: PageJudgment }
   | { type: "ruleJudgment"; contentHash: string; rules: RuleResults }
-  | { type: "highlightJudgment"; contentHash: string; spans: HighlightSpans }
+  /** `inputTokens` and `ms` are what this answer cost the model now: 0 when it came from memory or the cache. */
+  | { type: "highlightJudgment"; contentHash: string; spans: HighlightSpans; inputTokens?: number; ms?: number }
   | { type: "tabState"; state: TabState | null }
   | { type: "keyTest"; ok: boolean; error?: string; ms?: number }
   | { type: "ok" }

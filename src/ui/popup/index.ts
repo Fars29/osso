@@ -54,6 +54,7 @@ const ui = {
   markList: el<HTMLUListElement>("mark-list"),
   marks: el<HTMLElement>("v-marks"),
   markCount: el<HTMLElement>("marks"),
+  markOf: el<HTMLElement>("marks-of"),
   markBone: el<HTMLElement>("mark-bone"),
   markStatus: el<HTMLElement>("marks-status"),
   count: el<HTMLDivElement>("v-count"),
@@ -114,20 +115,22 @@ const markField = ruleField(ui.mark, {
 
 // ---- formatting -----------------------------------------------------------
 
+/** Four places, because a highlight costs a few hundredths of a cent and should still read as a price. */
 function formatCost(inputTokens: number): string {
   const usd = inputTokens * USD_PER_INPUT_TOKEN;
-  return usd < 0.001 ? "< $0.001" : `$${usd.toFixed(4)}`;
+  return usd < 0.0001 ? "< $0.0001" : `≈ $${usd.toFixed(4)}`;
 }
 
 function formatSeconds(ms: number): string {
   return `${(Math.max(ms, 50) / 1000).toFixed(1)} s`;
 }
 
-function statusLine(s: TabState): string {
+/** `short` when the figure shares the row with the highlight one: the column is half as wide, the verb goes. */
+function statusLine(s: TabState, short = false): string {
   // A very long page is judged from the top down to the cap and no further: the reader is told, since the rest is in ink for that reason and no other.
   const long = s.capped ? ` · long page, first ${s.total.toLocaleString("en-US")} sentences` : "";
   if (s.cached) return `from cache${long}`;
-  return `judged in ${formatSeconds(s.ms)} · ≈ ${formatCost(s.inputTokens)}${long}`;
+  return `${short ? "" : "judged in "}${formatSeconds(s.ms)} · ${formatCost(s.inputTokens)}${long}`;
 }
 
 // ---- the big number -------------------------------------------------------
@@ -164,7 +167,10 @@ function countTo(target: number) {
 function show(view: View) {
   ui.root.dataset.state = view;
   // The second figure belongs to a judged page; every other view starts without it.
-  if (view !== "done") ui.marks.hidden = true;
+  if (view !== "done") {
+    ui.marks.hidden = true;
+    ui.count.classList.remove("pair");
+  }
   const numeric = view === "done" || view === "judging" || view === "idle" || view === "loading";
   ui.count.hidden = !numeric;
   ui.note.hidden = numeric;
@@ -243,40 +249,40 @@ function renderChip(s: TabState | null) {
 }
 
 /**
- * The second figure: how many things the highlight terms marked, and in how many of the page's
- * sentences. Shown only while there is a term to count for; "…" until the page has answered.
+ * The second figure, in the shape of the first and beside it: how many of the page's sentences the
+ * highlight terms marked, a bar in the marker's colour, and what finding them cost. The chips say
+ * how many things each term marked. Shown only while there is a term; "…" until every term is answered.
  */
 function renderMarks(s: TabState | null) {
   const terms = model.settings.highlights;
   const on = !!s && terms.length > 0 && (s.status === "done" || s.status === "judging");
   ui.marks.hidden = !on;
+  ui.count.classList.toggle("pair", on);
   if (!on || !s) return;
   ui.markBone.style.setProperty("--mark", model.settings.markColor);
-  const counted = terms.filter((t) => typeof s.markHits?.[t] === "number");
-  if (counted.length < terms.length) {
+  const answered = terms.every((t) => typeof s.markHits?.[t] === "number");
+  ui.markCount.classList.toggle("pulse", !answered);
+  if (!answered) {
     ui.markCount.textContent = "…";
-    ui.markCount.classList.add("pulse");
-    ui.markStatus.textContent = counted.length === 0 ? "looking…" : "";
-    if (counted.length === 0) {
-      ui.markBone.style.width = "0%";
-      return;
-    }
-  } else {
-    ui.markCount.classList.remove("pulse");
+    ui.markOf.textContent = "";
+    ui.markStatus.textContent = "looking…";
+    return;
   }
-  const marks = counted.reduce((n, t) => n + (s.markHits?.[t] ?? 0), 0);
   const sentences = s.markedSentences ?? 0;
-  if (counted.length === terms.length) ui.markCount.textContent = String(marks);
+  const things = terms.reduce((n, t) => n + (s.markHits?.[t] ?? 0), 0);
+  ui.markCount.textContent = String(sentences);
+  ui.markOf.textContent = `/ ${s.total}`;
   ui.markBone.style.width = s.total > 0 ? `${(100 * sentences) / s.total}%` : "0%";
-  ui.markStatus.textContent =
-    marks === 0 ? "nothing on this page" : `in ${sentences} of ${s.total} ${s.total === 1 ? "sentence" : "sentences"}`;
+  const tokens = s.markTokens ?? 0;
+  ui.markStatus.textContent = tokens === 0 ? "from cache" : `${formatSeconds(s.markMs ?? 0)} · ${formatCost(tokens)}`;
+  ui.marks.title = `${things} ${things === 1 ? "thing" : "things"} highlighted in ${sentences} of ${s.total} sentences`;
 }
 
 function renderNumbers(s: TabState) {
   ui.total.textContent = `/ ${s.total}`;
   ui.caption.textContent = s.kept === 1 ? "sentence kept" : "sentences kept";
   ui.bone.style.width = s.total > 0 ? `${(100 * s.kept) / s.total}%` : "0%";
-  ui.status.textContent = statusLine(s);
+  ui.status.textContent = statusLine(s, ui.count.classList.contains("pair"));
   countTo(s.kept);
 }
 
@@ -361,8 +367,9 @@ function render() {
       return;
     case "done":
       show("done");
-      renderNumbers(s);
+      // The highlight figure first: whether it is there decides how much room the first one has.
       renderMarks(s);
+      renderNumbers(s);
       return;
   }
 }

@@ -441,23 +441,44 @@ describe("a worker older than the page asking it", () => {
 });
 
 describe("popup: what the highlights found", () => {
-  it("shows how many things were highlighted, and in how many sentences", async () => {
-    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] }, { ...done, markHits: { consequences: 13 }, markedSentences: 5 });
+  it("stands beside the first figure, in its shape and at its size: sentences highlighted, and what finding them cost", async () => {
+    scriptBackground(
+      { ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] },
+      { ...done, markHits: { consequences: 13 }, markedSentences: 5, markTokens: 20_000, markMs: 1_830 },
+    );
     await openPopup();
     expect(visible("v-marks")).toBe(true);
-    expect(text("marks")).toBe("13");
-    expect(text("marks-of")).toBe("highlighted");
-    expect(text("marks-status")).toBe("in 5 of 41 sentences");
+    expect(document.getElementById("v-count")!.classList.contains("pair")).toBe(true);
+    expect(document.getElementById("marks")!.className).toBe(document.getElementById("kept")!.className.replace(/\s*changed/, ""));
+    expect(text("marks")).toBe("5");
+    expect(text("marks-of")).toBe("/ 41");
+    expect(text("marks-status")).toBe("1.8 s · ≈ $0.0008");
+    // Half as wide, the first figure's line loses its verb and keeps its numbers.
+    expect(text("status")).toBe("0.9 s · ≈ $0.0012");
     const bar = document.getElementById("mark-bone")!;
     expect(bar.style.width).toBe(`${(100 * 5) / 41}%`);
     expect(bar.style.getPropertyValue("--mark")).toBe(DEFAULT_SETTINGS.markColor);
+    expect(document.getElementById("v-marks")!.title).toBe("13 things highlighted in 5 of 41 sentences");
   });
 
-  it("says so plainly when a term found nothing", async () => {
-    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] }, { ...done, markHits: { consequences: 0 }, markedSentences: 0 });
+  it("says from cache when finding the marks cost nothing this time", async () => {
+    scriptBackground(
+      { ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] },
+      { ...done, markHits: { consequences: 13 }, markedSentences: 5, markTokens: 0, markMs: 0 },
+    );
+    await openPopup();
+    expect(text("marks-status")).toBe("from cache");
+  });
+
+  it("counts a term that found nothing as zero of the page, and still says what it cost", async () => {
+    scriptBackground(
+      { ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] },
+      { ...done, markHits: { consequences: 0 }, markedSentences: 0, markTokens: 6_000, markMs: 310 },
+    );
     await openPopup();
     expect(text("marks")).toBe("0");
-    expect(text("marks-status")).toBe("nothing on this page");
+    expect(text("marks-of")).toBe("/ 41");
+    expect(text("marks-status")).toBe("0.3 s · ≈ $0.0003");
   });
 
   it("waits with an ellipsis while the page is still looking", async () => {
@@ -467,9 +488,11 @@ describe("popup: what the highlights found", () => {
     expect(text("marks-status")).toBe("looking…");
   });
 
-  it("is not there at all without a highlight term", async () => {
+  it("is not there at all without a highlight term, and the first figure has the row to itself", async () => {
     scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x" }, done);
     await openPopup();
     expect(visible("v-marks")).toBe(false);
+    expect(document.getElementById("v-count")!.classList.contains("pair")).toBe(false);
+    expect(text("status")).toBe("judged in 0.9 s · ≈ $0.0012");
   });
 });

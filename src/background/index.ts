@@ -228,6 +228,7 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
   if (!entry) return { type: "error", code: "unknown-page", error: "This page has not been judged yet" };
   const terms = normalizeHighlights(asked);
   const missing = terms.filter((t) => !Object.prototype.hasOwnProperty.call(entry.spans, t));
+  let spent = { inputTokens: 0, ms: 0 };
   if (missing.length > 0) {
     const settings = await getSettings();
     if (!settings.apiKey) return { type: "error", code: "no-key", error: "No API key" };
@@ -243,6 +244,7 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
       return { type: "error", code: relayCode(e.code), error: e.message };
     }
     Object.assign(entry.spans, result.spans);
+    spent = { inputTokens: result.inputTokens, ms: result.ms };
     const fullPage = entry.req.sentences[0]?.id === 0;
     if (fullPage && result.chunkErrors.length === 0) await bestEffort(() => mergeHighlights(contentHash, result.spans));
     await bestEffort(() => addStats({ inputTokens: result.inputTokens }));
@@ -252,7 +254,7 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
     const byId = entry.spans[t];
     if (byId) out[t] = byId;
   }
-  return { type: "highlightJudgment", contentHash, spans: out };
+  return { type: "highlightJudgment", contentHash, spans: out, ...spent };
 }
 
 /**

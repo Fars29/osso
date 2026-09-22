@@ -545,7 +545,9 @@ describe("highlights", () => {
     await send({ type: "setSettings", patch: { apiKey: "ts-secret" } });
     await send({ type: "judge", req: request(sents(12), "hash-hl") }, PAGE);
     const first = await send({ type: "judgeHighlights", contentHash: "hash-hl", terms: ["ingredients"] }, PAGE);
-    expect(first).toEqual({ type: "highlightJudgment", contentHash: "hash-hl", spans: { ingredients: { 2: [[0, 8]] } } });
+    expect(first).toMatchObject({ type: "highlightJudgment", contentHash: "hash-hl", spans: { ingredients: { 2: [[0, 8]] } } });
+    // What it cost comes back with it, for the popup: the mock bills 30 tokens a request.
+    if (first.type === "highlightJudgment") expect(first.inputTokens).toBeGreaterThanOrEqual(60);
     const asked = fetchMock.mock.calls.length;
     expect(asked).toBeGreaterThan(1);
 
@@ -553,7 +555,7 @@ describe("highlights", () => {
     forgetRecentPages();
     expect(await send({ type: "judge", req: request(sents(12), "hash-hl") }, PAGE)).toMatchObject({ judgment: { cached: true } });
     const again = await send({ type: "judgeHighlights", contentHash: "hash-hl", terms: ["ingredients"] }, PAGE);
-    expect(again).toEqual(first);
+    expect(again).toEqual({ ...first, inputTokens: 0, ms: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(asked);
   });
 
