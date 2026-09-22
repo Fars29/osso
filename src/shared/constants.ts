@@ -61,9 +61,9 @@ export const MAX_HIGHLIGHTS = 3;
  * a second visit costs nothing, but marks found by an older question are an older answer: bump this
  * whenever HIGHLIGHT_QUESTION or the rules that turn answers into marks change, and those pages are
  * asked again. (2: the question asks what the thing is, not whether the word is the thing. 3: a
- * term a sentence states is marked as its whole sentences.)
+ * term a sentence states is marked as its whole sentences. 4: in a long sentence, as its clauses.)
  */
-export const HIGHLIGHT_VERSION = 3;
+export const HIGHLIGHT_VERSION = 4;
 export const MAX_HIGHLIGHT_LENGTH = 80;
 export const HIGHLIGHT_THRESHOLD = 0.5;
 /**
@@ -101,7 +101,21 @@ export const HIGHLIGHT_QUESTION = {
   wordInstructions: (word: string, term: string) => `In the sentence, does «${word}» belong to the words that say what the «${term}» is?`,
   wordTrue: (word: string, term: string) => `Yes: «${word}» is one of the words carrying the «${term}» itself.`,
   wordFalse: (word: string, term: string) => `No: «${word}» only names or introduces the «${term}», or belongs to something else in the sentence.`,
+  clauseInstructions: (clause: string, term: string) => `In the sentence, does the part «${clause}» say what a «${term}» is?`,
+  clauseTrue: (term: string) => `Yes: this part states a «${term}», or part of one.`,
+  clauseFalse: (term: string) => `No: this part only introduces the «${term}», or says something else.`,
 } as const;
+
+/**
+ * A sentence longer than this is cut into clauses for a term a sentence states, and only the clauses
+ * that say it are marked; a shorter one is marked whole. Measured on 44 hand-labelled ideas
+ * (consequences, risks, benefits, problems) in a news report and two encyclopedia articles: the
+ * whole sentence left 59% of the yellow on words that did not say the thing, clauses 43%, and both
+ * found all 44. Clauses keep the best one of each sentence, since round one already said it is there.
+ */
+export const HIGHLIGHT_CLAUSE_MIN_WORDS = 20;
+/** A piece under this many words joins a neighbour: a clause says something on its own. */
+export const HIGHLIGHT_CLAUSE_MERGE_WORDS = 5;
 
 /**
  * Whether a term is marked in words or as whole sentences. A name, an amount or an ingredient is a

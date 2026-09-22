@@ -257,8 +257,7 @@ async function judgeHighlightsFor(contentHash: string, asked: string[]): Promise
     const byId = entry.spans[t];
     if (byId) out[t] = byId;
   }
-  const units = await knownUnits(terms).catch(() => ({}));
-  return { type: "highlightJudgment", contentHash, spans: out, units, ...spent };
+  return { type: "highlightJudgment", contentHash, spans: out, ...spent };
 }
 
 /**

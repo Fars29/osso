@@ -37,7 +37,7 @@ Free and open source, and it runs on a key of your own: no account, no server, n
 | **Click** a struck sentence | Pins it back for this visit. |
 | **The slider** | How strict, from gentle to bare. Instant, no new request. |
 | **keep …** | What to always keep, in your own words: *prices*, *deadlines*, *allergens*. |
-| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *consequences*. Osso looks for the thing, not the word: a name is marked on its own, a consequence with its whole sentence. A marked sentence is never struck. |
+| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *consequences*. Osso looks for the thing, not the word: a name is marked on its own, a consequence with the part of the sentence that says it. A marked sentence is never struck. |
 | **On this site** | Turns Osso off for a site. **Alt+Shift+O** does the same. |
 
 ![The popup after a page is judged](docs/screenshots/popup-done.png)
@@ -52,7 +52,7 @@ Osso stays out of the way where a page is your workspace rather than someone's w
 
 The page's main text is split into sentences; headings, labels, tables, code and navigation are never touched. Each sentence goes to Jev with its neighbours as context and comes back with the probability that it carries what the reader came for. Below the slider, it fades. Each batch is painted as it arrives, and what is further down waits until you scroll to it, so you watch it go.
 
-A highlight first asks which sentences mention the thing. Something a few words name (a person, an amount, an ingredient) is then marked word by word; something a sentence states (a consequence, a reason, a risk) is marked as the whole sentence. It looks for the thing, not for the word: ask for *consequences* and it marks the sentences that say what follows, on a page where that word never appears.
+A highlight first asks which sentences mention the thing. Something a few words name (a person, an amount, an ingredient) is then marked word by word; something a sentence states (a consequence, a reason, a risk) is marked as the sentence, or in a long one the clause, that says it. It looks for the thing, not for the word: ask for *consequences* and it marks the sentences that say what follows, on a page where that word never appears.
 
 On 99 hand-labelled sentences in English and Italian the question separates substance from filler with an AUC of 0.998. The question itself, the numbers, and what real pages taught us: [how it works](docs/how-it-works.md) · [calibration](docs/calibration.md).
 

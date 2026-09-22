@@ -16,6 +16,8 @@ import {
   HIGHLIGHT_FLOOR,
   HIGHLIGHT_QUESTION,
   HIGHLIGHT_STANDOUT,
+  HIGHLIGHT_CLAUSE_MERGE_WORDS,
+  HIGHLIGHT_CLAUSE_MIN_WORDS,
   HIGHLIGHT_THRESHOLD,
   HIGHLIGHT_UNIT_QUESTION,
   HIGHLIGHT_UNIT_THRESHOLD,
@@ -408,7 +410,7 @@ interface ChunkPlan<T> {
   build(chunk: SentenceInput[], index: number): unknown;
   parse(chunk: SentenceInput[], answers: Record<string, unknown>, index: number): T;
   /** What a chunk yields when its request failed after every retry. */
-  failed(chunk: SentenceInput[]): T;
+  failed(chunk: SentenceInput[], index: number): T;
   onChunk?: (result: T) => void;
 }
 
@@ -451,7 +453,7 @@ async function runPool<T>(chunks: SentenceInput[][], plan: ChunkPlan<T>, opts: O
           return;
         }
         chunkErrors.push(toChunkError(err));
-        result = plan.failed(chunk);
+        result = plan.failed(chunk, i);
       }
       results[i] = result;
       plan.onChunk?.(result);
@@ -645,10 +647,65 @@ export function stitchSpans(text: string, marked: [number, number][], asked: Wor
   }
   return out;
 }
-interface HighlightWork {
-  term: string;
-  sentence: SentenceInput;
-  words: WordSpan[];
+/** One request of round two: some words of a sentence, or the clauses of a long one. */
+type HighlightWork =
+  | { term: string; sentence: SentenceInput; words: WordSpan[]; clauses?: undefined }
+  | { term: string; sentence: SentenceInput; clauses: [number, number][]; words?: undefined };
+
+function clauseKey(j: number): string {
+  return `c${j}`;
+}
+
+const countWords = (text: string) => text.split(/\s+/).filter(Boolean).length;
+/** What a clause may start or end with and still be the clause: the space and punctuation between two are trimmed. */
+const CLAUSE_EDGE = /[\s,;:–—]/;
+
+/**
+ * The clauses of a sentence, for a term a sentence states: cut at commas, semicolons, colons and a
+ * spaced dash, a piece under HIGHLIGHT_CLAUSE_MERGE_WORDS joining the one before it (the one after,
+ * when it comes first). A sentence of HIGHLIGHT_CLAUSE_MIN_WORDS or fewer is one clause. A comma
+ * inside a number ("1,74 miliardi") has no space after it and cuts nothing.
+ */
+export function highlightClauses(text: string): [number, number][] {
+  if (countWords(text) <= HIGHLIGHT_CLAUSE_MIN_WORDS) return [[0, text.length]];
+  const cuts = [0];
+  for (const m of text.matchAll(/(?:[;:,]|\s[–—])\s+/g)) cuts.push(m.index + m[0].length);
+  cuts.push(text.length);
+  const merged: [number, number][] = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const piece: [number, number] = [cuts[i]!, cuts[i + 1]!];
+    const last = merged[merged.length - 1];
+    if (last && countWords(text.slice(...piece)) < HIGHLIGHT_CLAUSE_MERGE_WORDS) last[1] = piece[1];
+    else merged.push(piece);
+  }
+  if (merged.length > 1 && countWords(text.slice(...merged[0]!)) < HIGHLIGHT_CLAUSE_MERGE_WORDS) {
+    merged[1]![0] = merged[0]![0];
+    merged.shift();
+  }
+  return merged.map(([a, b]) => {
+    while (a < b && CLAUSE_EDGE.test(text[a]!)) a++;
+    while (b > a && CLAUSE_EDGE.test(text[b - 1]!)) b--;
+    return [a, b];
+  });
+}
+
+/**
+ * Which clauses of a sentence say the thing. Round one already found it in the sentence, so this
+ * round only finds where: the best clause is always marked, and any other at the threshold, or
+ * standing out as a word may (HIGHLIGHT_FLOOR, HIGHLIGHT_STANDOUT). Neighbours that are both marked
+ * are one mark. Measured without the best-clause rule, a fifth of the ideas went unmarked.
+ */
+export function pickClauses(text: string, clauses: [number, number][], p: number[]): [number, number][] {
+  const best = Math.max(...p);
+  const out: [number, number][] = [];
+  clauses.forEach((clause, j) => {
+    const pj = p[j]!;
+    if (!(pj >= HIGHLIGHT_THRESHOLD || pj === best || (pj >= HIGHLIGHT_FLOOR && pj >= best * HIGHLIGHT_STANDOUT))) return;
+    const last = out[out.length - 1];
+    if (last && /^[\s,;:–—]*$/.test(text.slice(last[1], clause[0]))) last[1] = clause[1];
+    else out.push([...clause]);
+  });
+  return out;
 }
 
 export interface HighlightResult {
@@ -745,7 +802,7 @@ export async function judgeHighlights(
   // A term whose unit could not be learned is marked in words this once, as it was before there was a choice.
   const unitOf = (term: string): HighlightUnit => known[term] ?? learned[term] ?? "words";
 
-  // Round two: which words, inside those sentences only.
+  // Round two, inside those sentences only: which words, or for a term a sentence states, which clauses of a long sentence.
   const byId = new Map(req.sentences.map((s) => [s.id, s]));
   const work: HighlightWork[] = [];
   for (const term of terms) {
@@ -753,9 +810,11 @@ export async function judgeHighlights(
     for (const id of ids) {
       const sentence = byId.get(id);
       if (!sentence) continue;
-      // A term a sentence states is marked as the sentence round one found: there are no words to ask about.
+      // A term a sentence states is marked as the sentence round one found, or in a long one as the clauses that state it.
       if (unitOf(term) === "sentence") {
-        spans[term]![id] = [[0, sentence.text.length]];
+        const clauses = highlightClauses(sentence.text);
+        if (clauses.length > 1) work.push({ term, sentence, clauses });
+        else spans[term]![id] = [[0, sentence.text.length]];
         continue;
       }
       const words = highlightWords(sentence.text);
@@ -779,7 +838,14 @@ export async function judgeHighlights(
     build: (_chunk, i) => {
       const w = work[i]!;
       const questions: Record<string, unknown> = {};
-      w.words.forEach((span, j) => {
+      w.clauses?.forEach(([a, b], j) => {
+        questions[clauseKey(j)] = {
+          type: "noul",
+          instructions: HIGHLIGHT_QUESTION.clauseInstructions(w.sentence.text.slice(a, b), w.term),
+          criteria: { true: HIGHLIGHT_QUESTION.clauseTrue(w.term), false: HIGHLIGHT_QUESTION.clauseFalse(w.term) },
+        };
+      });
+      w.words?.forEach((span, j) => {
         questions[wordKey(j)] = {
           type: "noul",
           instructions: HIGHLIGHT_QUESTION.wordInstructions(span.word, w.term),
@@ -789,7 +855,9 @@ export async function judgeHighlights(
       return { state: { ...highlightState([w.sentence], req.meta, pack), looking_for: w.term }, model: MODEL, questions };
     },
     parse: (_chunk, answers, i) => {
-      const words = work[i]!.words;
+      const w = work[i]!;
+      if (w.clauses) return pickClauses(w.sentence.text, w.clauses, w.clauses.map((_, j) => noulOf(answers, clauseKey(j))));
+      const words = w.words;
       const p = words.map((_, j) => noulOf(answers, wordKey(j)));
       const best = Math.max(0, ...p);
       const found: [number, number][] = [];
@@ -799,7 +867,11 @@ export async function judgeHighlights(
       });
       return found;
     },
-    failed: () => [],
+    // A sentence whose clauses could not be asked about is marked whole, as it was before there were clauses.
+    failed: (_chunk, i) => {
+      const w = work[i]!;
+      return w.clauses ? [[0, w.sentence.text.length]] : [];
+    },
   };
   const words = await runPool(
     work.map((w) => [w.sentence]),
@@ -810,6 +882,10 @@ export async function judgeHighlights(
     if (!found || found.length === 0) return;
     const w = work[i]!;
     const byTerm = spans[w.term]!;
+    if (w.clauses) {
+      byTerm[w.sentence.id] = found;
+      return;
+    }
     // The whole sentence's words, not just this request's slice: a long sentence is asked in several rounds.
     byTerm[w.sentence.id] = stitchSpans(w.sentence.text, [...(byTerm[w.sentence.id] ?? []), ...found], highlightWords(w.sentence.text));
   });

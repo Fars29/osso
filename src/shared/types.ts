@@ -65,7 +65,7 @@ export type RuleResults = Record<string, Record<number, number>>;
  * actually is and a word that occurs twice is not marked twice over.
  */
 export type HighlightSpans = Record<string, Record<number, [number, number][]>>;
-/** How a term is marked: the few words that name it, or the whole sentence that states it. */
+/** How a term is marked: the few words that name it, or the sentence (in a long one, the clauses) that states it. */
 export type HighlightUnit = "words" | "sentence";
 
 /** Everything the content script knows about a page before judging it; packs route on this. */
@@ -201,8 +201,6 @@ export type FromBackground =
       type: "highlightJudgment";
       contentHash: string;
       spans: HighlightSpans;
-      /** How each term is marked, so the page can paint a whole sentence differently from a word. */
-      units?: Record<string, HighlightUnit>;
       inputTokens?: number;
       ms?: number;
     }

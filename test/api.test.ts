@@ -6,7 +6,9 @@ import {
   buildRequestBody,
   buildRuleRequestBody,
   chunkSentences,
+  highlightClauses,
   judgeHighlights,
+  pickClauses,
   judgePage,
   judgeRules,
   parseAnswers,
@@ -676,13 +678,15 @@ describe("judgeHighlights: words or whole sentences", () => {
         answers[k] = { noul: [2, 5].includes(Number(k.split("_")[1])) ? 0.9 : 0.1 };
       } else if (/^w\d+$/.test(k)) {
         answers[k] = { noul: k === "w0" ? 0.9 : 0.1 };
+      } else if (/^c\d+$/.test(k)) {
+        answers[k] = { noul: instructions.includes("lost a week of catch") ? 0.8 : 0.1 };
       }
     }
     return reply(200, { answers, usage: { input_tokens: 10 } });
   }
   const kindOf = (init: RequestInit | undefined) => {
     const keys = Object.keys(bodyOf(init).questions);
-    return keys.some((k) => k.startsWith("unit_")) ? "unit" : keys.some((k) => /^w\d+$/.test(k)) ? "words" : "gate";
+    return keys.some((k) => k.startsWith("unit_")) ? "unit" : keys.some((k) => /^w\d+$/.test(k)) ? "words" : keys.some((k) => /^c\d+$/.test(k)) ? "clauses" : "gate";
   };
 
   it("asks once, beside round one, how each term is marked; a term a sentence states is marked as its whole sentences, with no word round", async () => {
@@ -720,5 +724,63 @@ describe("judgeHighlights: words or whole sentences", () => {
     expect(out.units).toEqual({});
     expect(out.spans.consequences).toEqual({ 2: [[0, "Sentence".length]], 5: [[0, "Sentence".length]] });
     expect(out.chunkErrors).toMatchObject([{ code: "server" }]);
+  });
+
+  const LONG = "The storm closed the harbour for three days, the fishing fleet stayed in port and lost a week of catch, while the town council met twice to plan repairs for the damaged pier.";
+
+  it("marks a long sentence of a term a sentence states in the clauses that say it, and a short one whole", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => highlightReply(init));
+    const all = sents(10);
+    all[2] = { id: 2, text: LONG };
+    const out = await judgeHighlights(request(all), recipePack, ["consequences"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const clause = "the fishing fleet stayed in port and lost a week of catch";
+    expect(out.spans.consequences![2]).toEqual([[LONG.indexOf(clause), LONG.indexOf(clause) + clause.length]]);
+    expect(out.spans.consequences![5]).toEqual([[0, all[5]!.text.length]]);
+    expect(fetchImpl.mock.calls.filter(([, init]) => kindOf(init) === "clauses")).toHaveLength(1);
+  });
+
+  it("marks the sentence whole when its clauses could not be asked about, and says so", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+      kindOf(init) === "clauses" ? reply(500, "down") : highlightReply(init),
+    );
+    const all = sents(10);
+    all[2] = { id: 2, text: LONG };
+    const out = await judgeHighlights(request(all), recipePack, ["consequences"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch, retries: 0 });
+    expect(out.spans.consequences![2]).toEqual([[0, LONG.length]]);
+    expect(out.chunkErrors).toMatchObject([{ code: "server" }]);
+  });
+});
+
+describe("clauses", () => {
+  const LONG = "The storm closed the harbour for three days, the fishing fleet stayed in port and lost a week of catch, while the town council met twice to plan repairs for the damaged pier.";
+  const texts = (text: string) => highlightClauses(text).map(([a, b]) => text.slice(a, b));
+
+  it("leaves a sentence of twenty words or fewer whole, and cuts a longer one where the writer paused", () => {
+    expect(texts("The storm closed the harbour for three days, and the fleet stayed in port.")).toEqual(["The storm closed the harbour for three days, and the fleet stayed in port."]);
+    expect(texts(LONG)).toEqual([
+      "The storm closed the harbour for three days",
+      "the fishing fleet stayed in port and lost a week of catch",
+      "while the town council met twice to plan repairs for the damaged pier.",
+    ]);
+  });
+
+  it("folds a short piece into its neighbour, and never cuts inside a number", () => {
+    const text = "In 2025, according to the institute, the fund reached 1,74 miliardi di euro in total, which is the highest figure since the fund was first set up.";
+    const out = texts(text);
+    // "In 2025" and "according to the institute" are each too short to say anything; together they are a clause.
+    expect(out).toEqual([
+      "In 2025, according to the institute",
+      "the fund reached 1,74 miliardi di euro in total",
+      "which is the highest figure since the fund was first set up.",
+    ]);
+  });
+
+  it("keeps the best clause even under the threshold, and any other that stands out; neighbours are one mark", () => {
+    const c = highlightClauses(LONG);
+    const at = (i: number) => c[i]!;
+    expect(pickClauses(LONG, c, [0.2, 0.8, 0.1])).toEqual([at(1)]);
+    // Round one already found the thing in this sentence: the best of three weak clauses is still where it is.
+    expect(pickClauses(LONG, c, [0.3, 0.2, 0.1])).toEqual([at(0)]);
+    expect(pickClauses(LONG, c, [0.6, 0.55, 0.1])).toEqual([[at(0)[0], at(1)[1]]]);
   });
 });

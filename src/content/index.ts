@@ -13,7 +13,6 @@ import type {
   FromBackground,
   FromContent,
   HighlightSpans,
-  HighlightUnit,
   JudgeRequest,
   PageJudgment,
   PageKind,
@@ -89,8 +88,6 @@ interface Mounted {
   /** Every highlight this view has, and the terms last painted, so a term unchanged is not asked again. */
   markResults: HighlightSpans;
   appliedTerms: string[];
-  /** How each term is marked, words or whole sentences, as the worker decided it. */
-  markUnits: Record<string, HighlightUnit>;
   /** What finding those marks cost on this page view, for the popup. */
   markTokens: number;
   markMs: number;
@@ -341,7 +338,6 @@ function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeR
     applied: [...s.rules],
     markResults: {},
     appliedTerms: [],
-    markUnits: {},
     markTokens: 0,
     markMs: 0,
     sentenceText: new Map(req.sentences.map((x) => [x.id, x.text])),
@@ -425,7 +421,7 @@ function paintMarks(m: Mounted): void {
   const s = settings;
   if (!s || mounted !== m) return;
   m.appliedTerms = [...s.highlights];
-  report(tally(applyHighlights(document, m.markResults, s.highlights, m.sentenceText, m.markUnits)));
+  report(tally(applyHighlights(document, m.markResults, s.highlights, m.sentenceText)));
 }
 
 /**
@@ -453,7 +449,6 @@ async function syncHighlights(): Promise<void> {
     }
     if (reply?.type === "highlightJudgment") {
       Object.assign(m.markResults, reply.spans);
-      Object.assign(m.markUnits, reply.units ?? {});
       m.markTokens += reply.inputTokens ?? 0;
       m.markMs += reply.ms ?? 0;
     }

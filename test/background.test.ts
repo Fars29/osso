@@ -587,14 +587,14 @@ describe("highlights", () => {
       fetchMock.mock.calls.filter(([, init]) => Object.keys((JSON.parse(String(init?.body)) as { questions: Record<string, unknown> }).questions).some((k) => k.startsWith("unit_"))).length;
     await send({ type: "judge", req: request(sents(12), "hash-u1") }, PAGE);
     const first = await send({ type: "judgeHighlights", contentHash: "hash-u1", terms: ["reasons"] }, PAGE);
-    expect(first).toMatchObject({ units: { reasons: "sentence" }, spans: { reasons: { 2: [[0, "Sentence 2 of the page.".length]] } } });
+    expect(first).toMatchObject({ spans: { reasons: { 2: [[0, "Sentence 2 of the page.".length]] } } });
     expect(unitAsks()).toBe(1);
 
     // Another page, a worker that has forgotten both: the unit is still known, and not asked for.
     forgetRecentPages();
     await send({ type: "judge", req: request(sents(12, 40), "hash-u2") }, PAGE);
     const second = await send({ type: "judgeHighlights", contentHash: "hash-u2", terms: ["Reasons"] }, PAGE);
-    expect(second).toMatchObject({ units: { Reasons: "sentence" } });
+    expect(second).toMatchObject({ type: "highlightJudgment" });
     expect(unitAsks()).toBe(1);
   });
 });

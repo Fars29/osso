@@ -348,9 +348,3 @@ html.osso-still .osso-rule-hit {
   color: var(--osso-mark-ink, #161616);
 }
 
-/* A term a sentence states ("consequences", "reasons") is marked as its whole sentence, in a wash of
-   the marker rather than the marker itself: the page keeps its own ink, and three marked sentences
-   in a paragraph read as marked, not painted over. */
-::highlight(osso-mark-line) {
-  background-color: color-mix(in srgb, var(--osso-mark, #ffd24a) 42%, transparent);
-}
