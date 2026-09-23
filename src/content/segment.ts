@@ -461,12 +461,20 @@ function periodEndsSentence(text: string, index: number, footnoted = false): boo
   if (token.length === 0) return true;
   if (footnoted) return !isAbbreviation(token) && !isAbbreviation(token.slice(token.lastIndexOf(".") + 1));
   if (SINGLE_LETTER.test(token)) return false;
-  if (ENUMERATOR.test(token)) return false;
+  // A list number opens its sentence ("2. Mix the flour"); a number that ends one ("…Giulia a 58.") is a full stop.
+  if (ENUMERATOR.test(token) && opensSentence(text, start)) return false;
   if (isAbbreviation(token)) return false;
   // "U.S." / "Ph.D." / "e.g.": judge the part after the last inner period as well.
   const tail = token.slice(token.lastIndexOf(".") + 1);
   if (tail !== token && (SINGLE_LETTER.test(tail) || isAbbreviation(tail) || tail.length === 0)) return false;
   return true;
+}
+
+/** Whether the token at `start` opens its line or its sentence, as a list number does: nothing before it but a terminator, a bullet or a bracket. */
+function opensSentence(text: string, start: number): boolean {
+  let i = start - 1;
+  while (i >= 0 && isWhitespace(text[i]!)) i--;
+  return i < 0 || /[.!?…:;(\[•·–—-]/.test(text[i]!);
 }
 
 function isWhitespace(ch: string): boolean {

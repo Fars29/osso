@@ -84,6 +84,18 @@ describe("splitSentences", () => {
     expect(pieces("The figure was revised.[4] and nobody noticed for a year.")).toHaveLength(1);
   });
 
+  it("takes a short number for a list number only where it opens the sentence", () => {
+    // "a 58." closes a sentence; "2." in front of a step opens one.
+    expect(pieces("In Sicilia l'effetto si attesta a 91 milioni e in Friuli-Venezia Giulia a 58. Seguono Liguria e Marche con cifre minori.")).toEqual([
+      "In Sicilia l'effetto si attesta a 91 milioni e in Friuli-Venezia Giulia a 58.",
+      "Seguono Liguria e Marche con cifre minori.",
+    ]);
+    expect(pieces("1. Preheat the oven to 200 degrees. 2. Mix the flour with the sugar.")).toEqual([
+      "1. Preheat the oven to 200 degrees.",
+      "2. Mix the flour with the sugar.",
+    ]);
+  });
+
   it("does not take a short last sentence with a footnote for a label", () => {
     // "It ended.[5]" ends like a sentence; read as a tag ("Edited", "Read more") it was dropped from the page.
     expect(pieces("The mission was a success for everyone involved. It ended.[5]")).toEqual(["The mission was a success for everyone involved. It ended.[5]"]);
