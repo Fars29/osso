@@ -26,7 +26,12 @@ describe("which words are worth a question", () => {
   });
 
   it("leaves the punctuation that follows a word out of it", () => {
-    expect(highlightWords("Serves 4 people, approx. 20 min.").map((w) => w.word)).toEqual(["Serves", "people", "approx", "20", "min"]);
+    expect(highlightWords("Serves 4 people, approx. 20 min.").map((w) => w.word)).toEqual(["Serves", "4", "people", "approx", "20", "min"]);
+  });
+
+  it("asks about a lone digit, which a date or a quantity needs, and keeps a currency sign with its number", () => {
+    const text = "The price drops from $24,900 to $22,500 on 2 November, and 1 medium onion is €1.";
+    expect(highlightWords(text).map((w) => w.word)).toEqual(["price", "drops", "$24,900", "$22,500", "2", "November", "1", "medium", "onion", "€1"]);
   });
 
   it("keeps the percent sign with its number", () => {

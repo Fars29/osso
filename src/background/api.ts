@@ -593,9 +593,12 @@ const HIGHLIGHT_STOP = new Set(
 
 /**
  * A run of letters or digits, allowing the punctuation that lives inside a word rather than after it,
- * and a percent sign that closes one: "1,73%" is marked whole, not as "1,73" and a stray sign.
+ * a percent sign that closes one and a currency sign that opens one: "1,73%" and "$24,900" are marked
+ * whole, not as a number and a stray sign.
  */
-const HIGHLIGHT_WORD = /[\p{L}\p{N}][\p{L}\p{N}'’.,-]*%?/gu;
+const HIGHLIGHT_WORD = /[$€£¥]?[\p{L}\p{N}][\p{L}\p{N}'’.,-]*%?/gu;
+/** A lone letter says nothing on its own; a lone digit is half of "2 novembre" or "1 medium onion". */
+const LONE_DIGIT = /^\p{N}$/u;
 const TRAILING_PUNCT = /[.,'’-]+$/;
 
 export interface WordSpan {
@@ -610,7 +613,7 @@ export function highlightWords(text: string): WordSpan[] {
   for (const m of text.matchAll(HIGHLIGHT_WORD)) {
     // The pattern swallows the punctuation that can sit inside a word; what turns out to be trailing is given back, so a mark ends at the word and not after it.
     const word = m[0].replace(TRAILING_PUNCT, "");
-    if (word.length < 2) continue;
+    if (word.length < 2 && !LONE_DIGIT.test(word)) continue;
     if (HIGHLIGHT_STOP.has(word.toLowerCase())) continue;
     out.push({ start: m.index, end: m.index + word.length, word });
   }
