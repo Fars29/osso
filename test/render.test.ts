@@ -588,6 +588,22 @@ describe("effectiveBackground", () => {
     expect(dark.classList.contains("osso-dark")).toBe(true);
   });
 
+  it("marks a block whose first letter the site floats, so the drop cap keeps its ink through the wash", () => {
+    const lead = document.querySelector<HTMLElement>("[data-osso-block]")!;
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (el: Element, pseudo?: string | null) =>
+        ({ backgroundColor: "rgba(0, 0, 0, 0)", float: pseudo === "::first-letter" && el === lead ? "left" : "none" }) as CSSStyleDeclaration,
+    );
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    const blocks = document.querySelectorAll<HTMLElement>("[data-osso-block]");
+    expect(blocks[0]!.classList.contains("osso-dropcap")).toBe(true);
+    expect(blocks[1]!.classList.contains("osso-dropcap")).toBe(false);
+    // Only the wrapper that holds the cap is washed without transparent glyphs.
+    expect(Array.from(document.querySelectorAll(".osso-lead"))).toEqual([spans(0)[0]]);
+    clearRender(document);
+    expect(document.querySelectorAll(".osso-dropcap, .osso-lead")).toHaveLength(0);
+  });
+
   it("gives the chip its dark variant over a dark block", () => {
     vi.useFakeTimers();
     const dark = document.getElementById("dark")!;

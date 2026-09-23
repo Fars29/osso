@@ -140,6 +140,19 @@ html.osso-on .osso-arrive {
   background-clip: border-box, text;
 }
 
+/* The sentence that holds a drop cap (render.ts hasDropCap). The cap is a floated box of its own: the
+   fill painted through the glyphs never reaches it, it inherits the transparent text, and Chrome takes
+   no text fill on ::first-letter to give it back. So this one sentence is washed without transparent
+   glyphs: the pen still draws its line, and the grey is the colour already underneath. */
+html.osso-on .osso-dropcap .osso-lead.osso-sweep,
+html.osso-on .osso-dropcap .osso-lead.osso-arrive {
+  -webkit-text-fill-color: currentColor;
+  background-image: linear-gradient(var(--osso-line, transparent), var(--osso-line, transparent));
+  background-size: var(--osso-strike) 1px;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+}
+
 html.osso-still .osso-arrive {
   background-image: none;
   -webkit-text-fill-color: currentColor;

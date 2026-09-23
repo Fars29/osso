@@ -648,13 +648,27 @@ function paintBlocks(doc: Document, fade: string) {
   const memo = new Map<Element, RGB>();
   const bgs = blocks.map((b) => (win ? effectiveBackground(b, win, memo) : WHITE));
   const inks = blocks.map((b) => (win ? inkOf(b, win) : null));
+  const dropCaps = blocks.map((b) => (win ? hasDropCap(b, win) : false));
   blocks.forEach((b, i) => {
     const bg = bgs[i]!;
     const ink = inks[i];
     b.style.setProperty("--osso-grey", fade || (ink ? pickGrey(bg, ink) : pickGrey(bg)));
     if (ink) b.style.setProperty("--osso-ink", `rgb(${ink.r}, ${ink.g}, ${ink.b})`);
     b.classList.toggle("osso-dark", luminance(bg) < LIGHT_LUMINANCE);
+    b.classList.toggle("osso-dropcap", dropCaps[i]!);
+    // The wrapper that holds the drop cap: it is washed without making its glyphs transparent (osso.css).
+    if (dropCaps[i]) b.querySelector(SPAN)?.classList.add("osso-lead");
   });
+}
+
+/**
+ * Whether the site floats the block's first letter (a drop cap, as every rainews article opens with).
+ * That letter is a box of its own: the fill the front and the pen paint through the glyphs does not
+ * reach it, and with the text made transparent for them it vanished for as long as they ran.
+ */
+function hasDropCap(block: Element, win: Window): boolean {
+  const float = win.getComputedStyle(block, "::first-letter").float;
+  return float === "left" || float === "right" || float === "inline-start" || float === "inline-end";
 }
 
 export function applyJudgment(
@@ -1117,14 +1131,14 @@ export function clearRender(doc: Document): void {
   dropProperty(doc.documentElement, "--osso-mark");
   dropProperty(doc.documentElement, "--osso-mark-ink");
   for (const s of doc.querySelectorAll<HTMLElement>(SPAN)) {
-    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe", "osso-wait", "osso-arrive");
+    s.classList.remove("osso-fade", "osso-pin", "osso-rule-hit", "osso-sweep", "osso-wipe", "osso-wait", "osso-arrive", "osso-lead");
     for (const name of WAVE_PROPERTIES) dropProperty(s, name);
     for (const name of FRONT_PROPERTIES) dropProperty(s, name);
   }
   for (const b of doc.querySelectorAll<HTMLElement>(BLOCK)) {
     dropProperty(b, "--osso-grey");
     dropProperty(b, "--osso-ink");
-    b.classList.remove("osso-dark");
+    b.classList.remove("osso-dark", "osso-dropcap");
   }
   for (const chip of doc.querySelectorAll(".osso-chip")) chip.remove();
 }
