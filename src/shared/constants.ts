@@ -61,9 +61,10 @@ export const MAX_HIGHLIGHTS = 3;
  * a second visit costs nothing, but marks found by an older question are an older answer: bump this
  * whenever HIGHLIGHT_QUESTION or the rules that turn answers into marks change, and those pages are
  * asked again. (2: the question asks what the thing is, not whether the word is the thing. 3: a
- * term a sentence states is marked as its whole sentences. 4: in a long sentence, as its clauses.)
+ * term a sentence states is marked as its whole sentences. 4: in a long sentence, as its clauses. 5: a
+ * sentence that states a term named in words is marked as a statement.)
  */
-export const HIGHLIGHT_VERSION = 4;
+export const HIGHLIGHT_VERSION = 5;
 export const MAX_HIGHLIGHT_LENGTH = 80;
 export const HIGHLIGHT_THRESHOLD = 0.5;
 /**
@@ -104,7 +105,23 @@ export const HIGHLIGHT_QUESTION = {
   clauseInstructions: (clause: string, term: string) => `In the sentence, does the part «${clause}» say what a «${term}» is?`,
   clauseTrue: (term: string) => `Yes: this part states a «${term}», or part of one.`,
   clauseFalse: (term: string) => `No: this part only introduces the «${term}», or says something else.`,
+  statedInstructions: (term: string) =>
+    `In the sentence, is the «${term}» something the sentence states, like a change, an effect or a comparison, rather than a few words that name it, like an amount, a name or a date?`,
+  statedTrue: (term: string) => `Yes: the sentence states the «${term}»; the reader wants the part of the sentence that says it.`,
+  statedFalse: (term: string) => `No: a few words in the sentence name the «${term}»; the reader wants those words.`,
 } as const;
+
+/**
+ * A term named in words can still be stated by a sentence: on a news report with no price in it,
+ * "prezzi" is "l'indice dei prezzi... è salito dell'11,4%", and word by word it came back as "gas",
+ * "cumulato", "energetici". So the first request for each sentence of such a term also asks whether
+ * this sentence states it; at this or above, the sentence is marked as the clauses that say it (whole,
+ * if short). Measured: those five sentences 0.70 to 0.76; every sentence of names, dates, amounts and
+ * ingredients on four other pages 0.45 at most. The price information found went from 4 of 8 to 8 of
+ * 8, and no other page lost a mark. Examples of prices put in the word question instead fixed that
+ * page and cost the others (ingredients F1 0.85 to 0.69), so the examples live only in this question.
+ */
+export const HIGHLIGHT_STATED_THRESHOLD = 0.6;
 
 /**
  * A sentence longer than this is cut into clauses for a term a sentence states, and only the clauses

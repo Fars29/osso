@@ -679,7 +679,10 @@ describe("judgeHighlights: words or whole sentences", () => {
       } else if (/^w\d+$/.test(k)) {
         answers[k] = { noul: k === "w0" ? 0.9 : 0.1 };
       } else if (/^c\d+$/.test(k)) {
-        answers[k] = { noul: instructions.includes("lost a week of catch") ? 0.8 : 0.1 };
+        answers[k] = { noul: /lost a week of catch|rose by 11\.4/.test(instructions) ? 0.8 : 0.1 };
+      } else if (k === "stated") {
+        // Only the sentence about the price index states its prices; everywhere else they are named.
+        answers[k] = { noul: (body.state as { text: string }).text.includes("rose by 11.4") ? 0.78 : 0.2 };
       }
     }
     return reply(200, { answers, usage: { input_tokens: 10 } });
@@ -737,6 +740,22 @@ describe("judgeHighlights: words or whole sentences", () => {
     expect(out.spans.consequences![2]).toEqual([[LONG.indexOf(clause), LONG.indexOf(clause) + clause.length]]);
     expect(out.spans.consequences![5]).toEqual([[0, all[5]!.text.length]]);
     expect(fetchImpl.mock.calls.filter(([, init]) => kindOf(init) === "clauses")).toHaveLength(1);
+  });
+
+  const PRICES = "Between February and August, in six months of conflict, the consumer price index for electricity and gas rose by 11.4 per cent, adding 1.8 billion euros to the bills of nearly twenty-seven million households.";
+
+  it("marks a term named in words as a statement where a sentence states it, and word by word everywhere else", async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => highlightReply(init));
+    const all = sents(10);
+    all[2] = { id: 2, text: PRICES };
+    const out = await judgeHighlights(request(all), recipePack, ["prices"], { ...opts, fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(out.units).toEqual({ prices: "words" });
+    const clause = "the consumer price index for electricity and gas rose by 11.4 per cent";
+    expect(out.spans.prices![2]).toEqual([[PRICES.indexOf(clause), PRICES.indexOf(clause) + clause.length]]);
+    // Sentence 5 names its prices: its first word, as before.
+    expect(out.spans.prices![5]).toEqual([[0, "Sentence".length]]);
+    // The question rides in the words' own request: no request of its own.
+    expect(fetchImpl.mock.calls.map(([, init]) => kindOf(init)).sort()).toEqual(["gate", "unit", "words", "words"]);
   });
 
   it("marks the sentence whole when its clauses could not be asked about, and says so", async () => {

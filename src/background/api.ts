@@ -16,6 +16,7 @@ import {
   HIGHLIGHT_FLOOR,
   HIGHLIGHT_QUESTION,
   HIGHLIGHT_STANDOUT,
+  HIGHLIGHT_STATED_THRESHOLD,
   HIGHLIGHT_CLAUSE_MERGE_WORDS,
   HIGHLIGHT_CLAUSE_MIN_WORDS,
   HIGHLIGHT_THRESHOLD,
@@ -647,10 +648,28 @@ export function stitchSpans(text: string, marked: [number, number][], asked: Wor
   }
   return out;
 }
-/** One request of round two: some words of a sentence, or the clauses of a long one. */
-type HighlightWork =
-  | { term: string; sentence: SentenceInput; words: WordSpan[]; clauses?: undefined }
-  | { term: string; sentence: SentenceInput; clauses: [number, number][]; words?: undefined };
+/**
+ * One request of round two. For a term a sentence states (`idea`): the clauses of a long sentence.
+ * For a term named in words: some of a sentence's words; the first request of each sentence also
+ * asks whether this sentence states the term (`askStated`), with its clauses to mark if it does.
+ */
+interface HighlightWork {
+  term: string;
+  sentence: SentenceInput;
+  idea: boolean;
+  askStated: boolean;
+  words: WordSpan[];
+  /** Clauses to ask about; empty when the sentence is one clause (then it is marked whole). */
+  clauses: [number, number][];
+}
+
+/** What one request of round two found: the words it marks, and, when the sentence states the term, the marks for that instead. */
+interface WorkAnswer {
+  words: [number, number][];
+  statement: [number, number][] | null;
+}
+
+const STATED_KEY = "stated";
 
 function clauseKey(j: number): string {
   return `c${j}`;
@@ -810,16 +829,19 @@ export async function judgeHighlights(
     for (const id of ids) {
       const sentence = byId.get(id);
       if (!sentence) continue;
+      const clauses = highlightClauses(sentence.text);
+      const asked = clauses.length > 1 ? clauses : [];
       // A term a sentence states is marked as the sentence round one found, or in a long one as the clauses that state it.
       if (unitOf(term) === "sentence") {
-        const clauses = highlightClauses(sentence.text);
-        if (clauses.length > 1) work.push({ term, sentence, clauses });
+        if (asked.length > 0) work.push({ term, sentence, idea: true, askStated: false, words: [], clauses: asked });
         else spans[term]![id] = [[0, sentence.text.length]];
         continue;
       }
+      // A term named in words may still be stated by this sentence: its first request asks, beside the words.
       const words = highlightWords(sentence.text);
       for (let i = 0; i < words.length; i += HIGHLIGHT_WORDS_PER_REQUEST) {
-        work.push({ term, sentence, words: words.slice(i, i + HIGHLIGHT_WORDS_PER_REQUEST) });
+        const first = i === 0;
+        work.push({ term, sentence, idea: false, askStated: first, words: words.slice(i, i + HIGHLIGHT_WORDS_PER_REQUEST), clauses: first ? asked : [] });
       }
     }
   }
@@ -832,20 +854,27 @@ export async function judgeHighlights(
   });
   if (work.length === 0) return done({ inputTokens: 0, chunkErrors: [] });
 
-  const wordPlan: ChunkPlan<[number, number][]> = {
+  const wordPlan: ChunkPlan<WorkAnswer> = {
     // The sentence is the state of its own request, so each question is a few words long. Measured
     // against repeating the sentence inside every question: half the tokens, the same answers.
     build: (_chunk, i) => {
       const w = work[i]!;
       const questions: Record<string, unknown> = {};
-      w.clauses?.forEach(([a, b], j) => {
+      if (w.askStated) {
+        questions[STATED_KEY] = {
+          type: "noul",
+          instructions: HIGHLIGHT_QUESTION.statedInstructions(w.term),
+          criteria: { true: HIGHLIGHT_QUESTION.statedTrue(w.term), false: HIGHLIGHT_QUESTION.statedFalse(w.term) },
+        };
+      }
+      w.clauses.forEach(([a, b], j) => {
         questions[clauseKey(j)] = {
           type: "noul",
           instructions: HIGHLIGHT_QUESTION.clauseInstructions(w.sentence.text.slice(a, b), w.term),
           criteria: { true: HIGHLIGHT_QUESTION.clauseTrue(w.term), false: HIGHLIGHT_QUESTION.clauseFalse(w.term) },
         };
       });
-      w.words?.forEach((span, j) => {
+      w.words.forEach((span, j) => {
         questions[wordKey(j)] = {
           type: "noul",
           instructions: HIGHLIGHT_QUESTION.wordInstructions(span.word, w.term),
@@ -856,7 +885,9 @@ export async function judgeHighlights(
     },
     parse: (_chunk, answers, i) => {
       const w = work[i]!;
-      if (w.clauses) return pickClauses(w.sentence.text, w.clauses, w.clauses.map((_, j) => noulOf(answers, clauseKey(j))));
+      const clauses = () => (w.clauses.length > 0 ? pickClauses(w.sentence.text, w.clauses, w.clauses.map((_, j) => noulOf(answers, clauseKey(j)))) : [[0, w.sentence.text.length]] as [number, number][]);
+      if (w.idea) return { words: [], statement: clauses() };
+      const statement = w.askStated && noulOf(answers, STATED_KEY) >= HIGHLIGHT_STATED_THRESHOLD ? clauses() : null;
       const words = w.words;
       const p = words.map((_, j) => noulOf(answers, wordKey(j)));
       const best = Math.max(0, ...p);
@@ -865,12 +896,12 @@ export async function judgeHighlights(
         const pj = p[j]!;
         if (pj >= HIGHLIGHT_THRESHOLD || (pj >= HIGHLIGHT_FLOOR && pj >= best * HIGHLIGHT_STANDOUT)) found.push([span.start, span.end]);
       });
-      return found;
+      return { words: found, statement };
     },
     // A sentence whose clauses could not be asked about is marked whole, as it was before there were clauses.
     failed: (_chunk, i) => {
       const w = work[i]!;
-      return w.clauses ? [[0, w.sentence.text.length]] : [];
+      return { words: [], statement: w.idea ? [[0, w.sentence.text.length]] : null };
     },
   };
   const words = await runPool(
@@ -878,17 +909,26 @@ export async function judgeHighlights(
     wordPlan,
     opts,
   );
-  words.results.forEach((found, i) => {
-    if (!found || found.length === 0) return;
+  // A sentence's requests are read together: a statement found by its first request wins over the words of all of them;
+  // otherwise the words of every request are one set (a long sentence is asked in several).
+  const bySentence = new Map<string, { w: HighlightWork; words: [number, number][]; statement: [number, number][] | null }>();
+  words.results.forEach((answer, i) => {
+    if (!answer) return;
     const w = work[i]!;
-    const byTerm = spans[w.term]!;
-    if (w.clauses) {
-      byTerm[w.sentence.id] = found;
-      return;
-    }
-    // The whole sentence's words, not just this request's slice: a long sentence is asked in several rounds.
-    byTerm[w.sentence.id] = stitchSpans(w.sentence.text, [...(byTerm[w.sentence.id] ?? []), ...found], highlightWords(w.sentence.text));
+    const key = `${w.term}\u0000${w.sentence.id}`;
+    const acc = bySentence.get(key) ?? { w, words: [], statement: null };
+    acc.words.push(...answer.words);
+    if (answer.statement) acc.statement = answer.statement;
+    bySentence.set(key, acc);
   });
+  for (const { w, words: found, statement } of bySentence.values()) {
+    const byTerm = spans[w.term]!;
+    if (statement) {
+      if (statement.length > 0) byTerm[w.sentence.id] = statement;
+    } else if (found.length > 0) {
+      byTerm[w.sentence.id] = stitchSpans(w.sentence.text, found, highlightWords(w.sentence.text));
+    }
+  }
 
   return done(words);
 }
