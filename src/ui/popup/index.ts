@@ -16,7 +16,7 @@ type View = "loading" | "cannot" | "no-key" | "invalid-key" | "disabled" | "off"
 const POLL_MS = 500;
 /** An "idle" tab may never start judging (content script waiting on a page that never settles); stop asking after this. */
 const IDLE_POLL_LIMIT = 40;
-/** A rule's count is one request away (~0.5 s); after this many polls without one the chip says so instead of "…". */
+/** A rule's count is one request away (~0.5 s); after this many polls without one the chip stops its wheel and says "?". */
 const RULE_POLL_LIMIT = 60;
 /** The content script's skip sentinels, said the way a person would; anything else is shown as it came. */
 const SKIP_REASONS: Record<string, string> = {
@@ -188,12 +188,13 @@ function show(view: View) {
   renderRules(view);
 }
 
-/** What a chip shows for a rule on this page: a count once the page has answered, "…" while it is answering. */
+/** What a chip shows for a rule on this page: a count once the page has answered, a turning wheel while it is answering, "?" when no answer came. */
 function countFor(rule: string): RuleCount {
   const s = model.state;
   if (!s || (s.status !== "done" && s.status !== "judging")) return null;
   const n = s.ruleHits[rule];
   if (typeof n === "number") return n;
+  if (s.ruleFailed?.includes(rule)) return "unknown";
   return model.rulePolls >= RULE_POLL_LIMIT ? "unknown" : "judging";
 }
 
@@ -203,6 +204,7 @@ function markCountFor(term: string): RuleCount {
   if (!s || (s.status !== "done" && s.status !== "judging")) return null;
   const n = s.markHits?.[term];
   if (typeof n === "number") return n;
+  if (s.markFailed?.includes(term)) return "unknown";
   return model.rulePolls >= RULE_POLL_LIMIT ? "unknown" : "judging";
 }
 
@@ -251,7 +253,7 @@ function renderChip(s: TabState | null) {
 /**
  * The second figure, in the shape of the first and beside it: how many of the page's sentences the
  * highlight terms marked, a bar in the marker's colour, and what finding them cost. The chips say
- * how many things each term marked. Shown only while there is a term; "…" until every term is answered.
+ * how many things each term marked. Shown only while there is a term; "…" until every term is answered, "?" when none got an answer.
  */
 function renderMarks(s: TabState | null) {
   const terms = model.settings.highlights;
@@ -260,12 +262,20 @@ function renderMarks(s: TabState | null) {
   ui.count.classList.toggle("pair", on);
   if (!on || !s) return;
   ui.markBone.style.setProperty("--mark", model.settings.markColor);
-  const answered = terms.every((t) => typeof s.markHits?.[t] === "number");
+  const failed = new Set(s.markFailed ?? []);
+  const answered = terms.every((t) => typeof s.markHits?.[t] === "number" || failed.has(t));
   ui.markCount.classList.toggle("pulse", !answered);
   if (!answered) {
     ui.markCount.textContent = "…";
     ui.markOf.textContent = "";
     ui.markStatus.textContent = "looking…";
+    return;
+  }
+  if (terms.every((t) => failed.has(t))) {
+    ui.markCount.textContent = "?";
+    ui.markOf.textContent = "";
+    ui.markBone.style.width = "0%";
+    ui.markStatus.textContent = "no answer";
     return;
   }
   const sentences = s.markedSentences ?? 0;
@@ -286,7 +296,41 @@ function renderNumbers(s: TabState) {
   countTo(s.kept);
 }
 
+/** The blocks under the fields: a row of chips coming or going moves them. */
+const below = [ui.count.parentElement, ui.controls, document.querySelector<HTMLElement>(".foot")].filter((el): el is HTMLElement => !!el);
+/** How many chips the last render left, so a render that adds or removes a row is known; -1 before the first. */
+let chipsBefore = -1;
+
+/**
+ * Renders, and lets what a new row of chips pushes down move there instead of jumping: in the popup's
+ * close-up the figures dropped 85 px in one frame when the first highlight term went in, and the second
+ * figure appeared from nowhere. Only when the chips changed, never on the first render (the popup
+ * settles in as a whole) and never under reduced motion.
+ */
 function render() {
+  const chipCount = ui.ruleList.children.length + ui.markList.children.length;
+  const shown = (el: HTMLElement) => el.getClientRects().length > 0;
+  const watch = !reducedMotion && chipsBefore >= 0;
+  const before = watch ? below.map((el) => (shown(el) ? el.getBoundingClientRect().top : null)) : [];
+  const marksBefore = !ui.marks.hidden;
+  draw();
+  const chipsNow = ui.ruleList.children.length + ui.markList.children.length;
+  const changed = chipsBefore >= 0 && chipsNow !== chipCount;
+  chipsBefore = chipsNow;
+  if (!watch || !changed) return;
+  const ease = "cubic-bezier(0.2, 0.7, 0.2, 1)";
+  below.forEach((el, i) => {
+    const top = before[i];
+    if (top == null || !shown(el) || typeof el.animate !== "function") return;
+    const dy = top - el.getBoundingClientRect().top;
+    if (Math.abs(dy) >= 1) el.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 220, easing: ease });
+  });
+  if (!marksBefore && !ui.marks.hidden && typeof ui.marks.animate === "function") {
+    ui.marks.animate([{ opacity: 0, transform: "translateY(3px)" }, { opacity: 1, transform: "none" }], { duration: 240, easing: ease });
+  }
+}
+
+function draw() {
   const s = model.state;
   const settings = model.settings;
   renderChip(s);
@@ -401,8 +445,8 @@ async function refresh() {
 function rulesPending(): boolean {
   const s = model.state;
   if (!s || s.status !== "done") return false;
-  if (model.settings.rules.some((r) => typeof s.ruleHits[r] !== "number")) return true;
-  return model.settings.highlights.some((t) => typeof s.markHits?.[t] !== "number");
+  if (model.settings.rules.some((r) => typeof s.ruleHits[r] !== "number" && !s.ruleFailed?.includes(r))) return true;
+  return model.settings.highlights.some((t) => typeof s.markHits?.[t] !== "number" && !s.markFailed?.includes(t));
 }
 
 function wantsPolling(): boolean {
@@ -467,7 +511,7 @@ async function turnOn() {
 
 /**
  * Saves the list and shows it at once: the chip is there before the background answers, with
- * "…" until the page reports what the rule keeps. The background tells the page; the popup only
+ * its wheel turning until the page reports what the rule keeps. The background tells the page; the popup only
  * has to keep asking the page for its counts.
  */
 async function addHighlight(term: string) {

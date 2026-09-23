@@ -172,6 +172,9 @@ export interface TabState {
   /** What finding the marks has cost on this page view, in tokens and model time; 0 when they came from the cache. */
   markTokens?: number;
   markMs?: number;
+  /** Rules and terms asked about on this view that got no answer (the network, a limit, the server): the popup says "?" for them at once instead of waiting. */
+  ruleFailed?: string[];
+  markFailed?: string[];
   /** The reader marked this site "always": in run mode `click` it is read as it loads. */
   always?: boolean;
   /** The page is longer than MAX_SENTENCES_PER_PAGE: only its beginning was judged, the rest is left in ink. */

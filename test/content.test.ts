@@ -577,11 +577,28 @@ describe("rules", () => {
     await until(() => ruled.length === 1);
     await new Promise((r) => setTimeout(r, 30));
     expect(last()?.ruleHits).toEqual({});
+    // The popup is told there was no answer, so its chip says "?" at once rather than wait on it.
+    expect(last()?.ruleFailed).toEqual(["grandmothers"]);
     expect(faded(nonna())).toBe(true);
     tell({ type: "rulesChanged", rules: ["grandmothers", "prices"] });
     await until(() => last()?.ruleHits.grandmothers !== undefined);
     expect(ruled[1]).toEqual({ contentHash: judged[0]!.contentHash, rules: ["grandmothers", "prices"] });
+    expect(last()?.ruleFailed).toEqual([]);
     expect(faded(nonna())).toBe(false);
+  });
+
+  it("a highlight term that gets no answer is reported as such, and asked again when it comes back", async () => {
+    scriptBackground();
+    await boot();
+    await untilDone();
+    // The worker in this test answers anything it does not know with a bare ok: no marks came.
+    tell({ type: "highlightsChanged", highlights: ["red flags"] });
+    await until(() => (last()?.markFailed ?? []).includes("red flags"));
+    expect(last()?.markHits).toEqual({});
+    tell({ type: "highlightsChanged", highlights: [] });
+    tell({ type: "highlightsChanged", highlights: ["red flags"] });
+    const asks = () => runtimeSend().mock.calls.filter(([m]) => (m as ToBackground).type === "judgeHighlights").length;
+    await until(() => asks() === 2);
   });
 
   it("sentences a mutation adds are asked about the rules in force too", async () => {

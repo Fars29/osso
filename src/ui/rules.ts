@@ -20,8 +20,8 @@ export const FULL_HINT = `${MAX_RULES} is plenty`;
 
 /**
  * What a chip shows beside its rule: a number of sentences kept, "judging" while the page is
- * still answering, "unknown" when it never did, or null for no count at all (the options page,
- * or a page with nothing judged).
+ * still answering (a small wheel turns where the number will land), "unknown" when it never did,
+ * or null for no count at all (the options page, or a page with nothing judged).
  */
 export type RuleCount = number | "judging" | "unknown" | null;
 
@@ -46,11 +46,31 @@ function replay(el: HTMLElement, cls: string) {
   el.addEventListener("animationend", () => el.classList.remove(cls), { once: true });
 }
 
-function countText(c: RuleCount): string {
+function countText(c: Exclude<RuleCount, "judging">): string {
   if (c === null) return "";
-  if (c === "judging") return "· …";
   if (c === "unknown") return "· ?";
   return `· ${c}`;
+}
+
+/**
+ * Puts the count in its place and says whether it changed. A count on its way is a wheel turning
+ * where the number will land; it is made once and left alone while the page keeps answering
+ * "not yet", since a wheel built again on every poll would start its turn over and stutter.
+ */
+function showCount(el: HTMLSpanElement, c: RuleCount): boolean {
+  const key = c === null ? "" : String(c);
+  if (el.dataset.count === key) return false;
+  el.dataset.count = key;
+  if (c !== "judging") {
+    el.textContent = countText(c);
+    return true;
+  }
+  const wheel = el.ownerDocument.createElement("i");
+  wheel.className = "rule-spin";
+  wheel.setAttribute("role", "img");
+  wheel.setAttribute("aria-label", "counting");
+  el.replaceChildren("· ", wheel);
+  return true;
 }
 
 /**
@@ -106,13 +126,9 @@ export function ruleList(ul: HTMLUListElement, opts: { onRemove(rule: string): v
         if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] ?? null);
         const c = count(rule);
         const el = li.querySelector<HTMLSpanElement>(".rule-count")!;
-        const text = countText(c);
-        if (el.textContent !== text) {
-          el.textContent = text;
-          // A number landing where the ellipsis was is the page answering: it settles into place.
-          if (typeof c === "number") replay(el, "arrived");
-        }
-        el.hidden = text === "";
+        // A number landing where the wheel was turning is the page answering: it settles into place.
+        if (showCount(el, c) && typeof c === "number") replay(el, "arrived");
+        el.hidden = c === null;
         el.classList.toggle("muted", c === 0 || c === "judging" || c === "unknown");
         li.title = typeof c === "number" ? titleOf(c) : "";
       });

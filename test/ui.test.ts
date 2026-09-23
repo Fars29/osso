@@ -70,11 +70,13 @@ async function openOptions() {
 }
 
 const text = (id: string) => document.getElementById(id)?.textContent?.trim();
-/** The chips as the reader sees them: "prices · 3", one per rule, in order. */
+/** The chips as the reader sees them: "prices · 3", one per rule, in order; a count on its way (a turning wheel) reads "…". */
 const chipsShown = () =>
-  Array.from(document.querySelectorAll("#rule-list .rule")).map((li) =>
-    `${li.querySelector(".rule-text")?.textContent ?? ""} ${li.querySelector<HTMLElement>(".rule-count")?.hidden ? "" : li.querySelector(".rule-count")?.textContent ?? ""}`.trim(),
-  );
+  Array.from(document.querySelectorAll("#rule-list .rule")).map((li) => {
+    const count = li.querySelector<HTMLElement>(".rule-count");
+    const shown = !count || count.hidden ? "" : `${count.textContent ?? ""}${count.querySelector(".rule-spin") ? "…" : ""}`;
+    return `${li.querySelector(".rule-text")?.textContent ?? ""} ${shown}`.trim();
+  });
 const keydown = (el: HTMLElement, key: string) => el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 const patches = () => runtimeSend().mock.calls.map(([m]) => m as ToBackground).filter((m): m is Extract<ToBackground, { type: "setSettings" }> => m.type === "setSettings");
 const visible = (id: string) => !document.getElementById(id)?.hidden;
@@ -479,6 +481,22 @@ describe("popup: what the highlights found", () => {
     expect(text("marks")).toBe("0");
     expect(text("marks-of")).toBe("/ 41");
     expect(text("marks-status")).toBe("0.3 s · ≈ $0.0003");
+  });
+
+  it("says ? at once for a term that got no answer, on the chip and in the figure", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", highlights: ["consequences"] }, { ...done, markFailed: ["consequences"] });
+    await openPopup();
+    expect(text("marks")).toBe("?");
+    expect(text("marks-status")).toBe("no answer");
+    const count = document.querySelector<HTMLElement>("#mark-list .rule-count")!;
+    expect(count.textContent).toBe("· ?");
+    expect(count.querySelector(".rule-spin")).toBeNull();
+  });
+
+  it("says ? at once for a rule that got no answer", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x", rules: ["prices"] }, { ...done, ruleFailed: ["prices"] });
+    await openPopup();
+    expect(chipsShown()).toEqual(["prices · ?"]);
   });
 
   it("waits with an ellipsis while the page is still looking", async () => {

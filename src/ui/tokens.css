@@ -455,6 +455,35 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   }
 }
 
+/* A count on its way: a small wheel turning where the number will land, a hairline ring in the
+   count's own grey with one quarter drawn in full. */
+.rule-spin {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin: 0 1px;
+  vertical-align: -1px;
+  border: 1.5px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: rule-spin 720ms linear infinite;
+}
+
+@keyframes rule-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Forced colours paint every side of a ring one colour, and a still round ring beside a count reads as a
+   zero. The track takes the chip's own ground, so only the quarter shows, and turns. */
+@media (forced-colors: active) {
+  .rule-spin {
+    border-color: Canvas;
+    border-top-color: CanvasText;
+  }
+}
+
 .rule-x {
   appearance: none;
   display: inline-flex;
@@ -487,6 +516,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
   .rule.pop,
   .rule.flash,
   .rule-count.arrived {
+    animation: none;
+  }
+
+  /* Held still, as the popup's other waiting number is: a ring with one quarter drawn already says a
+     count is coming. */
+  .rule-spin {
     animation: none;
   }
 

@@ -13,9 +13,10 @@ const keydown = (el: HTMLElement, key: string) => {
   return e;
 };
 const shown = (ul: HTMLUListElement) => Array.from(ul.querySelectorAll<HTMLLIElement>(".rule")).map((li) => li.dataset.rule);
+/** The count as the reader sees it, with the wheel of a count on its way read as "…". */
 const countOf = (ul: HTMLUListElement, rule: string) => {
   const el = ul.querySelector<HTMLElement>(`.rule[data-rule="${rule}"] .rule-count`)!;
-  return el.hidden ? null : el.textContent;
+  return el.hidden ? null : `${el.textContent}${el.querySelector(".rule-spin") ? "…" : ""}`;
 };
 
 let ul: HTMLUListElement;
@@ -66,7 +67,7 @@ describe("ruleList", () => {
     expect(prices.querySelector(".rule-x")?.getAttribute("aria-label")).toBe("Remove “prices”");
   });
 
-  it("shows a count per rule: a number, … while judging, ? when unknown, nothing when there is none", () => {
+  it("shows a count per rule: a number, a turning wheel while judging, ? when unknown, nothing when there is none", () => {
     const list = ruleList(ul, { onRemove: () => undefined });
     const counts: Record<string, number | "judging" | "unknown" | null> = { a: 3, b: 0, c: "judging", d: "unknown", e: null };
     list.render(["a", "b", "c", "d", "e"], (r) => counts[r] ?? null);
@@ -82,6 +83,21 @@ describe("ruleList", () => {
     list.render(["a"], () => 1);
     expect(countOf(ul, "a")).toBe("· 1");
     expect(ul.querySelector<HTMLElement>('.rule[data-rule="a"]')?.title).toBe("1 sentence kept on this page");
+  });
+
+  it("keeps one wheel turning across polls, and puts the number in its place when it lands", () => {
+    const list = ruleList(ul, { onRemove: () => undefined });
+    list.render(["red flags"], () => "judging");
+    const wheel = ul.querySelector(".rule-spin");
+    expect(wheel?.getAttribute("aria-label")).toBe("counting");
+    // Another poll, still no answer: the same wheel, not a new one starting its turn over.
+    list.render(["red flags"], () => "judging");
+    expect(ul.querySelector(".rule-spin")).toBe(wheel);
+    list.render(["red flags"], () => 7);
+    const count = ul.querySelector<HTMLElement>(".rule-count")!;
+    expect(count.querySelector(".rule-spin")).toBeNull();
+    expect(count.textContent).toBe("· 7");
+    expect(count.classList.contains("arrived")).toBe(true);
   });
 
   it("flash marks a chip and restarts on a second flash", () => {

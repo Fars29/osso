@@ -91,6 +91,9 @@ interface Mounted {
   /** What finding those marks cost on this page view, for the popup. */
   markTokens: number;
   markMs: number;
+  /** Rules and terms whose last ask got no answer; asked again the next time they come up. */
+  ruleFailed: Set<string>;
+  markFailed: Set<string>;
   /** Sentence id → its text, which a mark needs to line its offsets up with the page. */
   sentenceText: Map<number, string>;
   /** The rules last painted, so a settings change that left them alone repaints nothing. */
@@ -176,6 +179,8 @@ function tally(c: Counts): Partial<TabState> {
     markedSentences: markedCount(document),
     markTokens: mounted?.markTokens ?? 0,
     markMs: mounted?.markMs ?? 0,
+    ruleFailed: mounted ? [...mounted.ruleFailed] : [],
+    markFailed: mounted ? [...mounted.markFailed] : [],
   };
 }
 
@@ -340,6 +345,8 @@ function mount(container: Element, meta: PageMeta, packId: PageKind, req: JudgeR
     appliedTerms: [],
     markTokens: 0,
     markMs: 0,
+    ruleFailed: new Set(),
+    markFailed: new Set(),
     sentenceText: new Map(req.sentences.map((x) => [x.id, x.text])),
     outsideChars: Math.max(0, textLength(document.body) - textLength(container)),
     uninstall: interactions(s),
@@ -438,6 +445,7 @@ async function syncHighlights(): Promise<void> {
   const missing = active.filter((t) => !Object.prototype.hasOwnProperty.call(m.markResults, t));
   if (missing.length === 0 && sameRules(active, m.appliedTerms)) return;
   if (missing.length > 0) {
+    for (const t of missing) m.markFailed.delete(t);
     let reply = await ask({ type: "judgeHighlights", contentHash: m.req.contentHash, terms: missing });
     if (gen !== generation) return;
     if (reply?.type === "error" && reply.code === "unknown-page") {
@@ -451,6 +459,9 @@ async function syncHighlights(): Promise<void> {
       Object.assign(m.markResults, reply.spans);
       m.markTokens += reply.inputTokens ?? 0;
       m.markMs += reply.ms ?? 0;
+    } else {
+      // No answer: the popup is told so, and the term is asked again the next time it comes up.
+      for (const t of missing) m.markFailed.add(t);
     }
   }
   paintMarks(m);
@@ -460,8 +471,16 @@ async function syncHighlights(): Promise<void> {
 async function firstRules(ruling: Promise<FromBackground | null>, gen: number): Promise<void> {
   const reply = await ruling;
   const m = mounted;
-  if (gen !== generation || !m || reply?.type !== "ruleJudgment") return;
-  Object.assign(m.ruleResults, reply.rules);
+  if (gen !== generation || !m) return;
+  if (reply?.type === "ruleJudgment") {
+    Object.assign(m.ruleResults, reply.rules);
+    paintRules(m);
+    return;
+  }
+  // No answer for the rules that went out with the page: the popup says so rather than wait on them.
+  const unanswered = (settings?.rules ?? []).filter((r) => !Object.prototype.hasOwnProperty.call(m.ruleResults, r));
+  if (reply === null || unanswered.length === 0) return;
+  for (const r of unanswered) m.ruleFailed.add(r);
   paintRules(m);
 }
 
@@ -480,6 +499,7 @@ async function syncRules(): Promise<void> {
   const missing = active.filter((r) => !Object.prototype.hasOwnProperty.call(m.ruleResults, r));
   if (missing.length === 0 && sameRules(active, m.applied)) return;
   if (missing.length > 0) {
+    for (const r of missing) m.ruleFailed.delete(r);
     let reply = await ask({ type: "judgeRules", contentHash: m.req.contentHash, rules: missing });
     if (gen !== generation) return;
     if (reply?.type === "error" && reply.code === "unknown-page") {
@@ -491,7 +511,8 @@ async function syncRules(): Promise<void> {
       if (gen !== generation) return;
     }
     if (reply?.type === "ruleJudgment") Object.assign(m.ruleResults, reply.rules);
-    // Anything else: the rule stays unjudged on this view and the popup keeps showing "…" for it.
+    // Anything else: the rule stays unjudged on this view, the popup shows "?" for it, and it is asked again the next time the rules change.
+    else for (const r of missing) m.ruleFailed.add(r);
   }
   paintRules(m);
 }
