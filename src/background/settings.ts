@@ -4,7 +4,7 @@
  * rest of the code did not plan for: the worst case is a field falling back to its default.
  */
 import type { RevealKey, Settings, Stats } from "../shared/types.ts";
-import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, LEGACY_DEFAULT_THRESHOLD, MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH, MAX_RULES, MAX_RULE_LENGTH, THRESHOLD_MAX, THRESHOLD_MIN } from "../shared/constants.ts";
+import { DEFAULT_DENIED_HOSTS, DEFAULT_SETTINGS, MAX_HIGHLIGHTS, MAX_HIGHLIGHT_LENGTH, MAX_RULES, MAX_RULE_LENGTH, PAST_DEFAULT_THRESHOLDS, THRESHOLD_MAX, THRESHOLD_MIN } from "../shared/constants.ts";
 
 export const SETTINGS_KEY = "osso:settings";
 export const STATS_KEY = "osso:stats";
@@ -108,10 +108,10 @@ export function validate(raw: unknown): Settings {
     apiKey: typeof r.apiKey === "string" ? r.apiKey.trim() : d.apiKey,
     apiKeyInvalid: boolOr(r.apiKeyInvalid, d.apiKeyInvalid),
     enabled: boolOr(r.enabled, d.enabled),
-    // A stored threshold from before the default changed, still at the old default: the user never
-    // chose it, so it follows the new one. Anything else they set is theirs and stays.
+    // A stored threshold from before the default changed, still at the default of its revision: the user
+    // never chose it, so it follows the new one. Anything else they set is theirs and stays.
     threshold:
-      finiteOr(r.thresholdRev, 1) < d.thresholdRev && r.threshold === LEGACY_DEFAULT_THRESHOLD
+      finiteOr(r.thresholdRev, 1) < d.thresholdRev && r.threshold === PAST_DEFAULT_THRESHOLDS[finiteOr(r.thresholdRev, 1)]
         ? d.threshold
         : clamp(finiteOr(r.threshold, d.threshold), THRESHOLD_MIN, THRESHOLD_MAX),
     thresholdRev: d.thresholdRev,

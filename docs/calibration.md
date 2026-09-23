@@ -133,7 +133,20 @@ freeze pancakes and pancake batter" (0.47), "Plus, it helps bind the batter toge
 Italy the pressure on gas is likely to weigh on the power bill" (0.38). The first default, 0.5, cut
 through that band on the wrong side. Fading what the reader needed costs far more than leaving a
 lukewarm sentence in ink, and on the synthetic set filler above 0.3 is rare (mean 0.12), so the
-default is now **0.35**; an install still carrying an untouched 0.5 is moved once.
+default became **0.35**; an install still carrying an untouched 0.5 is moved once.
+
+**Lower again, to 0.25 (2026-09-23).** News reports put useful facts in the band just under 0.35.
+On 273 hand-labelled sentences (the synthetic pages above, a recipe, terms of service and two
+rainews reports), asked in the shape the extension sends (the reason question beside each one, the
+page kind in the first batch) and twice over, 0.35 greyed three to five useful sentences, most from a
+crime report: "È la strategia su cui sta lavorando la difesa" (0.23 and 0.27), "Sono atti dovuti"
+(0.29, 0.30), "Un vicino di casa, Sergio Barbotto, ha sentito gli spari" (0.33, 0.30). At 0.25 one
+went grey in one run and none in the other: the first of those, which sits on the line. 99 of 106
+filler sentences still did, against 102: what stays in ink is "That is it, really…", "Come forse
+saprai, nei prossimi mesi il prezzo…" and "Lussu ammette di non sapere…". A longer, more structured
+keep question was tried for the same end and separated worse (AUC 0.987 against 0.993); it only
+moved every answer up, which is what a lower threshold does with the question as it is. An untouched
+0.35 is moved once, and the slider now starts at 0.1 so the default keeps its place on it.
 
 **Interface is not prose.** The first pass on the recipe page judged, and greyed, "16,640 Reviews",
 "Keep Screen Awake", "Get the App" and an "Oops! Something went wrong." that was not even showing.

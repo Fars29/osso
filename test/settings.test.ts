@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, DEFAULT_THRESHOLD, LEGACY_DEFAULT_THRESHOLD, MAX_RULE_LENGTH, MAX_RULES, THRESHOLD_MAX, THRESHOLD_MIN } from "../src/shared/constants.ts";
+import { DEFAULT_SETTINGS, DEFAULT_THRESHOLD, MAX_RULE_LENGTH, MAX_RULES, PAST_DEFAULT_THRESHOLDS, THRESHOLD_MAX, THRESHOLD_MIN } from "../src/shared/constants.ts";
 import {
   SETTINGS_KEY,
   STATS_KEY,
@@ -244,17 +244,23 @@ describe("a changed default strictness", () => {
   const store = () => (globalThis as unknown as { chrome: { __store: Map<string, unknown> } }).chrome.__store;
 
   it("reaches a stored threshold the user never chose, once, and leaves a chosen one alone", async () => {
-    // An install from before the default moved: the old default, no revision marker.
-    store().set("osso:settings", { apiKey: "ts-x", threshold: LEGACY_DEFAULT_THRESHOLD });
+    // An install from before the first move: the first default, no revision marker.
+    store().set("osso:settings", { apiKey: "ts-x", threshold: PAST_DEFAULT_THRESHOLDS[1] });
     expect((await getSettings()).threshold).toBe(DEFAULT_THRESHOLD);
-    // The same install, where the user had moved the slider: theirs, and it stays.
-    store().set("osso:settings", { apiKey: "ts-x", threshold: 0.7 });
+    // An install from before the second move: the second default, at its revision.
+    store().set("osso:settings", { apiKey: "ts-x", threshold: PAST_DEFAULT_THRESHOLDS[2], thresholdRev: 2 });
+    expect((await getSettings()).threshold).toBe(DEFAULT_THRESHOLD);
+    // The second default under the first revision was a choice: that revision's default was 0.5.
+    store().set("osso:settings", { apiKey: "ts-x", threshold: PAST_DEFAULT_THRESHOLDS[2] });
+    expect((await getSettings()).threshold).toBe(PAST_DEFAULT_THRESHOLDS[2]);
+    // Where the user had moved the slider: theirs, and it stays.
+    store().set("osso:settings", { apiKey: "ts-x", threshold: 0.7, thresholdRev: 2 });
     expect((await getSettings()).threshold).toBe(0.7);
-    // After the move the marker is current, so choosing the old default on purpose sticks.
+    // After the move the marker is current, so choosing an old default on purpose sticks.
     store().clear();
     await setSettings({ apiKey: "ts-x" });
-    const chosen = await setSettings({ threshold: LEGACY_DEFAULT_THRESHOLD });
-    expect(chosen.threshold).toBe(LEGACY_DEFAULT_THRESHOLD);
-    expect((await getSettings()).threshold).toBe(LEGACY_DEFAULT_THRESHOLD);
+    const chosen = await setSettings({ threshold: PAST_DEFAULT_THRESHOLDS[2]! });
+    expect(chosen.threshold).toBe(PAST_DEFAULT_THRESHOLDS[2]);
+    expect((await getSettings()).threshold).toBe(PAST_DEFAULT_THRESHOLDS[2]);
   });
 });

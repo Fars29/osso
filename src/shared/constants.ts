@@ -34,15 +34,26 @@ export const MUTATION_DEBOUNCE_MS = 800;
 export const REVEAL_HOLD_MS = 120;
 
 /**
- * The default strictness. On real pages (a markets article, a recipe site) true filler sat at or
- * under 0.27 and substance at or over 0.52; between 0.35 and 0.48 there was only what is debatable
- * and useful ("Yes, you can freeze pancakes"). The first default, 0.5, cut through that band on the
- * wrong side: fading what the reader needed costs far more than leaving a lukewarm sentence in ink.
+ * The default strictness. Fading what the reader needed costs far more than leaving a lukewarm
+ * sentence in ink, and the default has moved down twice for it. The first, 0.5, cut through the band
+ * where only debatable and useful sentences sat (0.35 to 0.48 on a markets article and a recipe site).
+ * The second, 0.35, still greyed facts in news reports: on 273 hand-labelled sentences (the calibration
+ * pages, a recipe, terms of service, two rainews reports), asked as the extension asks them, three to
+ * five useful sentences went grey at 0.35, a crime report's "Un vicino di casa ha sentito gli spari"
+ * and "Sono atti dovuti" among them, and at 0.25 one at most: "È la strategia su cui sta lavorando
+ * la difesa", which comes back between 0.23 and 0.27 from one run to the next. 99 of 106 filler
+ * sentences still went grey at 0.25, against 102. A longer, more structured question was tried for
+ * the same end and separated worse (AUC 0.987 against 0.993): it only moved every answer up.
  */
-export const DEFAULT_THRESHOLD = 0.35;
-/** The default before that. A stored 0.5 that the user never chose is moved to the new default once. */
-export const LEGACY_DEFAULT_THRESHOLD = 0.5;
-export const THRESHOLD_MIN = 0.2;
+export const DEFAULT_THRESHOLD = 0.25;
+/**
+ * The default each earlier settings revision shipped with. A stored threshold still at the default of
+ * its revision was never chosen by the user, so it follows the current default once; anything else
+ * they set is theirs and stays.
+ */
+export const PAST_DEFAULT_THRESHOLDS: Readonly<Record<number, number>> = { 1: 0.5, 2: 0.35 };
+/** Low enough that the default sits about a fifth of the way along the slider, with room on the gentle side. */
+export const THRESHOLD_MIN = 0.1;
 export const THRESHOLD_MAX = 0.9;
 
 /** A sentence with p(hit) at or above this on any active rule is kept, whatever the slider says. */
@@ -184,7 +195,7 @@ export const DEFAULT_SETTINGS: Settings = {
   highlights: [],
   markColor: "#ffd24a",
   fadeColor: "",
-  thresholdRev: 2,
+  thresholdRev: 3,
 };
 
 /**
