@@ -279,19 +279,35 @@ try {
 
   // The marker: a term of the reader's, found on the page and painted over the words themselves.
   // The browser paints it from a registry, so what is asserted is what it was given, not a class of ours.
+  // Each mark draws itself: a Range that grows from empty, those on screen at once, the rest as the reader
+  // gets to them; `drawn` is what the reader can see marked so far.
   const TERM = "ingredients and their quantities";
   await ext.evaluate((highlights) => chrome.runtime.sendMessage({ type: "setSettings", patch: { highlights } }), [TERM]);
-  let marks = { count: 0, texts: [] };
-  for (let i = 0; i < 80 && marks.count === 0; i++) {
-    await sleep(500);
-    marks = await page.evaluate(() => {
+  const readMarks = () =>
+    page.evaluate(() => {
       const h = CSS.highlights?.get("osso-mark");
       const texts = [];
       if (h) for (const r of h) texts.push(r.toString().replace(/\s+/g, " ").trim());
-      return { count: h ? h.size : 0, texts };
+      return { count: h ? h.size : 0, texts: texts.filter(Boolean) };
     });
+  let marks = { count: 0, texts: [] };
+  for (let i = 0; i < 80 && marks.count === 0; i++) {
+    await sleep(500);
+    marks = await readMarks();
   }
   assert(marks.count > 0, `recipe: the highlight term marked nothing`);
+  // A reader's way down the page: every mark further down is reached, and drawn.
+  await page.evaluate(async () => {
+    for (let y = 0; y <= document.documentElement.scrollHeight; y += innerHeight / 2) {
+      scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  });
+  for (let i = 0; i < 20 && marks.texts.length < marks.count; i++) {
+    await sleep(250);
+    marks = await readMarks();
+  }
+  assert(marks.texts.length === marks.count, `recipe: ${marks.count - marks.texts.length} of ${marks.count} marks were never drawn`);
   const ingredientWords = ["flour", "orzo", "lemon", "stock", "onion", "garlic", "butter", "chicken", "parsley", "salt", "oil", "Parmigiano"];
   const sensible = marks.texts.filter((t) => ingredientWords.some((w) => t.toLowerCase().includes(w.toLowerCase())) || /\d/.test(t));
   assert(sensible.length >= 4, `recipe: the marks do not look like ingredients: ${JSON.stringify(marks.texts.slice(0, 10))}`);

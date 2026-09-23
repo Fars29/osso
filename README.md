@@ -37,7 +37,7 @@ Free and open source, and it runs on a key of your own: no account, no server, n
 | **Click** a struck sentence | Pins it back for this visit. |
 | **The slider** | How strict, from gentle to bare. Instant, no new request. |
 | **keep …** | What to always keep, in your own words: *prices*, *deadlines*, *allergens*. |
-| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *consequences*. Osso looks for the thing, not the word: a name is marked on its own, a consequence with the part of the sentence that says it. A marked sentence is never struck. |
+| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *consequences*. Osso looks for the thing, not the word: a name is marked on its own, a consequence with the part of the sentence that says it. Each mark draws itself, like a highlighter, the moment you reach it. A marked sentence is never struck. |
 | **On this site** | Turns Osso off for a site. **Alt+Shift+O** does the same. |
 
 ![The popup after a page is judged](docs/screenshots/popup-done.png)

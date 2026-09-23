@@ -127,6 +127,16 @@ interface DocState {
   /** Spans wearing the transient underline, and the timer that takes it off them. */
   hitSpans: Set<HTMLElement>;
   hitTimer: ReturnType<typeof setTimeout> | null;
+  /** Every mark in force, by key, with the characters of the page it covers and the Range painted for it. */
+  pieces: Map<string, MarkPiece>;
+  /** Marks this page has shown or is about to show, by key: only a mark not in here draws itself. */
+  drawn: Set<string>;
+  /** Marks being drawn: when each one starts and how long it takes. */
+  strokes: Map<string, Stroke>;
+  /** Marks waiting for the reader to reach their sentence, by the wrapper watched for it. */
+  markWaiting: Map<Element, Set<string>>;
+  markWatcher: IntersectionObserver | null;
+  markFrame: number;
 }
 
 const states = new WeakMap<Document, DocState>();
@@ -157,6 +167,12 @@ function stateOf(doc: Document): DocState {
       seenHits: new Set(),
       hitSpans: new Set(),
       hitTimer: null,
+      pieces: new Map(),
+      drawn: new Set(),
+      strokes: new Map(),
+      markWaiting: new Map(),
+      markWatcher: null,
+      markFrame: 0,
     };
     states.set(doc, s);
   }
@@ -748,7 +764,10 @@ export function applyJudgment(
   root.classList.add("osso-on");
   root.classList.toggle("osso-strike", opts.strike !== false);
   root.classList.toggle("osso-still", !opts.animations);
-  if (!wave) releaseWaiting(state);
+  if (!wave) {
+    releaseWaiting(state);
+    if (state.strokes.size > 0 || state.markWaiting.size > 0) releaseMarks(doc, state);
+  }
   const counts = render(doc, state, wave);
   // Nothing of this pass is on screen to be waited for.
   if (state.entrances === 0) root.classList.add("osso-settled");
@@ -1173,6 +1192,7 @@ export function clearRender(doc: Document): void {
     releaseWaiting(state);
     if (state.instantTimer) clearTimeout(state.instantTimer);
     if (state.hitTimer) clearTimeout(state.hitTimer);
+    releaseMarks(doc, state);
     highlightApi(doc.defaultView)?.css.highlights.delete(MARK_REGISTRY);
     state.chip?.remove();
     states.delete(doc);
@@ -1247,35 +1267,41 @@ function charMap(spans: HTMLElement[]): { text: string; at: Array<{ node: Text; 
   return { text, at };
 }
 
+type CharAt = { node: Text; offset: number };
+
 /**
- * Turns [start, end) offsets into the sentence's own text into Ranges over the page. A run-in label
- * goes to the model with its sentence but is never wrapped, so what the page holds can be a tail of
- * what the model read: the two are lined up by looking for one inside the other, and a sentence
+ * Turns [start, end) offsets into the sentence's own text into runs of the page's characters. A run-in
+ * label goes to the model with its sentence but is never wrapped, so what the page holds can be a tail
+ * of what the model read: the two are lined up by looking for one inside the other, and a sentence
  * that cannot be lined up is left unmarked rather than marked in the wrong place.
  */
-function rangesFor(doc: Document, spans: HTMLElement[], sentence: string, ranges: [number, number][]): Range[] {
+function runsFor(spans: HTMLElement[], sentence: string, ranges: [number, number][]): Array<{ from: number; to: number; chars: CharAt[] }> {
   const { text, at } = charMap(spans);
   if (text.length === 0) return [];
   const shift = sentence.indexOf(text);
   if (shift < 0) return [];
-  const out: Range[] = [];
+  const out: Array<{ from: number; to: number; chars: CharAt[] }> = [];
   for (const [from, to] of ranges) {
     // What falls in a part of the sentence the page does not hold (a run-in label) is left out, the rest is marked.
     const a = Math.max(0, from - shift);
     const b = Math.min(at.length, to - shift);
-    if (b <= a) continue;
-    const start = at[a]!;
-    const end = at[b - 1]!;
-    const range = doc.createRange();
-    try {
-      range.setStart(start.node, start.offset);
-      range.setEnd(end.node, end.offset + 1);
-    } catch {
-      continue;
-    }
-    out.push(range);
+    if (b > a) out.push({ from, to, chars: at.slice(a, b) });
   }
   return out;
+}
+
+/** An empty Range at the first letter of a run, for a mark to grow from; null where the page no longer holds it. */
+function markRange(doc: Document, chars: CharAt[]): Range | null {
+  const first = chars[0];
+  if (!first) return null;
+  const range = doc.createRange();
+  try {
+    range.setStart(first.node, first.offset);
+    range.collapse(true);
+  } catch {
+    return null;
+  }
+  return range;
 }
 
 /**
@@ -1290,12 +1316,88 @@ export function applyHighlights(doc: Document, spans: HighlightSpans, activeTerm
   return state.entrances > 0 ? render(doc, state, false) : renderInstant(doc, state);
 }
 
-/** Rebuilds the marked ids and hands the browser the ranges to paint. Reads the page, writes nothing into it. */
+/**
+ * The marker draws itself. A mark new to the page is drawn the way a highlighter pen draws, from its
+ * first letter to its last, at a steady pace: a longer stretch takes longer, within limits. When an
+ * answer lands, the marks on screen go one after another in reading order; a mark further down waits,
+ * unpainted, until the reader scrolls to it, and is drawn in front of them, as a strike is.
+ *
+ * The Custom Highlight API paints what it is handed and animates nothing: no transition or animation
+ * reaches a ::highlight, and it takes a colour, never a gradient that could feather an edge. So a
+ * stroke is a Range whose end moves on every frame. The browser repaints a registered Range when it
+ * changes, so the registry is set only when which marks there are changes, and a frame touches only
+ * the strokes in flight. Within a stroke the pen moves at one speed: it can only advance a whole letter
+ * at a time, and on an eased curve the edge held still on a fifth of the frames and then leapt (measured
+ * at 60 Hz on 21 px text); at 6 ms a letter it moves on every frame. A short word is held to
+ * MARK_MIN_MS so the stroke can be seen at all, and steps a letter about every other frame; a long
+ * stretch is capped at MARK_MAX_MS.
+ */
+export const MARK_MS_PER_CHAR = 6;
+export const MARK_MIN_MS = 180;
+export const MARK_MAX_MS = 900;
+export const MARK_STAGGER_MS = 140;
+export const MARK_STAGGER_MAX_MS = 1100;
+/** A mark the reader scrolls to goes at once and a little quicker: they are already looking at it. */
+export const MARK_ARRIVE_MS_PER_CHAR = 5;
+export const MARK_ARRIVE_MIN_MS = 160;
+export const MARK_ARRIVE_MAX_MS = 700;
+export const MARK_ARRIVE_STAGGER_MS = 90;
+export const MARK_ARRIVE_STAGGER_MAX_MS = 360;
+
+/** One stretch a term marks: the sentence it is in, the page's characters it covers, and the Range the browser paints for it. */
+interface MarkPiece {
+  key: string;
+  id: number;
+  from: number;
+  chars: CharAt[];
+  range: Range;
+}
+
+interface Stroke {
+  start: number;
+  ms: number;
+}
+
+/** The pen's time for a stretch of `chars` letters. */
+function strokeMs(chars: number, perChar: number, min: number, max: number): number {
+  return Math.round(Math.min(max, Math.max(min, chars * perChar)));
+}
+
+function now(doc: Document): number {
+  return doc.defaultView?.performance?.now() ?? Date.now();
+}
+
+/** Whether marks are drawn at all: animations on, motion not reduced, and a frame to draw on. */
+function drawing(doc: Document, state: DocState): boolean {
+  return state.animations && !prefersReducedMotion(doc) && typeof doc.defaultView?.requestAnimationFrame === "function";
+}
+
+/** Moves a mark's end to cover its first `count` letters; at 0 it is empty and paints nothing. */
+function reach(piece: MarkPiece, count: number) {
+  const chars = piece.chars;
+  try {
+    if (count <= 0) piece.range.setEnd(chars[0]!.node, chars[0]!.offset);
+    else {
+      const end = chars[Math.min(count, chars.length) - 1]!;
+      piece.range.setEnd(end.node, end.offset + 1);
+    }
+  } catch {
+    // The page changed under the mark: it stays as it was.
+  }
+}
+
+function waitingKeys(state: DocState): Set<string> {
+  const out = new Set<string>();
+  for (const keys of state.markWaiting.values()) for (const key of keys) out.add(key);
+  return out;
+}
+
+/** Rebuilds the marked ids, starts the marks new to the page, and hands the browser the ranges to paint. Writes nothing into the page. */
 function paintMarks(doc: Document, state: DocState, sentences: Map<number, string>) {
   const api = highlightApi(doc.defaultView);
   const byId = spansById(doc);
   const marked = new Map<number, string>();
-  const ranges: Range[] = [];
+  const pieces = new Map<string, MarkPiece>();
   for (const term of state.activeTerms) {
     for (const [id, offsets] of Object.entries(state.marks[term] ?? {})) {
       const key = Number(id);
@@ -1303,13 +1405,217 @@ function paintMarks(doc: Document, state: DocState, sentences: Map<number, strin
       const text = sentences.get(key);
       if (!wrappers || !text || offsets.length === 0) continue;
       if (!marked.has(key)) marked.set(key, term);
-      if (api) ranges.push(...rangesFor(doc, wrappers, text, offsets));
+      if (!api) continue;
+      for (const run of runsFor(wrappers, text, offsets)) {
+        const range = markRange(doc, run.chars);
+        const k = `${term}\u0000${key}\u0000${run.from}:${run.to}`;
+        if (range) pieces.set(k, { key: k, id: key, from: run.from, chars: run.chars, range });
+      }
     }
   }
   state.marked = marked;
   if (!api) return;
-  if (ranges.length === 0) api.css.highlights.delete(MARK_REGISTRY);
-  else api.css.highlights.set(MARK_REGISTRY, api.make(ranges));
+  state.pieces = pieces;
+  forgetMarks(state, pieces);
+  // A mark still waiting is watched again, on the wrappers it is in now: the page may have replaced the ones it was watched on.
+  const stillWaiting = [...waitingKeys(state)].flatMap((key) => pieces.get(key) ?? []);
+  state.markWatcher?.disconnect();
+  state.markWaiting.clear();
+  const fresh = [...pieces.values()].filter((p) => !state.drawn.has(p.key));
+  for (const p of fresh) state.drawn.add(p.key);
+  if (!drawing(doc, state)) releaseMarks(doc, state);
+  else {
+    if (fresh.length > 0) startStrokes(doc, state, fresh, byId);
+    wait(doc, state, stillWaiting);
+  }
+  // Every mark as it stands now: whole, drawn partway, or empty (its turn still to come, or waiting for the reader).
+  const waiting = waitingKeys(state);
+  for (const p of pieces.values()) if (!state.strokes.has(p.key) && !waiting.has(p.key)) reach(p, p.chars.length);
+  advance(doc, state);
+  if (pieces.size === 0) api.css.highlights.delete(MARK_REGISTRY);
+  else api.css.highlights.set(MARK_REGISTRY, api.make([...pieces.values()].map((p) => p.range)));
+  nextFrame(doc, state);
+}
+
+/** A term taken away: its marks are forgotten, so putting it back draws them again. */
+function forgetMarks(state: DocState, present: Map<string, MarkPiece>) {
+  for (const key of state.drawn) if (!present.has(key)) state.drawn.delete(key);
+  for (const key of state.strokes.keys()) if (!present.has(key)) state.strokes.delete(key);
+}
+
+/** Nothing draws or waits any more: animations off, or on the way out. Every mark in force is whole. */
+function releaseMarks(doc: Document, state: DocState) {
+  state.strokes.clear();
+  state.markWaiting.clear();
+  state.markWatcher?.disconnect();
+  state.markWatcher = null;
+  if (state.markFrame) doc.defaultView?.cancelAnimationFrame?.(state.markFrame);
+  state.markFrame = 0;
+  for (const p of state.pieces.values()) reach(p, p.chars.length);
+}
+
+/**
+ * The wrappers a mark's letters sit in that the page actually shows. Not the sentence's: a sentence can
+ * start in a line scrolled away while its mark is in view, and a wrapper the site hides with its own
+ * stylesheet (a phrase shown only on wide screens) has no box, is never in view, and must not be waited on.
+ */
+function shownWrappers(p: MarkPiece): HTMLElement[] {
+  const nodes = new Set<Text>();
+  for (const c of p.chars) nodes.add(c.node);
+  const out = new Set<HTMLElement>();
+  for (const node of nodes) {
+    const w = node.parentElement?.closest<HTMLElement>(SPAN);
+    if (w && w.getClientRects().length > 0) out.add(w);
+  }
+  return [...out];
+}
+
+/** Where a mark is on screen: the box around the wrappers it is shown in; null when it is shown nowhere. */
+function markBox(wrappers: HTMLElement[]): { top: number; bottom: number } | null {
+  if (wrappers.length === 0) return null;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const w of wrappers) {
+    const r = w.getBoundingClientRect();
+    top = Math.min(top, r.top);
+    bottom = Math.max(bottom, r.bottom);
+  }
+  return { top, bottom };
+}
+
+/**
+ * Reads where the new marks are, then sets them going: the ones on screen one after another in reading
+ * order, the ones elsewhere waiting for the reader. A mark shown nowhere (no layout, as in a test document,
+ * or every letter of it hidden by the site) has nothing to wait for, and neither has any mark where the
+ * browser cannot say when the reader gets somewhere: those count as on screen.
+ */
+function startStrokes(doc: Document, state: DocState, fresh: MarkPiece[], byId: Map<number, HTMLElement[]>) {
+  const win = doc.defaultView;
+  const vh = win?.innerHeight ?? 0;
+  const order = new Map<number, number>();
+  for (const id of byId.keys()) order.set(id, order.size);
+  const shown = new Map<string, HTMLElement[]>();
+  const boxes = new Map<string, { top: number; bottom: number } | null>();
+  for (const p of fresh) {
+    const wrappers = shownWrappers(p);
+    shown.set(p.key, wrappers);
+    boxes.set(p.key, markBox(wrappers));
+  }
+  const canWait = vh > 0 && typeof win?.IntersectionObserver === "function";
+  const inView = (p: MarkPiece) => {
+    const b = boxes.get(p.key);
+    return !canWait || !b || (b.bottom > 0 && b.top < vh);
+  };
+  const reading = (a: MarkPiece, b: MarkPiece) => {
+    const ba = boxes.get(a.key);
+    const bb = boxes.get(b.key);
+    if (ba && bb && Math.abs(ba.top - bb.top) > 1) return ba.top - bb.top;
+    return (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0) || a.from - b.from;
+  };
+  const t0 = now(doc);
+  fresh
+    .filter(inView)
+    .sort(reading)
+    .forEach((p, i) => {
+      state.strokes.set(p.key, { start: t0 + Math.min(MARK_STAGGER_MAX_MS, i * MARK_STAGGER_MS), ms: strokeMs(p.chars.length, MARK_MS_PER_CHAR, MARK_MIN_MS, MARK_MAX_MS) });
+    });
+  wait(doc, state, fresh.filter((p) => !inView(p)), shown);
+}
+
+/**
+ * Marks that wait for the reader: each is watched on every wrapper it is shown in, and goes when any of
+ * them comes into view. One shown nowhere any more has nothing to wait for, and is drawn now.
+ */
+function wait(doc: Document, state: DocState, pieces: MarkPiece[], shown?: Map<string, HTMLElement[]>) {
+  if (pieces.length === 0) return;
+  const watcher = markWatcherOf(doc, state);
+  const atOnce = new Set<string>();
+  for (const p of pieces) {
+    const wrappers = shown?.get(p.key) ?? shownWrappers(p);
+    if (!watcher || wrappers.length === 0) {
+      atOnce.add(p.key);
+      continue;
+    }
+    for (const w of wrappers) {
+      let keys = state.markWaiting.get(w);
+      if (!keys) {
+        keys = new Set();
+        state.markWaiting.set(w, keys);
+        watcher.observe(w);
+      }
+      keys.add(p.key);
+    }
+  }
+  if (atOnce.size > 0) drawReached(doc, state, atOnce);
+}
+
+function markWatcherOf(doc: Document, state: DocState): IntersectionObserver | null {
+  if (state.markWatcher) return state.markWatcher;
+  const Watcher = doc.defaultView?.IntersectionObserver;
+  if (typeof Watcher !== "function") return null;
+  state.markWatcher = new Watcher((entries) => {
+    // Motion reduced, or animations off, since the mark began to wait: it is simply there.
+    if (!drawing(doc, state)) {
+      releaseMarks(doc, state);
+      return;
+    }
+    const came = new Set<string>();
+    for (const e of entries) if (e.isIntersecting) for (const key of state.markWaiting.get(e.target) ?? []) came.add(key);
+    if (came.size === 0) return;
+    // A mark watched on several wrappers is done waiting on all of them.
+    for (const [target, keys] of state.markWaiting) {
+      for (const key of came) keys.delete(key);
+      if (keys.size > 0) continue;
+      state.markWaiting.delete(target);
+      state.markWatcher?.unobserve(target);
+    }
+    drawReached(doc, state, came);
+  });
+  return state.markWatcher;
+}
+
+/** The reader got there: what they reached is drawn at once, a little quicker, one mark just after the other in reading order. */
+function drawReached(doc: Document, state: DocState, keys: Set<string>) {
+  const t0 = now(doc);
+  [...state.pieces.values()]
+    .filter((p) => keys.has(p.key))
+    .sort((a, b) => a.id - b.id || a.from - b.from)
+    .forEach((p, i) => {
+      state.strokes.set(p.key, {
+        start: t0 + Math.min(MARK_ARRIVE_STAGGER_MAX_MS, i * MARK_ARRIVE_STAGGER_MS),
+        ms: strokeMs(p.chars.length, MARK_ARRIVE_MS_PER_CHAR, MARK_ARRIVE_MIN_MS, MARK_ARRIVE_MAX_MS),
+      });
+    });
+  advance(doc, state);
+  nextFrame(doc, state);
+}
+
+/** Moves every stroke in flight to where the pen is now; one that has arrived is whole, and done. */
+function advance(doc: Document, state: DocState) {
+  const t = now(doc);
+  for (const [key, stroke] of state.strokes) {
+    const piece = state.pieces.get(key);
+    const done = (t - stroke.start) / stroke.ms;
+    if (!piece || done >= 1) {
+      if (piece) reach(piece, piece.chars.length);
+      state.strokes.delete(key);
+      continue;
+    }
+    reach(piece, Math.ceil(Math.max(0, done) * piece.chars.length));
+  }
+}
+
+/** One frame at a time while any stroke is still being drawn; none once they are all whole. */
+function nextFrame(doc: Document, state: DocState) {
+  if (state.markFrame || state.strokes.size === 0) return;
+  const win = doc.defaultView;
+  if (typeof win?.requestAnimationFrame !== "function") return;
+  state.markFrame = win.requestAnimationFrame(() => {
+    state.markFrame = 0;
+    if (states.get(doc) !== state) return;
+    advance(doc, state);
+    nextFrame(doc, state);
+  });
 }
 
 /** How many sentences on this page carry a mark: what the popup's second figure is out of. */

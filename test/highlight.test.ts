@@ -3,13 +3,23 @@
  * answers into stretches of the page. The offsets come back as positions in the sentence the model
  * read, and the page holds the same text with its own whitespace, so the mapping is the risky part.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { highlightWords, stitchSpans } from "../src/background/api.ts";
 import { normalizeColour, normalizeHighlights } from "../src/background/settings.ts";
 import { MAX_HIGHLIGHTS } from "../src/shared/constants.ts";
 import { applyHighlights, clearRender, markHits } from "../src/content/render.ts";
 import type { PageJudgment, SentenceJudgment } from "../src/shared/types.ts";
-import { applyJudgment } from "../src/content/render.ts";
+import {
+  MARK_ARRIVE_MAX_MS,
+  MARK_ARRIVE_MIN_MS,
+  MARK_ARRIVE_STAGGER_MS,
+  MARK_MAX_MS,
+  MARK_MIN_MS,
+  MARK_MS_PER_CHAR,
+  MARK_STAGGER_MAX_MS,
+  MARK_STAGGER_MS,
+  applyJudgment,
+} from "../src/content/render.ts";
 
 describe("which words are worth a question", () => {
   it("skips the function words and the punctuation, and keeps what a reader could point at", () => {
@@ -219,5 +229,266 @@ describe("marking the page", () => {
     // No paint, but the sentence is still the reader's to read.
     expect(counts.faded).toBe(0);
     expect(markHits(document)).toEqual({ ingredients: 1 });
+  });
+});
+
+describe("the marker draws itself", () => {
+  /** The browser's clock and frames, run by the test. */
+  const CLOCK: Parameters<typeof vi.useFakeTimers>[0] = { toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date", "performance", "requestAnimationFrame", "cancelAnimationFrame"] };
+  /** What the reader sees marked: an empty Range (a mark whose turn has not come) paints nothing. */
+  const painted = () => (registry.get("osso-mark")?.ranges ?? []).map(String).filter((s) => s !== "");
+
+  /** The browser's IntersectionObserver, reduced to what the renderer asks of it; the test says when the reader gets somewhere. */
+  const observers: FakeObserver[] = [];
+  class FakeObserver {
+    targets = new Set<Element>();
+    constructor(readonly callback: (entries: Array<{ target: Element; isIntersecting: boolean }>) => void) {
+      observers.push(this);
+    }
+    observe(t: Element) {
+      this.targets.add(t);
+    }
+    unobserve(t: Element) {
+      this.targets.delete(t);
+    }
+    disconnect() {
+      this.targets.clear();
+    }
+  }
+  /** The reader scrolls to `el`: every observer watching it hears about it, as in a browser. */
+  const reach = (el: Element) => {
+    for (const o of [...observers]) if (o.targets.has(el)) o.callback([{ target: el, isIntersecting: true }]);
+  };
+
+  /**
+   * Gives each sentence's wrappers a line, as layout would: `tops[id]` is where it starts, in window pixels.
+   * A wrapper listed in `hidden` has no box at all, as one the site hides with its own stylesheet.
+   */
+  function layOut(tops: Record<number, number>, innerHeight = 600, hidden: HTMLElement[] = []) {
+    Object.defineProperty(window, "innerHeight", { value: innerHeight, configurable: true });
+    for (const [id, top] of Object.entries(tops)) {
+      for (const s of spansOf(Number(id))) {
+        const box = hidden.includes(s)
+          ? ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+          : ({ top, bottom: top + 24, left: 0, right: 600, width: 600, height: 24, x: 0, y: top, toJSON: () => ({}) } as DOMRect);
+        s.getBoundingClientRect = () => box;
+        s.getClientRects = () => (hidden.includes(s) ? [] : [box]) as unknown as DOMRectList;
+      }
+    }
+  }
+  const watchRealObserver = () => Object.defineProperty(window, "IntersectionObserver", { value: FakeObserver, configurable: true, writable: true });
+  const SUGAR = { ingredients: { 0: [[13, 24]] as [number, number][] } };
+  const SERVE = { reasons: { 1: [[0, SENTENCES.get(1)!.length]] as [number, number][] } };
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    observers.length = 0;
+    Reflect.deleteProperty(window, "IntersectionObserver");
+  });
+
+  it("draws a new mark from its first letter to its last, at a pen's pace", () => {
+    vi.useFakeTimers(CLOCK);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    // Nothing yet: the pen is at the first letter.
+    expect(painted()).toEqual([]);
+    vi.advanceTimersByTime(MARK_MIN_MS / 2);
+    const half = painted()[0] ?? "";
+    expect(half.length).toBeGreaterThan(0);
+    expect(half.length).toBeLessThan("white sugar".length);
+    expect("white sugar".startsWith(half)).toBe(true);
+    vi.advanceTimersByTime(MARK_MIN_MS);
+    expect(painted()).toEqual(["white sugar"]);
+    // The count never waited for the pen.
+    expect(markHits(document)).toEqual({ ingredients: 1 });
+  });
+
+  it("takes longer over a longer stretch: a whole sentence is still being drawn when a word would be done", () => {
+    vi.useFakeTimers(CLOCK);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    const sentence = SENTENCES.get(0)!;
+    expect(sentence.length * MARK_MS_PER_CHAR).toBeGreaterThan(MARK_MIN_MS);
+    applyHighlights(document, { reasons: { 0: [[0, sentence.length]] } }, ["reasons"], SENTENCES);
+    vi.advanceTimersByTime(MARK_MIN_MS);
+    const drawn = painted().join("").length;
+    expect(drawn).toBeGreaterThan(0);
+    expect(drawn).toBeLessThan(sentence.length);
+    vi.advanceTimersByTime(sentence.length * MARK_MS_PER_CHAR);
+    expect(painted().join("")).toBe(sentence);
+  });
+
+  it("hands the browser the marks once, and moves on only the strokes in flight", () => {
+    vi.useFakeTimers(CLOCK);
+    const sets: unknown[] = [];
+    const set = registry.set.bind(registry);
+    registry.set = (name: string, value: FakeHighlight) => {
+      sets.push(value);
+      return set(name, value);
+    };
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    const range = registry.get("osso-mark")!.ranges[0]!;
+    const seen = new Set<string>();
+    for (let t = 0; t < MARK_MAX_MS; t += 16) {
+      vi.advanceTimersByTime(16);
+      seen.add(String(range));
+    }
+    // One registration; the same Range grew through several lengths to the whole mark.
+    expect(sets).toHaveLength(1);
+    expect(seen.size).toBeGreaterThan(3);
+    expect(String(range)).toBe("white sugar");
+  });
+
+  it("draws the marks on screen one after another, in reading order", () => {
+    vi.useFakeTimers(CLOCK);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, { ...SERVE, ...SUGAR }, ["reasons", "ingredients"], SENTENCES);
+    // The reader's order, not the terms': the sugar comes first on the page, so it is drawn first.
+    vi.advanceTimersByTime(MARK_STAGGER_MS / 2);
+    expect(painted()).toHaveLength(1);
+    expect("white sugar".startsWith(painted()[0]!)).toBe(true);
+    vi.advanceTimersByTime(MARK_STAGGER_MS + MARK_MAX_MS);
+    expect(painted().sort()).toEqual(["Serve at once.", "white sugar"]);
+  });
+
+  it("reads the order off the screen when there is a layout: the higher line goes first", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    // A layout that puts the later sentence above the earlier one, as a float or a grid can.
+    layOut({ 0: 300, 1: 100 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, { ...SUGAR, ...SERVE }, ["ingredients", "reasons"], SENTENCES);
+    vi.advanceTimersByTime(MARK_STAGGER_MS / 2);
+    expect(painted()).toHaveLength(1);
+    expect("Serve at once.".startsWith(painted()[0]!)).toBe(true);
+  });
+
+  it("leaves a mark further down unpainted until the reader gets there, then draws it in front of them", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 100 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, { ...SUGAR, ...SERVE }, ["ingredients", "reasons"], SENTENCES);
+    vi.advanceTimersByTime(MARK_STAGGER_MAX_MS + MARK_MAX_MS);
+    expect(painted()).toEqual(["Serve at once."]);
+    // Found and counted all the same: only the drawing waits.
+    expect(markHits(document)).toEqual({ ingredients: 1, reasons: 1 });
+    // The sugar is in the sentence's second wrapper (the <em>): the first one coming into view is not the mark.
+    reach(spansOf(0)[0]!);
+    vi.advanceTimersByTime(MARK_ARRIVE_MAX_MS);
+    expect(painted()).toEqual(["Serve at once."]);
+    reach(spansOf(0)[1]!);
+    // The pen sets off at once, from the first letter, at the quicker pace of a mark the reader is looking at.
+    expect(painted()).toEqual(["Serve at once."]);
+    vi.advanceTimersByTime(MARK_ARRIVE_MIN_MS + 20);
+    expect(painted().sort()).toEqual(["Serve at once.", "white sugar"]);
+  });
+
+  it("draws marks the reader reaches together one just after the other", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 1430 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, { ...SUGAR, ...SERVE }, ["ingredients", "reasons"], SENTENCES);
+    expect(painted()).toEqual([]);
+    for (const o of [...observers]) o.callback([...o.targets].map((target) => ({ target, isIntersecting: true })));
+    vi.advanceTimersByTime(MARK_ARRIVE_STAGGER_MS / 2);
+    expect(painted()).toHaveLength(1);
+    vi.advanceTimersByTime(MARK_ARRIVE_STAGGER_MS + MARK_ARRIVE_MAX_MS);
+    expect(painted().sort()).toEqual(["Serve at once.", "white sugar"]);
+  });
+
+  it("does not wait on a wrapper the site hides: a mark shown nowhere is drawn at once", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 100 }, 600, [spansOf(0)[1]!]);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    // Nobody scrolled anywhere, and it is drawn all the same.
+    vi.advanceTimersByTime(MARK_MAX_MS);
+    expect(painted()).toEqual(["white sugar"]);
+  });
+
+  it("watches a waiting mark again when the marks are painted anew, and still draws it when reached", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 100 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    applyHighlights(document, SERVE, ["ingredients", "reasons"], SENTENCES);
+    vi.advanceTimersByTime(MARK_STAGGER_MAX_MS + MARK_MAX_MS);
+    expect(painted()).toEqual(["Serve at once."]);
+    reach(spansOf(0)[1]!);
+    vi.advanceTimersByTime(MARK_ARRIVE_MAX_MS);
+    expect(painted().sort()).toEqual(["Serve at once.", "white sugar"]);
+  });
+
+  it("keeps a mark already drawn whole when another term comes, and draws a term put back again", () => {
+    vi.useFakeTimers(CLOCK);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    vi.advanceTimersByTime(MARK_MAX_MS);
+    applyHighlights(document, SERVE, ["ingredients", "reasons"], SENTENCES);
+    expect(painted()).toEqual(["white sugar"]);
+    vi.advanceTimersByTime(MARK_MAX_MS);
+    expect(painted().sort()).toEqual(["Serve at once.", "white sugar"]);
+    // Taken away, it goes at once; put back, it is drawn again, since the reader asked again.
+    applyHighlights(document, {}, ["reasons"], SENTENCES);
+    expect(painted()).toEqual(["Serve at once."]);
+    applyHighlights(document, {}, ["reasons", "ingredients"], SENTENCES);
+    expect(painted()).toEqual(["Serve at once."]);
+    vi.advanceTimersByTime(MARK_MAX_MS);
+    expect(painted().sort()).toEqual(["Serve at once.", "white sugar"]);
+  });
+
+  it("paints every mark whole at once where motion is reduced", () => {
+    vi.useFakeTimers(CLOCK);
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q }) as MediaQueryList);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    expect(painted()).toEqual(["white sugar"]);
+  });
+
+  it("paints a waiting mark whole, not drawn, when motion was reduced while it waited", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 100 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    expect(painted()).toEqual([]);
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q }) as MediaQueryList);
+    reach(spansOf(0)[1]!);
+    // Whole on the spot, and it stays so: no stroke was started.
+    expect(painted()).toEqual(["white sugar"]);
+    vi.advanceTimersByTime(16);
+    expect(painted()).toEqual(["white sugar"]);
+  });
+
+  it("paints a mark still waiting whole once animations are switched off", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 100 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, SUGAR, ["ingredients"], SENTENCES);
+    expect(painted()).toEqual([]);
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: false });
+    expect(painted()).toEqual(["white sugar"]);
+  });
+
+  it("stops drawing and watching when Osso leaves the page", () => {
+    vi.useFakeTimers(CLOCK);
+    watchRealObserver();
+    layOut({ 0: 1400, 1: 100 });
+    applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
+    applyHighlights(document, { ...SUGAR, ...SERVE }, ["ingredients", "reasons"], SENTENCES);
+    vi.advanceTimersByTime(MARK_MIN_MS / 2);
+    // One stroke in flight, one mark waiting.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    clearRender(document);
+    // No frame left to run, nothing left watched: the reader's scroll cannot bring anything back.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(observers.every((o) => o.targets.size === 0)).toBe(true);
+    expect(registry.has("osso-mark")).toBe(false);
   });
 });
