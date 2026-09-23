@@ -28,6 +28,8 @@ const contexts = await Promise.all([
 
 function copyStatic() {
   cpSync("src/manifest.json", `${out}/manifest.json`);
+  // The license travels with the program, and Options → About links to it offline.
+  cpSync("LICENSE", `${out}/LICENSE.txt`);
   cpSync("src/content/osso.css", `${out}/osso.css`);
   cpSync("src/ui/tokens.css", `${out}/tokens.css`);
   cpSync("src/ui/popup/index.html", `${out}/popup.html`);

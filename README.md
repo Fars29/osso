@@ -76,4 +76,4 @@ TypeScript, no frameworks, no runtime dependencies. Everything else (the live en
 
 ## License
 
-GPL-3.0. Osso is an independent project, not affiliated with or endorsed by TypeSafe.
+GPL-3.0, by [Fars29](https://github.com/Fars29). You can use, change and share Osso, commercially too; what you share stays under the same license and keeps the credit "Based on Osso by Fars29 on GitHub" (see [NOTICE](NOTICE)). Osso is an independent project, not affiliated with or endorsed by TypeSafe.

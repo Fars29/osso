@@ -68,7 +68,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 - does not use or transfer user data for purposes unrelated to the single purpose;
 - does not use or transfer user data to determine creditworthiness or for lending.
 
-**Privacy policy URL** https://github.com/Fars29/osso/blob/main/PRIVACY.md
+**Privacy policy URL** https://github.com/Fars29/osso/blob/main/PRIVACY.md (while the repository is still private, reviewers get a 404 there: paste PRIVACY.md into a public Gist and give its link until the repository is public)
 
 ## Test instructions (for the reviewer)
 
