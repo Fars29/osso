@@ -658,11 +658,15 @@ describe("structure written as prose", () => {
       <p id="fig">Fig 2. The known range of the species in the central basin.</p>
       <p id="lead">We employ three types of regularization during training:</p>
       <ul><li>Residual dropout applied to the output of each sub-layer, at a rate of 0.1.</li></ul>
+      <p id="wiki">The mission had four flight directors, one for each shift of the flight. The flight directors for this mission were:[61][62]</p>
+      <ul><li>Clifford E. Charlesworth, the green team, who led the launch and the extravehicular activity shift.</li></ul>
       <h2>Ingredients</h2>
       <ul><li id="item">Freshly ground black pepper</li><li>One unwaxed lemon, zest and juice</li></ul>
       <p id="said">Serve and enjoy!</p></article>`);
     segmentPage(doc);
+    // "…were:[61][62]" is a colon with its footnotes after it: still the sentence that introduces a list.
     for (const id of ["h1", "h2", "cap", "fig", "lead"]) expect(spans(doc, `#${id}`), id).toHaveLength(0);
+    expect(spans(doc, "#wiki").map((s) => s.textContent).join("")).toBe("The mission had four flight directors, one for each shift of the flight.");
     // An ingredient is four words with no full stop, and it is what the reader came for.
     expect(spans(doc, "#item").length).toBeGreaterThan(0);
     // A short sentence that ends like one is a sentence.

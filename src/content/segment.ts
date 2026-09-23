@@ -772,7 +772,8 @@ function withoutLabel(ranges: SentenceRange[], label: number, text: string): Sen
 const CAPTION = /^\s*(fig(ure|ura)?s?|tab(le|ella)?s?|scheme|box|chart|equation|eq)\.?\s*\d+/i;
 const TAIL_LABEL_MAX_WORDS = 3;
 const ENDS_SENTENCE = new RegExp(String.raw`[.!?…。！？]["'”’»)\]]*` + FOOTNOTES + String.raw`\s*$`, "u");
-const LEAD_IN = /:\s*$/;
+/** A sentence that opens a list ends on its colon, or on the footnotes a wiki puts after it ("…were:[61][62]"). */
+const LEAD_IN = new RegExp(":" + FOOTNOTES + String.raw`\s*$`, "u");
 /**
  * A block that is a short question and nothing else: the heading of the answer under it, in an FAQ.
  * "How much does it cost? (and what are credits)?" is still one heading, so what is ruled out is a
