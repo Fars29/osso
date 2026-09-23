@@ -20,7 +20,7 @@ const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
 
 const targets = [
   { file: "src/manifest.json", pattern: /("version":\s*")[^"]+(")/, to: `$1${version}$2` },
-  { file: "src/ui/options/index.html", pattern: /(Osso )\d+\.\d+\.\d+( · GPL-3.0)/, to: `$1${version}$2` },
+  { file: "src/ui/options/index.html", pattern: /(Osso )\d+\.\d+\.\d+( by )/, to: `$1${version}$2` },
 ];
 
 const drifted = [];
