@@ -9,6 +9,7 @@
  */
 import type { HighlightSpans, PageJudgment, RevealKey, RuleResults, SentenceJudgment } from "../shared/types.ts";
 import { RULE_THRESHOLD, SENTENCE_KINDS } from "../shared/constants.ts";
+import { QUOTE_ATTR } from "./segment.ts";
 
 export interface Counts {
   total: number;
@@ -218,11 +219,18 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
   let faded = 0;
   const fresh: Fresh[] = [];
   const decided: Array<{ spans: HTMLElement[]; fade: boolean; pinned: boolean }> = [];
-  for (const [id, spans] of spansById(doc)) {
+  const byId = spansById(doc);
+  const ownFade = (id: number, j: SentenceJudgment) => j.keep < state.threshold && ruleKeeping(state, id) === null && !state.marked.has(id);
+  const quotes = quoteStates(byId, state, ownFade);
+  for (const [id, spans] of byId) {
     const j = state.judgment.get(id);
     if (!j || state.failed.has(id)) continue;
+    const quote = quotes.of.get(id);
+    const together = quote === undefined ? undefined : quotes.kept.get(quote);
+    // A quotation is painted once every sentence of it is judged, and then all together.
+    if (together === null) continue;
     total++;
-    const fade = j.keep < state.threshold && ruleKeeping(state, id) === null && !state.marked.has(id);
+    const fade = together === undefined ? ownFade(id, j) : !together;
     const pinned = state.pinned.has(id);
     decided.push({ spans, fade, pinned });
     if (fade && !pinned) faded++;
@@ -243,6 +251,43 @@ function render(doc: Document, state: DocState, wave: boolean): Counts {
   }
   paint?.();
   return { total, kept: total - faded, faded };
+}
+
+/**
+ * The quotations that run over several sentences (segment.ts QUOTE_ATTR): which quotation each of its
+ * sentences belongs to, and whether it is kept. A quotation is kept when any of its sentences would be
+ * on its own, so what someone said is never cut in half: "Ho sbagliato, non dovevo sparare. Ma ero nel
+ * panico." lost its middle, and a brother's account lost the sentence saying it was his. Struck whole
+ * only when every sentence of it would be. `null` while one of them is still unjudged.
+ */
+function quoteStates(
+  byId: Map<number, HTMLElement[]>,
+  state: DocState,
+  ownFade: (id: number, j: SentenceJudgment) => boolean,
+): { of: Map<number, string>; kept: Map<string, boolean | null> } {
+  const of = new Map<number, string>();
+  const members = new Map<string, number[]>();
+  for (const [id, spans] of byId) {
+    const quote = spans[0]!.getAttribute(QUOTE_ATTR);
+    if (quote === null) continue;
+    of.set(id, quote);
+    members.set(quote, [...(members.get(quote) ?? []), id]);
+  }
+  const kept = new Map<string, boolean | null>();
+  for (const [quote, ids] of members) {
+    if (ids.some((id) => !state.judgment.has(id) && !state.failed.has(id))) {
+      kept.set(quote, null);
+      continue;
+    }
+    kept.set(
+      quote,
+      ids.some((id) => {
+        const j = state.judgment.get(id);
+        return j !== undefined && !state.failed.has(id) && !ownFade(id, j);
+      }),
+    );
+  }
+  return { of, kept };
 }
 
 interface Fresh {
@@ -814,8 +859,13 @@ export function counts(doc: Document): Counts {
   if (!state) return { total: 0, kept: 0, faded: 0 };
   let total = 0;
   let faded = 0;
-  for (const [id, spans] of spansById(doc)) {
+  const byId = spansById(doc);
+  // A quotation still waiting for one of its sentences is not painted yet (render), so it is not counted yet.
+  const waiting = quoteStates(byId, state, () => false).kept;
+  for (const [id, spans] of byId) {
     if (!state.judgment.has(id) || state.failed.has(id)) continue;
+    const quote = spans[0]!.getAttribute(QUOTE_ATTR);
+    if (quote !== null && waiting.get(quote) === null) continue;
     total++;
     const first = spans[0]!;
     if (first.classList.contains("osso-fade") && !first.classList.contains("osso-pin")) faded++;

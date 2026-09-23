@@ -36,6 +36,12 @@ export interface SentenceRange {
 
 export const SENTENCE_CLASS = "osso-s";
 export const SENTENCE_ATTR = "data-osso";
+/**
+ * On the wrappers of a quotation that runs over several sentences: the id of its first sentence. The
+ * renderer keeps or strikes those sentences together, so what someone said is never cut in half and a
+ * kept part never loses the sentence that says who said it.
+ */
+export const QUOTE_ATTR = "data-osso-quote";
 export const BLOCK_ATTR = "data-osso-block";
 /** The wrapper element: a name no stylesheet targets, inline by default like a span. */
 export const SENTENCE_TAG = "osso-s";
@@ -858,15 +864,67 @@ function cleanText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function wrapNode(reg: Registry, node: Text, id: number): void {
+function wrapNode(reg: Registry, node: Text, id: number, quote: number | null): void {
   const parent = node.parentNode;
   if (!parent) return;
   const span = node.ownerDocument.createElement(SENTENCE_TAG);
   span.className = SENTENCE_CLASS;
   span.setAttribute(SENTENCE_ATTR, String(id));
+  if (quote !== null) span.setAttribute(QUOTE_ATTR, String(quote));
   parent.insertBefore(span, node);
   span.appendChild(node);
   reg.spans.add(span);
+}
+
+const QUOTE_OPEN = new Set(["“", "«", "„"]);
+const QUOTE_CLOSE = new Set(["”", "»"]);
+
+/**
+ * The quotations in a block's text that close, as [opening, closing] offsets. Curly quotes and
+ * guillemets pair as they nest; a straight double quote closes whatever is open (a page may open
+ * with “ and close with ") or opens one of its own. Single quotes are left out: they are
+ * apostrophes as often as not. A quotation that never closes in its block is no quotation.
+ */
+function quotations(text: string): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  const open: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (QUOTE_OPEN.has(ch)) {
+      open.push(i);
+    } else if (QUOTE_CLOSE.has(ch) || (ch === '"' && open.length > 0)) {
+      const at = open.pop();
+      if (at !== undefined) out.push([at, i]);
+    } else if (ch === '"') {
+      open.push(i);
+    }
+  }
+  return out;
+}
+
+/**
+ * For each sentence range, the index of the first range of the quotation it belongs to, when that
+ * quotation runs over more than one sentence; -1 otherwise. A sentence that closes one quotation and
+ * opens the next joins the two.
+ */
+function quoteGroups(text: string, ranges: SentenceRange[]): number[] {
+  const parent = ranges.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  for (const [a, b] of quotations(text)) {
+    let first = -1;
+    ranges.forEach((r, i) => {
+      if (r.start > b || r.end <= a) return;
+      if (first < 0) first = i;
+      else {
+        const x = find(first);
+        const y = find(i);
+        if (x !== y) parent[Math.max(x, y)] = Math.min(x, y);
+      }
+    });
+  }
+  const size = new Map<number, number>();
+  ranges.forEach((_, i) => size.set(find(i), (size.get(find(i)) ?? 0) + 1));
+  return ranges.map((_, i) => (size.get(find(i))! > 1 ? find(i) : -1));
 }
 
 /**
@@ -876,7 +934,7 @@ function wrapNode(reg: Registry, node: Text, id: number): void {
  * off, so a node holding a thousand sentences splits in linear time rather than quadratic. The page's
  * own node keeps the head of its text and stays where it was.
  */
-function wrapRanges(reg: Registry, block: Block, ranges: SentenceRange[], firstId: number): void {
+function wrapRanges(reg: Registry, block: Block, ranges: SentenceRange[], firstId: number, quotes: number[]): void {
   let r = 0;
   for (const segment of block.segments) {
     while (r < ranges.length && ranges[r]!.end <= segment.start) r++;
@@ -893,7 +951,7 @@ function wrapRanges(reg: Registry, block: Block, ranges: SentenceRange[], firstI
       if (b < node.length) pieces.push(node.splitText(b));
       const piece = a > 0 ? node.splitText(a) : node;
       if (piece !== node) pieces.push(piece);
-      wrapNode(reg, piece, firstId + i);
+      wrapNode(reg, piece, firstId + i, quotes[i]! >= 0 ? firstId + quotes[i]! : null);
     }
     if (pieces.length > 0) reg.splits.set(node, pieces);
     // The last range may run on into the next segment; every earlier one is done.
@@ -946,7 +1004,7 @@ export function segmentNewBlocks(doc: Document, container: Element, startId: num
       sentences.push({ id: id + i, text: cleanText(text.slice(range.start, range.end)) });
     }
     // The model reads the label with its sentence; the page never has it wrapped.
-    wrapRanges(reg, block, withoutLabel(ranges, labelEnd(block, text), text), id);
+    wrapRanges(reg, block, withoutLabel(ranges, labelEnd(block, text), text), id, quoteGroups(text, ranges));
     block.el.setAttribute(BLOCK_ATTR, "");
     reg.blocks.add(block.el);
     id += ranges.length;

@@ -750,3 +750,30 @@ describe("applyRules", () => {
     expect(document.querySelectorAll(".osso-fade")).toHaveLength(0);
   });
 });
+
+describe("quotations", () => {
+  const QUOTES = `<main><p data-osso-block="">
+    <span class="osso-s" data-osso="0" data-osso-quote="0">“I made a mistake, I should not have fired.</span>
+    <span class="osso-s" data-osso="1" data-osso-quote="0">But I was in a panic.</span>
+    <span class="osso-s" data-osso="2" data-osso-quote="0">And now my life is ruined”, he told the paper.</span>
+    <span class="osso-s" data-osso="3" data-osso-quote="3">“For now there are more questions than answers.</span>
+    <span class="osso-s" data-osso="4" data-osso-quote="3">Many knots are still to be untied”.</span>
+    <span class="osso-s" data-osso="5">The weather was mild that week.</span></p></main>`;
+
+  it("keeps a quotation whole when any of its sentences is kept, and strikes it whole only when none is", () => {
+    document.body.innerHTML = QUOTES;
+    const sentences = [S(0, 0.44, "opinion"), S(1, 0.13, "opinion"), S(2, 0.52, "opinion"), S(3, 0.25, "opinion"), S(4, 0.14, "opinion"), S(5, 0.1, "filler_or_transition")];
+    const c = applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.35, animations: false });
+    // "But I was in a panic" stays with the rest of what he said; the prosecutor's words go together.
+    expect(fadedIds()).toEqual([3, 4, 5]);
+    expect(c).toEqual({ total: 6, kept: 3, faded: 3 });
+  });
+
+  it("paints no sentence of a quotation until every one of them is judged", () => {
+    document.body.innerHTML = QUOTES;
+    applyJudgment(document, judgment({ sentences: [S(1, 0.13, "opinion")], failedIds: [] }), { threshold: 0.35, animations: false });
+    expect(fadedIds()).toEqual([]);
+    applyJudgment(document, judgment({ sentences: [S(0, 0.44, "opinion"), S(2, 0.52, "opinion")], failedIds: [] }), { threshold: 0.35, animations: false });
+    expect(fadedIds()).toEqual([]);
+  });
+});

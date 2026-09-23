@@ -719,3 +719,36 @@ describe("questions that head an answer, and lists of works cited", () => {
     ]);
   });
 });
+
+describe("quotations", () => {
+  const body = `<p>First sentence of the body of the article, which is long enough to count. Second sentence of the body here. Third one too.</p>
+    <p>Fourth sentence of the body of the article. Fifth sentence of the body here. Sixth one, and then we stop for a while.</p>`;
+  const groupOf = (doc: Document, within: string, text: string) => spans(doc, within).find((s) => (s.textContent ?? "").includes(text))!.getAttribute("data-osso-quote");
+
+  it("marks the sentences of one quotation as one group, and leaves the sentences around it alone", () => {
+    const doc = page(
+      `<article>${body}<p id="q">Il fratello conferma che l'uomo “è giù. Molto giù. Piange. Non fa altro che tormentarsi. Ha sparato nel buio, non si vedeva niente”. Un vicino di casa ha sentito gli spari quella notte.</p></article>`,
+    );
+    segmentPage(doc);
+    const group = groupOf(doc, "#q", "Il fratello");
+    expect(group).not.toBeNull();
+    expect(groupOf(doc, "#q", "tormentarsi")).toBe(group);
+    expect(groupOf(doc, "#q", "nel buio")).toBe(group);
+    expect(groupOf(doc, "#q", "Un vicino")).toBeNull();
+  });
+
+  it("pairs a curly opening with a straight closing, and leaves a quotation that never closes, or that fits in one sentence, ungrouped", () => {
+    const doc = page(
+      `<article>${body}` +
+        `<p id="mixed">“Mi ha chiesto: adesso cosa mi succederà? Farò la fine del gioielliere", racconta al quotidiano di Torino. Poi è rientrato in casa senza dire altro.</p>` +
+        `<p id="open">Il sindaco osserva: “In passato ci sono stati furti in abitazione. I ladri entravano di giorno. Nessuno li ha mai presi.</p>` +
+        `<p id="one">La pistola è una “Steyr 9x21” regolarmente detenuta per uso sportivo. Il permesso valeva solo per la casa di residenza.</p></article>`,
+    );
+    segmentPage(doc);
+    expect(groupOf(doc, "#mixed", "Farò la fine")).toBe(groupOf(doc, "#mixed", "Mi ha chiesto"));
+    expect(groupOf(doc, "#mixed", "Mi ha chiesto")).not.toBeNull();
+    expect(groupOf(doc, "#mixed", "Poi è rientrato")).toBeNull();
+    for (const s of spans(doc, "#open")) expect(s.getAttribute("data-osso-quote")).toBeNull();
+    for (const s of spans(doc, "#one")) expect(s.getAttribute("data-osso-quote")).toBeNull();
+  });
+});
