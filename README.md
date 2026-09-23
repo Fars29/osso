@@ -44,7 +44,7 @@ Free and open source, and it runs on a key of your own: no account, no server, n
 
 The marker's colour and the colour of struck text are both yours, in Options.
 
-Osso stays out of the way where a page is your workspace rather than someone's writing (mail, documents, chat, code, search, video, social feeds), and leaves reviews and comments alone: there the opinion is the point. It never reads a page showing a password or card field, and holds back to ask first on anything that looks like the inside of an account. Those checks read how a page is built, never what it is about: an article about banks is an article.
+Osso stays out of the way on a list of well-known sites that are a workspace rather than someone's writing (mail, documents, chat, code, search, video, social feeds; the list is in Options), and leaves reviews and comments alone: there the opinion is the point. It does not read a page showing a password or card field, and holds back to ask first on anything that looks like the inside of an account. Those checks read how a page is built, never what it is about: an article about banks is an article. They can miss, so where the text itself is private, choose *only when you click* ([privacy](PRIVACY.md)).
 
 ![A rule bringing the sponsor's discount code back to ink](docs/screenshots/page-rule.png)
 
