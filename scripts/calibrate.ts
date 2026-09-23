@@ -235,8 +235,6 @@ const noise = rows.filter((r) => r.page === NOISE_PAGE).map((r) => r.keep);
 console.log(`\n=== OVERALL (${labelled.length} labelled sentences, ${pos.length} keep / ${neg.length} filler) ===`);
 console.log(`AUC = ${auc(pos.map((r) => r.keep), neg.map((r) => r.keep)).toFixed(3)}   best threshold ${JSON.stringify(bestThresholds(pos.map((r) => r.keep), neg.map((r) => r.keep)))}`);
 console.log(`mean keep=${mean(pos.map((r) => r.keep)).toFixed(2)} filler=${mean(neg.map((r) => r.keep)).toFixed(2)}   |   noise floor (page ${NOISE_PAGE}) mean=${mean(noise).toFixed(2)} max=${Math.max(...noise).toFixed(2)}`);
-const substantive = (k: SentenceKind) => SENTENCE_KINDS[k].substantive;
-console.log(`kind proxy: keep→substantive kinds = ${((pos.filter((r) => substantive(r.kind)).length / pos.length) * 100).toFixed(0)}%   filler→non-substantive kinds = ${((neg.filter((r) => !substantive(r.kind)).length / neg.length) * 100).toFixed(0)}%`);
 const totalMs = requests.reduce((a, r) => a + r.ms, 0), totalTok = requests.reduce((a, r) => a + r.tokens, 0);
 console.log(`latency: ${requests.map((r) => `${r.page}:${r.questions}q/${r.ms.toFixed(0)}ms`).join("  ")}`);
 console.log(`total: ${totalMs.toFixed(0)} ms sequential over ${PAGES.length} requests, ${totalTok} input tokens ≈ ${usd(totalTok)}`);

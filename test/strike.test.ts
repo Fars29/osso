@@ -21,7 +21,7 @@ const judgment = (): PageJudgment => ({
   packId: "recipe",
   pageKind: "recipe",
   pageKindConfidence: 0.9,
-  sentences: [S(0, 0.1, "anecdote_or_story"), S(1, 0.95, "instruction_or_step"), S(2, 0.1, "promotion_or_appeal"), S(3, 0.1, "anecdote_or_story"), S(4, 0.1, "promotion_or_appeal"), S(5, 0.95, "instruction_or_step")],
+  sentences: [S(0, 0.1, "story"), S(1, 0.95, "aside"), S(2, 0.1, "promo"), S(3, 0.1, "story"), S(4, 0.1, "promo"), S(5, 0.95, "aside")],
   inputTokens: 1,
   ms: 1,
   cached: false,

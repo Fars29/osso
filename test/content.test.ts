@@ -31,7 +31,7 @@ function judgmentFor(req: JudgeRequest): PageJudgment {
     pageKindConfidence: 0.9,
     sentences: req.sentences.map((s) => {
       const keep = /\d/.test(s.text) ? 0.9 : 0.1;
-      return { id: s.id, keep, kind: keep > 0.5 ? "fact" : "anecdote_or_story", kindConfidence: 0.8 };
+      return { id: s.id, keep, kind: keep > 0.5 ? "aside" : "story", kindConfidence: 0.8 };
     }),
     inputTokens: 1234,
     ms: 321,

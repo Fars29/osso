@@ -22,7 +22,7 @@ function judgment(n = 3, failedIds: number[] = []): PageJudgment {
     packId: "recipe",
     pageKind: "recipe",
     pageKindConfidence: 0.9,
-    sentences: Array.from({ length: n }, (_, id) => ({ id, keep: id / n, kind: "fact", kindConfidence: 0.8 })),
+    sentences: Array.from({ length: n }, (_, id) => ({ id, keep: id / n, kind: "aside", kindConfidence: 0.8 })),
     inputTokens: 1234,
     ms: 480,
     cached: false,

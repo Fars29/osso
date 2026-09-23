@@ -20,7 +20,7 @@ const urls = process.argv.slice(2).filter((a) => /^https?:/.test(a));
 const showKept = process.argv.includes("--kept");
 const shot = process.argv.includes("--shot");
 const brief = process.argv.includes("--brief");
-const SOFT_KINDS = new Set(["opinion", "anecdote_or_story", "filler_or_transition", "promotion_or_appeal"]);
+const SOFT_KINDS = new Set(["opinion", "story", "promo", "greeting"]);
 if (urls.length === 0) {
   console.error("usage: node --env-file=.env e2e/review.mjs <url> [url…] [--kept] [--shot]");
   process.exit(1);
@@ -104,9 +104,9 @@ try {
     for (const d of brief ? faded.slice(0, 45) : faded) console.log(line(d));
     if (brief && faded.length > 45) console.log(`     … and ${faded.length - 45} more`);
     if (brief) {
-      // The suspects among the kept: what the model itself calls opinion, story, filler or promo.
+      // The suspects among the kept: what the model itself calls opinion, story, promo or a greeting.
       const suspects = kept.filter((d) => SOFT_KINDS.has(numbers.get(d.id)?.kind));
-      console.log(`\n--- kept, though the model calls it opinion/story/filler/promo (${suspects.length}) ---`);
+      console.log(`\n--- kept, though the model calls it opinion/story/promo/greeting (${suspects.length}) ---`);
       for (const d of suspects.slice(0, 25)) console.log(line(d));
       if (suspects.length > 25) console.log(`     … and ${suspects.length - 25} more`);
     }

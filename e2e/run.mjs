@@ -192,7 +192,7 @@ try {
     const c = document.querySelector(".osso-chip.osso-chip-show");
     return { label: c?.querySelector(".osso-chip-label")?.textContent ?? "", text: c?.textContent ?? "", parts: c?.children.length ?? 0 };
   });
-  assert(["opinion", "story", "filler", "promo", "aside"].includes(chip.label), `recipe: chip label "${chip.label}" is not a reason`);
+  assert(["story", "opinion", "promo", "greeting", "pointer", "intro", "background", "boilerplate", "caption", "source", "aside"].includes(chip.label), `recipe: chip label "${chip.label}" is not a reason`);
   assert(chip.parts === 1 && !/\d/.test(chip.text), `recipe: chip should be one word ("${chip.text}")`);
   console.log(`[osso e2e] chip on the first faded sentence: ${chip.label}`);
   // Ink gets no chip: hovering a kept sentence shows nothing.

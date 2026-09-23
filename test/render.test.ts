@@ -43,11 +43,11 @@ function judgment(overrides: Partial<PageJudgment> = {}): PageJudgment {
     pageKind: "article",
     pageKindConfidence: 0.9,
     sentences: [
-      S(0, 0.9, "fact"),
-      S(1, 0.1, "promotion_or_appeal"),
-      S(2, 0.6, "figure_or_date"),
-      S(3, 0.2, "anecdote_or_story"),
-      S(4, 0.95, "figure_or_date"),
+      S(0, 0.9, "aside"),
+      S(1, 0.1, "promo"),
+      S(2, 0.6, "aside"),
+      S(3, 0.2, "story"),
+      S(4, 0.95, "aside"),
     ],
     inputTokens: 1000,
     ms: 400,
@@ -171,11 +171,11 @@ describe("applyJudgment", () => {
 
   it("keeps a front between its shortest and longest, whatever the distance", () => {
     layOut({ 0: 100, 1: 110 });
-    applyJudgment(document, judgment({ sentences: [S(0, 0.1, "filler_or_transition"), S(1, 0.1, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    applyJudgment(document, judgment({ sentences: [S(0, 0.1, "greeting"), S(1, 0.1, "greeting")], failedIds: [] }), { threshold: 0.5, animations: true });
     expect(spans(0)[0]!.style.getPropertyValue("--osso-front-ms")).toBe(`${FRONT_MIN_MS}ms`);
     clearRender(document);
     layOut({ 0: 0, 1: 3000 }, 4000);
-    applyJudgment(document, judgment({ sentences: [S(0, 0.1, "filler_or_transition"), S(1, 0.1, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    applyJudgment(document, judgment({ sentences: [S(0, 0.1, "greeting"), S(1, 0.1, "greeting")], failedIds: [] }), { threshold: 0.5, animations: true });
     expect(spans(0)[0]!.style.getPropertyValue("--osso-front-ms")).toBe(`${FRONT_MAX_MS}ms`);
   });
 
@@ -223,7 +223,7 @@ describe("applyJudgment", () => {
 
   it("merges a later judgment and clears a formerly failed id once judged", () => {
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
-    const c = applyJudgment(document, judgment({ sentences: [S(5, 0.05, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    const c = applyJudgment(document, judgment({ sentences: [S(5, 0.05, "greeting")], failedIds: [] }), { threshold: 0.5, animations: true });
     expect(c).toEqual({ total: 6, kept: 3, faded: 3 });
     expect(fadedIds()).toEqual([1, 3, 5]);
   });
@@ -446,9 +446,9 @@ describe("chip", () => {
     off();
   });
 
-  it("gives the reason: the kind when the kind is one, 'aside' for a fact beside the point, 'pinned' when pinned", () => {
+  it("gives the reason the model gave for skipping the sentence, and 'pinned' when pinned", () => {
     vi.useFakeTimers();
-    const sentences = [S(0, 0, "filler_or_transition"), S(1, 0.09, "promotion_or_appeal"), S(2, 0.6, "fact"), S(3, 0.5, "opinion"), S(4, 1, "fact")];
+    const sentences = [S(0, 0, "greeting"), S(1, 0.09, "promo"), S(2, 0.6, "aside"), S(3, 0.5, "opinion"), S(4, 1, "aside")];
     applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.7, animations: true });
     const off = installInteractions(document, { revealKey: "Shift", holdMs: 120 });
     const chip = () => document.querySelector<HTMLElement>(".osso-chip")!;
@@ -458,10 +458,10 @@ describe("chip", () => {
       vi.advanceTimersByTime(250);
     };
     hover(0);
-    expect(chipReads(chip())).toEqual({ label: "filler", parts: 1, text: "filler" });
+    expect(chipReads(chip())).toEqual({ label: "greeting", parts: 1, text: "greeting" });
     hover(1);
     expect(chipReads(chip())).toEqual({ label: "promo", parts: 1, text: "promo" });
-    // A fact at 0.6 under a 0.7 threshold is grey: true, and not what the reader came for.
+    // A sentence at 0.6 under a 0.7 threshold is grey, and says why.
     hover(2);
     expect(chipReads(chip())).toEqual({ label: "aside", parts: 1, text: "aside" });
     // A kept fact has nothing to explain.
@@ -740,7 +740,7 @@ describe("applyRules", () => {
     vi.useFakeTimers();
     applyJudgment(document, judgment(), { threshold: 0.5, animations: true });
     applyRules(document, { prices: { 5: 0.9, 1: 0.9 } }, ["prices"]);
-    const c = applyJudgment(document, judgment({ sentences: [S(5, 0.05, "filler_or_transition")], failedIds: [] }), { threshold: 0.5, animations: true });
+    const c = applyJudgment(document, judgment({ sentences: [S(5, 0.05, "greeting")], failedIds: [] }), { threshold: 0.5, animations: true });
     expect(c).toEqual({ total: 6, kept: 5, faded: 1 });
     expect(fadedIds()).toEqual([3]);
     clearRender(document);
@@ -762,7 +762,7 @@ describe("quotations", () => {
 
   it("keeps a quotation whole when any of its sentences is kept, and strikes it whole only when none is", () => {
     document.body.innerHTML = QUOTES;
-    const sentences = [S(0, 0.44, "opinion"), S(1, 0.13, "opinion"), S(2, 0.52, "opinion"), S(3, 0.25, "opinion"), S(4, 0.14, "opinion"), S(5, 0.1, "filler_or_transition")];
+    const sentences = [S(0, 0.44, "opinion"), S(1, 0.13, "opinion"), S(2, 0.52, "opinion"), S(3, 0.25, "opinion"), S(4, 0.14, "opinion"), S(5, 0.1, "greeting")];
     const c = applyJudgment(document, judgment({ sentences, failedIds: [] }), { threshold: 0.35, animations: false });
     // "But I was in a panic" stays with the rest of what he said; the prosecutor's words go together.
     expect(fadedIds()).toEqual([3, 4, 5]);

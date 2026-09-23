@@ -232,52 +232,32 @@ export const DEFAULT_DENIED_HOSTS: readonly string[] = [
 ];
 
 /**
- * Sentence kinds, with the descriptions the model sees and the label the chip shows. The
- * descriptions are short on purpose: the kind is asked once per sentence, and at their first length
- * these eight lines were more than half the tokens of every request (a 672-sentence paper cost
- * 421k). The kind only names the reason on the chip; the keep question carries the judgment.
+ * The reasons a struck sentence gives on hover. The question used to ask what kind of sentence it was
+ * (fact, figure, step, opinion, story…), and a struck fact had no reason to show but "aside": on 153
+ * struck sentences from eight pages, 60% read "aside" or "filler" and 68% named the right reason even
+ * counted generously. Asked why a reader could skip it, 81% get the exact reason (84% coarsely) and 18%
+ * say "aside": "This post is sponsored by…" is promo, "Be sure to scroll down…" a pointer, "Please read
+ * these Terms carefully" boilerplate, where every one of them used to be an aside. An option for "this is
+ * content after all" was tried beside them and never chosen, on the struck sentences that were content.
  */
-export const SENTENCE_KINDS: Record<SentenceKind, { label: string; description: string; substantive: boolean }> = {
-  fact: {
-    label: "fact",
-    substantive: true,
-    description: "A checkable statement of what is, was or will be.",
+export const SENTENCE_KINDS: Record<SentenceKind, { label: string; description: string }> = {
+  story: { label: "story", description: "A story, memory, anecdote or scene-setting: it tells rather than informs." },
+  opinion: { label: "opinion", description: "An opinion, feeling, judgment, reaction or wish." },
+  promo: { label: "promo", description: "It promotes, sponsors or sells something, or asks the reader to follow, share, subscribe, tag or buy." },
+  greeting: { label: "greeting", description: "A greeting, welcome, thanks or sign-off." },
+  pointer: {
+    label: "pointer",
+    description: "It points somewhere else: further down or up the page, another page, a table, a link, a note about what the page is not about.",
   },
-  figure_or_date: {
-    label: "figure",
-    substantive: true,
-    description: "A number, price, measure, date or time is the point.",
+  intro: { label: "intro", description: "It introduces, teases, sums up or links other parts of the page without saying anything of its own." },
+  background: {
+    label: "background",
+    description: "General background around the subject, such as its history or wider context, rather than the subject itself.",
   },
-  instruction_or_step: {
-    label: "step",
-    substantive: true,
-    description: "What to do, how, or what not to do.",
-  },
-  condition_or_obligation: {
-    label: "condition",
-    substantive: true,
-    description: "A rule, right, fee, penalty or condition that binds someone.",
-  },
-  opinion: {
-    label: "opinion",
-    substantive: false,
-    description: "A judgment or feeling; not checkable.",
-  },
-  anecdote_or_story: {
-    label: "story",
-    substantive: false,
-    description: "Memories, stories, scene-setting.",
-  },
-  filler_or_transition: {
-    label: "filler",
-    substantive: false,
-    description: "Greetings, thanks, reassurance, signposting, credits.",
-  },
-  promotion_or_appeal: {
-    label: "promo",
-    substantive: false,
-    description: "Asks to follow, share, subscribe or buy; promotes something.",
-  },
+  boilerplate: { label: "boilerplate", description: "A stock phrase that every page of its kind carries, like a legal formula or a page footer." },
+  caption: { label: "caption", description: "It describes an image, a figure, a chart or a map." },
+  source: { label: "source", description: "It only says where something comes from: a credit, a reference or a source." },
+  aside: { label: "aside", description: "A minor detail or a side remark, beside the point of the page." },
 };
 
 /** Page kinds, with the description the model sees for `page_kind` and the label the popup shows. */
@@ -310,7 +290,8 @@ export const KEEP_QUESTION = {
 } as const;
 
 export const KIND_QUESTION = {
-  instructions: (sentence: string) => `What kind of sentence is this one from the page: «${sentence}»?`,
+  instructions: (sentence: string) =>
+    `Consider this sentence from the page: «${sentence}». A reader looking for the page's practical content might skip it. What is it, mainly?`,
 } as const;
 
 export const PAGE_KIND_QUESTION = {

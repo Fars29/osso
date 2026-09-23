@@ -69,7 +69,7 @@ function okReply(init: RequestInit | undefined): Response {
     if (!k.startsWith("keep_")) continue;
     const id = Number(k.slice(5));
     answers[`keep_${id}`] = { noul: id % 2 === 0 ? 0.9 : 0.1 };
-    answers[`kind_${id}`] = { choice: id % 2 === 0 ? "fact" : "anecdote_or_story", confidence: 0.8 };
+    answers[`kind_${id}`] = { choice: id % 2 === 0 ? "aside" : "story", confidence: 0.8 };
   }
   if ("page_kind" in body.questions) answers.page_kind = { choice: "recipe", confidence: 0.93 };
   return reply(200, { answers, usage: { input_tokens: 100 } });
@@ -240,7 +240,7 @@ describe("judge", () => {
     if (first.type !== "judgment") return;
     expect(first.judgment).toMatchObject({ packId: "recipe", pageKind: "recipe", cached: false, inputTokens: 100, failedIds: [] });
     expect(first.judgment.sentences).toHaveLength(12);
-    expect(first.judgment.sentences.find((s) => s.id === 3)).toMatchObject({ keep: 0.1, kind: "anecdote_or_story" });
+    expect(first.judgment.sentences.find((s) => s.id === 3)).toMatchObject({ keep: 0.1, kind: "story" });
     expect("chunkErrors" in first.judgment).toBe(false);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

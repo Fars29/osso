@@ -3,16 +3,22 @@
  * only ever talk through these shapes. Change here first, then everywhere.
  */
 
-/** What a sentence is, as judged by Jev. Order and names are sent to the model; keep them stable. */
+/**
+ * Why a reader looking for the practical content could skip a sentence, as judged by Jev: the word the
+ * hover chip shows on a struck one. Order and names are sent to the model; keep them stable.
+ */
 export type SentenceKind =
-  | "fact"
-  | "figure_or_date"
-  | "instruction_or_step"
-  | "condition_or_obligation"
+  | "story"
   | "opinion"
-  | "anecdote_or_story"
-  | "filler_or_transition"
-  | "promotion_or_appeal";
+  | "promo"
+  | "greeting"
+  | "pointer"
+  | "intro"
+  | "background"
+  | "boilerplate"
+  | "caption"
+  | "source"
+  | "aside";
 
 /** What a page is. Chosen by packs' heuristics before the request; Jev's own answer is stored beside it. */
 export type PageKind = "recipe" | "article" | "paper" | "legal" | "corporate" | "social" | "product" | "docs" | "other";

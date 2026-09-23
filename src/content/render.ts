@@ -406,9 +406,9 @@ const FRONT_PROPERTIES = ["--osso-y0", "--osso-y1", "--osso-front-ms"] as const;
 const WAVE_PROPERTIES = ["--osso-delay", "--osso-strike-delay", "--osso-strike-ms", "--osso-strike-ease"] as const;
 
 /** The reason in one word: the kind when the kind is the reason, "aside" when the model called it a fact, a figure or a step and still not what the reader came for. */
+/** The reason the model gave for skipping the sentence; a page judged before there were reasons says "aside". */
 function reasonWord(j: SentenceJudgment): string {
-  const kind = SENTENCE_KINDS[j.kind];
-  return kind && !kind.substantive ? kind.label : "aside";
+  return SENTENCE_KINDS[j.kind]?.label ?? "aside";
 }
 
 /** Keeps these spans in ink until they come into view. They are faded in every other sense: counted, pinnable once seen, grey to the slider. */
@@ -891,9 +891,9 @@ function chipOf(doc: Document, state: DocState): HTMLElement {
 }
 
 /**
- * What the chip says, in one word: the reason. For a grey sentence, the kind when the kind is the
- * reason (story, opinion, filler, promo) and "aside" when the model called it a fact, a figure or a
- * step and still not what the reader came for. For a sentence brought back, what brought it back.
+ * What the chip says, in one word: the reason. For a grey sentence, why a reader could skip it (story,
+ * opinion, promo, greeting, pointer, intro, background, boilerplate, caption, source, aside). For a
+ * sentence brought back, what brought it back.
  * An earlier chip put the kind beside p(keep) as a row of dots, and it read as a contradiction:
  * "fact", one dot lit. A fact can be true and beside the point; the reader asks why it is grey.
  */

@@ -126,7 +126,7 @@ const SENTENCES = new Map([
   [0, "Add 300 g of white sugar to the bowl."],
   [1, "Serve at once."],
 ]);
-const S = (id: number, keep: number): SentenceJudgment => ({ id, keep, kind: "fact", kindConfidence: 0.9 });
+const S = (id: number, keep: number): SentenceJudgment => ({ id, keep, kind: "aside", kindConfidence: 0.9 });
 const judgment = (): PageJudgment => ({
   packId: "recipe",
   pageKind: "recipe",

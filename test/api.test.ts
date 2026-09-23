@@ -69,7 +69,7 @@ function okReply(init: RequestInit | undefined, inputTokens = 100, keep = (id: n
   const answers: Record<string, unknown> = {};
   for (const id of idsOf(body)) {
     answers[`keep_${id}`] = { noul: keep(id) };
-    answers[`kind_${id}`] = { choice: id % 2 === 0 ? "fact" : "anecdote_or_story", confidence: 0.8 };
+    answers[`kind_${id}`] = { choice: id % 2 === 0 ? "aside" : "story", confidence: 0.8 };
   }
   if ("page_kind" in body.questions) answers.page_kind = { choice: "recipe", confidence: 0.93 };
   return reply(200, { answers, usage: { input_tokens: inputTokens } });
@@ -169,20 +169,20 @@ describe("parseAnswers", () => {
       chunk,
       {
         keep_0: { noul: 0.94 },
-        kind_0: { choice: "figure_or_date", confidence: 0.7 },
+        kind_0: { choice: "aside", confidence: 0.7 },
         keep_1: { noul: 0.16 },
-        kind_1: { choice: "anecdote_or_story", confidence: 0.6 },
+        kind_1: { choice: "story", confidence: 0.6 },
         keep_2: { noul: 0.5 },
-        kind_2: { choice: "fact", confidence: 0.9 },
+        kind_2: { choice: "aside", confidence: 0.9 },
         page_kind: { choice: "legal", confidence: 0.8 },
       },
       true,
     );
     expect(out.failedIds).toEqual([]);
     expect(out.sentences).toEqual([
-      { id: 0, keep: 0.94, kind: "figure_or_date", kindConfidence: 0.7 },
-      { id: 1, keep: 0.16, kind: "anecdote_or_story", kindConfidence: 0.6 },
-      { id: 2, keep: 0.5, kind: "fact", kindConfidence: 0.9 },
+      { id: 0, keep: 0.94, kind: "aside", kindConfidence: 0.7 },
+      { id: 1, keep: 0.16, kind: "story", kindConfidence: 0.6 },
+      { id: 2, keep: 0.5, kind: "aside", kindConfidence: 0.9 },
     ]);
     expect(out.pageKind).toEqual({ kind: "legal", confidence: 0.8 });
   });
@@ -192,10 +192,10 @@ describe("parseAnswers", () => {
       chunk,
       {
         keep_0: { noul: 0.9 },
-        kind_0: { choice: "fact", confidence: 0.9 },
-        kind_1: { choice: "fact", confidence: 0.9 },
+        kind_0: { choice: "aside", confidence: 0.9 },
+        kind_1: { choice: "aside", confidence: 0.9 },
         keep_2: { noul: "high" },
-        kind_2: { choice: "fact", confidence: 0.9 },
+        kind_2: { choice: "aside", confidence: 0.9 },
       },
       false,
     );
@@ -226,16 +226,16 @@ describe("parseAnswers", () => {
       sents(2),
       {
         keep_0: { noul: 1.7 },
-        kind_0: { choice: "fact", confidence: 2 },
+        kind_0: { choice: "aside", confidence: 2 },
         keep_1: { noul: -0.2 },
-        kind_1: { choice: "fact" },
+        kind_1: { choice: "aside" },
         page_kind: { choice: "poem", confidence: 0.9 },
       },
       true,
     );
     expect(out.sentences).toEqual([
-      { id: 0, keep: 1, kind: "fact", kindConfidence: 1 },
-      { id: 1, keep: 0, kind: "fact", kindConfidence: 0 },
+      { id: 0, keep: 1, kind: "aside", kindConfidence: 1 },
+      { id: 1, keep: 0, kind: "aside", kindConfidence: 0 },
     ]);
     expect(out.pageKind).toBeUndefined();
   });
@@ -279,7 +279,7 @@ describe("judgePage", () => {
     expect(out.pageKindConfidence).toBe(0.93);
     expect(out.sentences).toHaveLength(10);
     expect(out.sentences.map((s) => s.id)).toEqual(sents(10).map((s) => s.id));
-    expect(out.sentences[0]).toEqual({ id: 0, keep: 0.9, kind: "fact", kindConfidence: 0.8 });
+    expect(out.sentences[0]).toEqual({ id: 0, keep: 0.9, kind: "aside", kindConfidence: 0.8 });
     expect(out.failedIds).toEqual([]);
     expect(out.inputTokens).toBe(1234);
     expect(out.cached).toBe(false);
