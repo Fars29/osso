@@ -1,16 +1,32 @@
-# Osso
+<p align="center">
+  <img src="icons/128.png" width="80" height="80" alt="">
+</p>
 
-**Just the bone.**
+<h1 align="center">Osso</h1>
 
-![Osso striking the filler out of a recipe, a company statement and a terms page, then marking the red flags in the terms](docs/demo.gif)
+<p align="center"><b>Just the bone.</b></p>
+
+<p align="center">
+  <a href="https://github.com/Fars29/osso/releases/latest">Download</a>
+  &nbsp;·&nbsp;
+  <a href="#install">Install</a>
+  &nbsp;·&nbsp;
+  <a href="docs/how-it-works.md">How it works</a>
+  &nbsp;·&nbsp;
+  <a href="PRIVACY.md">Privacy</a>
+</p>
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Osso striking the filler out of a recipe, a company statement and a terms page, then marking the red flags in the terms">
+</p>
 
 Most of what you read online is filler. Osso is a browser extension that strikes it out, on every page, as you read, and leaves what you came for.
 
-- The life story fades; **the recipe stays**.
-- "We value your trust" fades; **"prices go up 20% on Monday" stays**.
-- Forty paragraphs of legalese fade; **"renews automatically, no refunds" stays**.
+- ~~The life story~~ fades; **the recipe stays**.
+- ~~"We value your trust"~~ fades; **"prices go up 20% on Monday" stays**.
+- ~~Forty paragraphs of legalese~~ fade; **"renews automatically, no refunds" stays**.
 
-Nothing is hidden, rewritten or summarised: the filler is still there, greyed and struck through, in the author's own words. Hold **Shift** and it all comes back.
+Nothing is hidden, rewritten or summarised: the filler is still there, greyed and struck through, in the author's own words. Hold <kbd>Shift</kbd> and it all comes back.
 
 ## Why
 
@@ -20,33 +36,40 @@ So Osso asks, sentence by sentence, and strikes out the rest.
 
 ## Install
 
-Chrome, in two minutes. Other Chromium browsers (Edge, Brave) should work too, but only Chrome is tested.
+Coming to the Chrome Web Store (in review). Until then, two minutes by hand:
 
 1. Download the [latest release](https://github.com/Fars29/osso/releases/latest) and unpack it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, pick the folder.
-3. Paste your [TypeSafe key](https://typesafe.ai) into the welcome page, and choose when Osso reads: **every page as it loads**, or **only when you click**.
+3. On the welcome page, read what Osso sends, paste your [TypeSafe key](https://typesafe.ai) and press **Agree and save key**. Then choose when it reads: **every page as it loads**, or **only when you click**.
+
+Built and tested for Chrome. Other Chromium browsers (Edge, Brave) should work too.
 
 Free and open source, and it runs on a key of your own: no account with us, no server, no tracking. A page costs about $0.001 and one you have read before is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
 
 ## Using it
 
-| | |
+| What&nbsp;you&nbsp;do | What happens |
 |---|---|
-| **Hold Shift** | Everything comes back to ink. |
-| **Hover** a struck sentence | One word says why: *story*, *promo*, *opinion*, *boilerplate*, *aside*. |
-| **Click** a struck sentence | Pins it back for this visit. |
-| **The slider** | How strict, from gentle to bare. Instant, no new request. |
-| **keep …** | What to always keep, in your own words: *prices*, *deadlines*, *allergens*. |
-| **highlight …** | What to mark, in your own words: *candidate names*, *ingredients*, *consequences*. Osso looks for the thing, not the word: a name is marked on its own, a consequence with the part of the sentence that says it. Each mark draws itself, like a highlighter, the moment you reach it. A marked sentence is never struck. |
-| **On this site** | Turns Osso off for a site. **Alt+Shift+O** does the same. |
+| Hold <kbd>Shift</kbd> | Everything comes back to ink. |
+| Hover&nbsp;a&nbsp;struck&nbsp;sentence | One word says why: *story*, *promo*, *opinion*, *boilerplate*, *aside*. |
+| Click&nbsp;a&nbsp;struck&nbsp;sentence | It comes back to ink for this visit. |
+| Move&nbsp;the&nbsp;slider | How strict, from gentle to bare. Instant, no new request. |
+| Type&nbsp;after&nbsp;**keep** | Sentences about it always stay in ink: *prices*, *deadlines*, *allergens*. |
+| Type&nbsp;after&nbsp;**highlight** | Osso marks it, in your own words: *candidate names*, *ingredients*, *consequences*. It looks for the thing, not the word: a name is marked on its own, a consequence with the part of the sentence that says it. Each mark draws itself, like a highlighter, the moment you reach it, and a marked sentence is never struck. |
+| Turn&nbsp;off&nbsp;**On&nbsp;this&nbsp;site** | Osso leaves that site alone. <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> does the same. |
 
-![The popup after a page is judged](docs/screenshots/popup-done.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/popup-dark.png">
+    <img src="docs/screenshots/popup-done.png" width="246" alt="The popup after a page is judged">
+  </picture>
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/page-rule.png" width="533" alt="A keep rule bringing the sponsor's discount code back to ink">
+</p>
 
 The marker's colour and the colour of struck text are both yours, in Options.
 
 Osso stays out of the way on a list of well-known sites that are a workspace rather than someone's writing (mail, documents, chat, code, search, video, social feeds; the list is in Options), and leaves reviews and comments alone: there the opinion is the point. It does not read a page showing a password or card field, and holds back to ask first on anything that looks like the inside of an account. Those checks read how a page is built, never what it is about: an article about banks is an article. They can miss, so where the text itself is private, choose *only when you click* ([privacy](PRIVACY.md)).
-
-![A rule bringing the sponsor's discount code back to ink](docs/screenshots/page-rule.png)
 
 ## How it decides
 
