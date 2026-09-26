@@ -36,6 +36,7 @@ const ui = {
   keySave: el<HTMLButtonElement>("key-save"),
   keyResult: el<HTMLParagraphElement>("key-result"),
   keySaved: el<HTMLSpanElement>("key-saved"),
+  keyRemove: el<HTMLButtonElement>("key-remove"),
   enabled: el<HTMLInputElement>("enabled"),
   threshold: el<HTMLInputElement>("threshold"),
   thresholdValue: el<HTMLOutputElement>("threshold-value"),
@@ -167,6 +168,7 @@ function parseHosts(text: string): string[] {
 
 function renderSettings() {
   ui.key.value = settings.apiKey;
+  ui.keyRemove.hidden = !settings.apiKey;
   ui.enabled.checked = settings.enabled;
   ui.threshold.value = String(settings.threshold);
   renderThreshold();
@@ -273,12 +275,24 @@ async function saveKey() {
   if (settings.apiKeyInvalid) ui.keyResult.textContent = "";
   const ok = await save({ apiKey }, ui.keySaved);
   settings.apiKeyInvalid = false;
+  if (ok) ui.keyRemove.hidden = !apiKey;
   if (firstKey && ok) {
     // The first key is the whole setup: say what happens next, since nothing else on this page will.
     ui.notice.hidden = true;
     ui.keyResult.textContent = "Saved. Open any article and it fades in a second or two; pages already open pick the key up too.";
     ui.keyResult.className = "key-result ok";
   }
+}
+
+/** Taking the agreement back: without a key nothing can be sent, so removing it stops Osso on every page. */
+async function removeKey() {
+  ui.key.value = "";
+  const ok = await save({ apiKey: "" }, ui.keySaved);
+  if (!ok) return;
+  settings.apiKeyInvalid = false;
+  ui.keyRemove.hidden = true;
+  ui.keyResult.textContent = "Key removed. Nothing is sent until a key is agreed to and saved again.";
+  ui.keyResult.className = "key-result ok";
 }
 
 // ---- usage ----------------------------------------------------------------
@@ -321,6 +335,7 @@ function wire() {
   ui.keyEye.addEventListener("click", toggleEye);
   ui.keyTest.addEventListener("click", () => void testKey());
   ui.keySave.addEventListener("click", () => void saveKey());
+  ui.keyRemove.addEventListener("click", () => void removeKey());
   // Saving is agreeing to what the words above the field say is sent: Enter takes the reader to the
   // button that says so, and only pressing it saves.
   ui.key.addEventListener("keydown", (e) => {

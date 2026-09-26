@@ -44,7 +44,7 @@ Coming to the Chrome Web Store (in review). Until then, two minutes by hand:
 
 Built and tested for Chrome. Other Chromium browsers (Edge, Brave) should work too.
 
-Free and open source, and it runs on a key of your own: no account with us, no server, no tracking. A page costs about $0.001 and one you have read before is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
+Free and open source, and it runs on a key of your own: no account with us, no server, no tracking. A page costs about $0.001, and one you have read recently is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
 
 ## Using it
 

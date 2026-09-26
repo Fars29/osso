@@ -256,6 +256,27 @@ describe("judgePage", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("never puts the page's address in a request, for the page, a rule or a highlight", async () => {
+    // PRIVACY.md states it as true by construction; this is the construction.
+    const secret: PageMeta = { ...meta, url: "https://intranet.secret-host.example/private/path?token=abc123", host: "intranet.secret-host.example" };
+    const req: JudgeRequest = { meta: secret, packId: "recipe", contentHash: "abc", sentences: sents(6) };
+    const sent: string[] = [];
+    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(`${String(url)} ${JSON.stringify(init?.headers)} ${String(init?.body)}`);
+      return reply(401, { error: "bad key" });
+    });
+    const opts = { apiKey: "sk-test", maxSentencesPerRequest: 60, fetchImpl: fetchImpl as unknown as typeof fetch, sleep: noSleep };
+    await judgePage(req, recipePack, opts).catch(() => undefined);
+    await judgeRules(req, recipePack, ["prices"], opts).catch(() => undefined);
+    await judgeHighlights(req, recipePack, ["ingredients"], opts).catch(() => undefined);
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    for (const s of sent) {
+      expect(s).not.toContain("secret-host");
+      expect(s).not.toContain("/private/path");
+      expect(s).not.toContain("token=abc123");
+    }
+  });
+
   it("judges one chunk: right URL, headers, page kind, tokens, timing", async () => {
     const fetchImpl = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => okReply(init, 1234));
     const onChunk = vi.fn();

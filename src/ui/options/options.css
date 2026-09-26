@@ -359,6 +359,16 @@ textarea {
   font-size: 13px;
 }
 
+/* Taking the key back: quieter than getting one, there when a key is saved. */
+.hint .text-btn {
+  font: inherit;
+  color: var(--muted);
+}
+
+.hint .text-btn:hover {
+  color: var(--ink);
+}
+
 .privacy {
   font-size: 13px;
   max-width: 56ch;

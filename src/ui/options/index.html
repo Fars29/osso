@@ -22,10 +22,11 @@
           <p class="privacy" id="consent">
             When Osso reads a page, it sends the page's title, its language and the words the page displays, with any
             words you ask it to keep or highlight, to api.typesafe.ai only, over your key, to judge which sentences are
-            filler. Never the page's address, and never what you type into a page. Osso does not read a page showing a
-            password or card field, and holds back on pages that look private; those checks catch the usual shapes, not
-            every one. The key is stored in this browser and used by the background worker alone: pages never see it.
-            Nothing is logged anywhere.
+            filler. Never the page's address, and never what you type into a page. Which pages it reads is set under
+            <em>Read pages</em> below. Osso does not read a page showing a password or card field, and holds back on pages
+            that look private; those checks catch the usual shapes, not every one. Your key is kept in this browser, where
+            only Osso's background worker uses it (pages never see it), and is sent only to api.typesafe.ai, with each
+            request. Past answers are kept under a fingerprint of the text, without the text or the address.
           </p>
           <label class="field-label" for="key">TypeSafe API key</label>
           <div class="keyrow">
@@ -39,6 +40,7 @@
           <p class="key-result" id="key-result" aria-live="polite"></p>
           <p class="hint">
             <a href="https://typesafe.ai" target="_blank" rel="noopener">Get a key at typesafe.ai</a>
+            <button class="text-btn" id="key-remove" type="button" hidden>Remove key</button>
             <span class="saved" id="key-saved">Saved</span>
           </p>
         </div>

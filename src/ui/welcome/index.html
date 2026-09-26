@@ -28,7 +28,9 @@
           <p class="consent" id="consent">
             When Osso reads a page, it sends the page's title, its language and the words the page displays, with any
             words you ask it to keep or highlight, to api.typesafe.ai only, over your key, to judge which sentences are
-            filler. Never the page's address, and never what you type into a page. The key stays in this browser.
+            filler. Never the page's address, and never what you type into a page. It reads every page you open, as it
+            loads, unless you choose <em>Only when I click</em> below. Your key is kept in this browser and sent only to
+            api.typesafe.ai, with each request.
           </p>
           <div class="keyrow">
             <input id="apiKey" type="password" placeholder="Paste your key" autocomplete="off" spellcheck="false" aria-label="TypeSafe API key" aria-describedby="consent" />
@@ -43,7 +45,7 @@
             <label class="choice">
               <input type="radio" name="mode" value="auto" checked />
               <span class="choice-title">Every page, as it loads <em class="tag">recommended</em></span>
-              <span class="choice-sub muted">Pages arrive already stripped. About $0.001 a page on your key; a page you have read before is free.</span>
+              <span class="choice-sub muted">Pages arrive already stripped. About $0.001 a page on your key; a page you have read recently is free.</span>
             </label>
             <label class="choice">
               <input type="radio" name="mode" value="click" />

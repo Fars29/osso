@@ -259,6 +259,7 @@ describe("options", () => {
     expect(text("notice")).toContain("paste a TypeSafe key");
     expect(document.activeElement?.id).toBe("key");
     expect(text("key-result")).toBe("");
+    expect(visible("key-remove")).toBe(false);
 
     input("key").value = "ts-new";
     (document.getElementById("key-save") as HTMLButtonElement).click();
@@ -267,6 +268,19 @@ describe("options", () => {
     expect(visible("notice")).toBe(false);
     expect(text("key-result")).toMatch(/^Saved\. Open any article/);
     expect(document.getElementById("key-result")?.className).toBe("key-result ok");
+    expect(visible("key-remove")).toBe(true);
+  });
+
+  it("takes the key back with Remove key: without it nothing can be sent", async () => {
+    scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x" }, null);
+    await openOptions();
+    expect(visible("key-remove")).toBe(true);
+    (document.getElementById("key-remove") as HTMLButtonElement).click();
+    await settle();
+    expect(runtimeSend()).toHaveBeenCalledWith({ type: "setSettings", patch: { apiKey: "" } });
+    expect(input("key").value).toBe("");
+    expect(visible("key-remove")).toBe(false);
+    expect(text("key-result")).toMatch(/^Key removed\./);
   });
 
   it("says what is sent before the key field, and only the button that says Agree saves", async () => {

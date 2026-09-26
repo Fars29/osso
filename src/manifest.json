@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Osso",
   "version": "0.1.0",
-  "description": "Just the bone. Every page arrives with its filler faded and its substance left in the author's own words. Nothing is hidden, nothing is rewritten.",
+  "description": "Just the bone. Strikes the filler out of every page you read and leaves what you came for. Needs your own paid TypeSafe API key.",
   "icons": {
     "16": "icons/16.png",
     "32": "icons/32.png",

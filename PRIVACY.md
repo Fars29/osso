@@ -8,17 +8,18 @@ When Osso reads a page, it sends to `api.typesafe.ai`, over HTTPS:
 
 - the page's title and language, and a short hint of what kind of page it is ("recipe", "terms of service");
 - the page's main text, sentence by sentence;
-- the rules and highlight terms you typed.
+- the rules and highlight terms you typed;
+- your key, with each request: it is how TypeSafe knows the request is yours.
 
 Two things are never sent, whatever the page, because Osso has no code that could send them: **the page's address**, and **anything you type into a page** (form fields and editors are skipped before any text is read).
 
-What TypeSafe does with a request is set by its own [terms](https://typesafe.ai/legal/mca) and [privacy policy](https://typesafe.ai/legal/privacy-policy), under your account with them. As we read them on 2026-09-21: requests are processed in the United States, customer data is not used for training without consent, and no retention period is stated. Check them yourself.
+What TypeSafe does with a request is set by its own [terms](https://typesafe.ai/legal/mca) and [privacy policy](https://typesafe.ai/legal/privacy-policy), under your account with them. As we read them on 2026-09-21: requests are processed in the United States, customer data is not used for training without consent, and no retention period is stated. Check them yourself. Like any server, TypeSafe also sees when each request arrives and the internet address it comes from.
 
 Page text is used for one thing only: judging the page for you. It is not sold, not used for advertising or for credit or lending decisions, and nobody on our side reads it, since it never reaches us. This complies with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/policies), including the Limited Use requirements.
 
 ## What stays on your computer
 
-In the browser's storage, on this device only: your key (the script that runs inside web pages never receives it), your settings, a cache of past answers (a score per sentence, filed under a fingerprint of the text, without the text or the address), and usage counters. Options clears the cache and the counters; removing the extension removes all of it.
+In the browser's storage, on this device only: your key (the script that runs inside web pages never receives it), your settings, a cache of past answers (a score per sentence, filed under a fingerprint of the text, without the text or the address), and usage counters. Options clears the cache and the counters; removing the extension removes all of it. Everything else Osso looks at (the page itself, the site's name checked against your lists, the reveal key, your clicks and hovers) is handled on the page and never stored or sent.
 
 ## When Osso reads a page
 
@@ -26,6 +27,8 @@ Never before you agree. The welcome, and Options, say what is sent above the key
 
 - **Every page, as it loads.** Pages arrive already stripped. This relies on the checks below to leave private pages alone.
 - **Only when I click.** Nothing is sent until you open Osso on a page, except on sites you have marked *always*.
+
+To stop, remove your key in Options (nothing can be sent without it), switch Osso off, or switch it off on a site. What was sent before is under TypeSafe's terms.
 
 ## What Osso tries to leave alone
 
@@ -41,9 +44,9 @@ It looks at how a page is built, never at what it talks about:
 ## Permissions
 
 - `storage`: the settings and the cache above.
-- `activeTab`: the shortcut (Alt+Shift+O) reads which site you are on, to switch Osso on or off there.
+- `activeTab`: when you open the popup or press the shortcut (Alt+Shift+O), Osso reads which site the tab is on, to show and switch its state there.
 - `https://api.typesafe.ai/*`: the one place requests go.
-- A content script on `http` and `https` pages: it reads the page's text and colours what it judges filler. It changes nothing else.
+- A content script on `http` and `https` pages: it reads the page's text and colours what it judges filler. It changes nothing else. Without a key, and on the sites and pages it leaves alone, it reads nothing.
 
 ---
 

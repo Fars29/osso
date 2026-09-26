@@ -352,7 +352,7 @@ function draw() {
   }
   if (model.settingsLoaded && (!settings.apiKey || s?.status === "no-key")) {
     show("no-key");
-    note("Osso needs your TypeSafe key.", "Your key stays in this browser.", { label: "Add key", primary: true, onClick: openOptions });
+    note("Osso needs your TypeSafe key.", "It is kept in this browser and sent only to TypeSafe.", { label: "Add key", primary: true, onClick: openOptions });
     return;
   }
   if (model.settingsLoaded && settings.apiKeyInvalid) {
