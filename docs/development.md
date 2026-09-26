@@ -45,6 +45,6 @@ Neither calls the API, so no secret is needed. The live end-to-end run stays loc
 
 The listing text, the permission justifications, the data-usage answers and the reviewers' test instructions are in [chrome-web-store.md](chrome-web-store.md), with how Osso meets each program policy.
 
-## Firefox
+## Other browsers
 
-The manifest carries a `gecko` id for Firefox 128+, but it is untested there and the background worker may need to become an event page.
+Osso is built and tested for Chrome. It is Manifest V3 and plain web APIs, so another Chromium browser should need little or nothing; Firefox would need a background event page, a `gecko` id and its data-collection declaration. Forks for other browsers are welcome.

@@ -2,7 +2,7 @@
 
 **Just the bone.**
 
-![Osso striking the filler out of a recipe, a company statement and a terms page](docs/demo.gif)
+![Osso striking the filler out of a recipe, a company statement and a terms page, then marking the red flags in the terms](docs/demo.gif)
 
 Most of what you read online is filler. Osso is a browser extension that strikes it out, on every page, as you read, and leaves what you came for.
 
@@ -20,20 +20,20 @@ So Osso asks, sentence by sentence, and strikes out the rest.
 
 ## Install
 
-Chrome, Edge or Brave. Two minutes.
+Chrome, in two minutes. Other Chromium browsers (Edge, Brave) should work too, but only Chrome is tested.
 
 1. Download the [latest release](https://github.com/Fars29/osso/releases/latest) and unpack it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, pick the folder.
 3. Paste your [TypeSafe key](https://typesafe.ai) into the welcome page, and choose when Osso reads: **every page as it loads**, or **only when you click**.
 
-Free and open source, and it runs on a key of your own: no account, no server, no tracking. A page costs about $0.001 and one you have read before is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
+Free and open source, and it runs on a key of your own: no account with us, no server, no tracking. A page costs about $0.001 and one you have read before is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
 
 ## Using it
 
 | | |
 |---|---|
 | **Hold Shift** | Everything comes back to ink. |
-| **Hover** a struck sentence | One word says why: *story*, *promo*, *opinion*, *filler*, *aside*. |
+| **Hover** a struck sentence | One word says why: *story*, *promo*, *opinion*, *boilerplate*, *aside*. |
 | **Click** a struck sentence | Pins it back for this visit. |
 | **The slider** | How strict, from gentle to bare. Instant, no new request. |
 | **keep …** | What to always keep, in your own words: *prices*, *deadlines*, *allergens*. |
@@ -50,7 +50,7 @@ Osso stays out of the way on a list of well-known sites that are a workspace rat
 
 ## How it decides
 
-The page's main text is split into sentences; headings, labels, tables, code and navigation are never touched. Each sentence goes to Jev with its neighbours as context and comes back with the probability that it carries what the reader came for. Below the slider, it fades. Each batch is painted as it arrives, and what is further down waits until you scroll to it, so you watch it go.
+The page's main text is split into sentences; headings, labels, data tables, code and navigation are never touched. Each sentence goes to Jev with its neighbours as context and comes back with the probability that it carries what the reader came for. Below the slider, it fades. Each batch is painted as it arrives, and what is further down waits until you scroll to it, so you watch it go.
 
 A highlight first asks which sentences mention the thing. Something a few words name (a person, an amount, an ingredient) is then marked word by word; something a sentence states (a consequence, a reason, a risk) is marked as the sentence, or in a long one the clause, that says it. It looks for the thing, not for the word: ask for *consequences* and it marks the sentences that say what follows, on a page where that word never appears.
 
@@ -62,7 +62,7 @@ On 99 hand-labelled sentences in English and Italian the question separates subs
 - The privacy checks are heuristics. A page built unusually can get through them, and then its text is sent like any other page's. Two things do not depend on them, because no code exists to do otherwise: **the page's address is never sent, and neither is anything you type into a page.**
 - Pages with very little text, or with unusual markup, may be skipped. The popup says why.
 - The cost is yours, because the key is. Options keeps a running total.
-- Firefox is untested.
+- Only Chrome is tested. Forks for other browsers are welcome.
 
 ## Development
 

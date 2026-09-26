@@ -43,7 +43,7 @@ Just the bone. Strikes the filler out of every page you read and leaves what you
 
 **Images**, in [docs/store/](store/) (made from the film's invented pages, with the shipped renderer and popup):
 
-- Screenshots, 1280 x 800: `1-recipe.png`, `2-statement.png`, `3-terms-popup.png`, `4-terms-red-flags.png`. Firefox Add-ons takes the same four.
+- Screenshots, 1280 x 800: `1-recipe.png`, `2-statement.png`, `3-terms-popup.png`, `4-terms-red-flags.png`.
 - Small promo tile, 440 x 280 (required): `promo-small-440x280.png`.
 - Marquee, 1400 x 560 (optional): `promo-marquee-1400x560.png`.
 - Icon, 128 x 128: `icons/128.png`, already in the package.

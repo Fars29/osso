@@ -41,11 +41,5 @@
       "suggested_key": { "default": "Alt+Shift+O" },
       "description": "Turn Osso on or off for this site"
     }
-  },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "osso@osso.app",
-      "strict_min_version": "128.0"
-    }
   }
 }
