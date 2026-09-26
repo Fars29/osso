@@ -3,6 +3,10 @@
  * that is the reader's alone: whether Osso reads every page as it loads, or only a page they ask
  * for. A step comes forward when the one before it is done; the key is tested before it is saved,
  * so nobody leaves this page with a key that does not work.
+ *
+ * Nothing is sent before the reader agrees to what is sent: the words sit above the key field, and
+ * the one button that saves the key says "Agree". Enter in the field only takes the reader to that
+ * button, so the agreement is always the button pressed, never a key pressed out of habit.
  */
 import type { FromBackground, RunMode } from "../../shared/types.ts";
 import { getSettings, patchSettings, sendToBackground } from "../messaging.ts";
@@ -81,7 +85,9 @@ async function init() {
 
   ui.save.addEventListener("click", () => void saveKey());
   ui.key.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") void saveKey();
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    ui.save.focus();
   });
   ui.mode.addEventListener("change", () => {
     const chosen = ui.mode.querySelector<HTMLInputElement>("input[type=radio]:checked");

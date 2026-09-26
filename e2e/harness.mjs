@@ -70,8 +70,8 @@ export async function saveKey(context, id, key) {
   const input = (await page.locator("#apiKey").count()) ? page.locator("#apiKey") : page.locator("input[type=password]").first();
   if (await input.count()) {
     await input.fill(key);
-    const button = (await page.locator("#saveKey").count()) ? page.locator("#saveKey") : page.getByText("Save", { exact: true }).first();
-    await button.click();
+    // The button that agrees to what is sent and saves the key: the welcome's, or the options page's.
+    await page.locator("#saveKey, #key-save").first().click();
     try {
       await page.getByText("Saved").first().waitFor({ timeout: 10_000 });
     } catch {

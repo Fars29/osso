@@ -19,27 +19,27 @@
       <section class="block" id="s-key">
         <h2>Key</h2>
         <div class="body">
+          <p class="privacy" id="consent">
+            When Osso reads a page, it sends the page's title, its language and the words the page displays, with any
+            words you ask it to keep or highlight, to api.typesafe.ai only, over your key, to judge which sentences are
+            filler. Never the page's address, and never what you type into a page. Osso does not read a page showing a
+            password or card field, and holds back on pages that look private; those checks catch the usual shapes, not
+            every one. The key is stored in this browser and used by the background worker alone: pages never see it.
+            Nothing is logged anywhere.
+          </p>
           <label class="field-label" for="key">TypeSafe API key</label>
           <div class="keyrow">
             <div class="keyfield">
-              <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="ts-…" />
+              <input type="password" id="key" autocomplete="off" spellcheck="false" placeholder="ts-…" aria-describedby="consent" />
               <button class="eye text-btn" id="key-eye" type="button" aria-label="Show key">Show</button>
             </div>
             <button class="btn" id="key-test" type="button">Test</button>
-            <button class="btn btn-primary" id="key-save" type="button">Save</button>
+            <button class="btn btn-primary" id="key-save" type="button" aria-describedby="consent">Agree and save</button>
           </div>
           <p class="key-result" id="key-result" aria-live="polite"></p>
           <p class="hint">
             <a href="https://typesafe.ai" target="_blank" rel="noopener">Get a key at typesafe.ai</a>
             <span class="saved" id="key-saved">Saved</span>
-          </p>
-          <p class="privacy muted">
-            Saving a key turns Osso on. From then, on the pages it runs on, what leaves this machine is
-            the page title, its language and the words the page displays, sent to api.typesafe.ai only,
-            over your own key. Never the URL, and never what you type into a page. Osso does not read a
-            page showing a password or card field, and holds back on pages that look private. Those
-            checks catch the usual shapes, not every one. The key is stored in this browser and used by
-            the background worker alone; pages never see it. Nothing is logged anywhere.
           </p>
         </div>
       </section>

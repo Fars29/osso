@@ -1,7 +1,8 @@
 /**
  * Every screen as a picture, for the README and for looking at the product with one's own eyes:
- * the page settled, a chip, the reveal, a rule's catch; the popup with nothing to say, with a
- * judged page in light and in dark; the options page. Same harness as the e2e, same live model.
+ * the welcome with a key agreed to; the page settled, a chip, the reveal, a rule's catch; the popup
+ * with nothing to say, with a judged page in light and in dark; the options page. Same harness as
+ * the e2e, same live model.
  *
  * Run: npm run build && node --env-file=.env e2e/screens.mjs [--docs]
  * Without --docs the pictures go to e2e/screenshots/screens/; with it they replace docs/screenshots/.
@@ -58,6 +59,20 @@ try {
   await shoot(fresh, "popup-nokey.png", { card: true });
   await fresh.close();
 
+  // The welcome a new install opens: what is sent, above the key, and the key agreed to and working.
+  const welcome = await context.newPage();
+  await welcome.setViewportSize({ width: 1000, height: 1100 });
+  await welcome.goto(`chrome-extension://${id}/welcome.html`);
+  await sleep(2100); // the steps rise and the pen crosses "filler"
+  await welcome.locator("#apiKey").fill(key);
+  await welcome.locator("#saveKey").click();
+  await welcome.getByText(/^Works/).waitFor({ timeout: JUDGE_TIMEOUT_MS });
+  await welcome.mouse.move(0, 0);
+  await welcome.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+  await sleep(600);
+  await shoot(welcome, "welcome.png");
+  await welcome.close();
+
   await saveKey(context, id, key);
 
   // The page, settled.
@@ -81,18 +96,22 @@ try {
   await page.keyboard.up("Shift");
   await sleep(600);
 
-  // Rules, set the way the popup sets them; the sponsor sentence comes back with its underline.
+  // Rules, set the way the popup sets them; the sponsor sentence comes back with its underline. The
+  // sponsor's paragraph is brought on screen first and left to settle: sentences scrolled to are struck
+  // as they arrive, and a picture taken during that entrance keeps the last letters of each in ink.
   const ext = await context.newPage();
   await ext.goto(`chrome-extension://${id}/options.html`);
   await page.bringToFront();
+  await page.evaluate(() => [...document.querySelectorAll(".osso-s")].find((s) => (s.textContent ?? "").includes("THYME15"))?.scrollIntoView({ block: "center" }));
+  await sleep(2500);
   await ext.evaluate((rules) => chrome.runtime.sendMessage({ type: "setSettings", patch: { rules } }), RULES);
   await page.waitForFunction(
     () => [...document.querySelectorAll(".osso-s")].some((s) => (s.textContent ?? "").includes("THYME15") && !s.classList.contains("osso-fade")),
     null,
     { timeout: JUDGE_TIMEOUT_MS, polling: 50 },
   );
-  await page.evaluate(() => document.querySelector(".osso-rule-hit")?.scrollIntoView({ block: "center" }));
-  await sleep(150);
+  // The underline draws in 240 ms and then fades over 1.2 s: the picture is taken when it is whole.
+  await sleep(260);
   await shoot(page, "page-rule.png");
 
   // The popup for that page, once both rules have their counts.

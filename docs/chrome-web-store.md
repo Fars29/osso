@@ -1,6 +1,6 @@
 # Chrome Web Store: the listing, and why Osso fits the policies
 
-What to paste into the Developer Dashboard, and the reasoning behind each answer, checked against the [Program Policies](https://developer.chrome.com/docs/webstore/program-policies/policies) and the [Developer Agreement](https://developer.chrome.com/docs/webstore/program-policies/terms) on 2026-09-21. Policies change: read them again before submitting.
+What to paste into the Developer Dashboard, and the reasoning behind each answer, checked against the [Program Policies](https://developer.chrome.com/docs/webstore/program-policies/policies) and the [Developer Agreement](https://developer.chrome.com/docs/webstore/program-policies/terms) on 2026-09-21, and against the consent and Limited Use rules enforced since 2026-08-01 on 2026-09-26. Policies change: read them again before submitting.
 
 ## Before submitting
 
@@ -8,8 +8,6 @@ What to paste into the Developer Dashboard, and the reasoning behind each answer
 - A **TypeSafe key for the reviewers**, made for that purpose, with a spending limit. Osso does nothing without a key, and an extension the reviewer cannot make work is rejected as broken functionality. It goes in the dashboard's *Test instructions*, never in the package.
 - The zip: `npm run build && npm run zip` → `release/osso-<version>.zip`. It is minified, not obfuscated (the policy allows minification), contains no remote code, and the source is public.
 - Screenshots of **invented pages only** (the e2e fixtures), never of someone else's site or brand.
-- **Consent in the extension**, before the first request: since 2026-08-01 the user must take an action that clearly agrees to the disclosure of what is sent, inside the extension's own interface. Saving a key is not that action: the welcome page needs its own "I agree" step.
-- A **Limited Use** sentence in PRIVACY.md (one click from the repository's page), saying that Osso's use of page text complies with the Chrome Web Store User Data Policy, including the Limited Use requirements.
 
 ## Store listing
 
@@ -35,7 +33,7 @@ Just the bone. Strikes the filler out of every page you read and leaves what you
 > Osso is free and open source, and it runs on your own TypeSafe key (typesafe.ai). TypeSafe bills usage to your account: a typical page costs about $0.001, a page you have already read costs nothing. Osso does nothing until you have saved a key.
 >
 > WHAT IS SENT, AND WHERE
-> To judge a page, Osso sends its title, its language and the words the page displays to api.typesafe.ai over HTTPS, with your key. Never the page's address, and never what you type into a page. It does not read pages showing a password or card field, and holds back to ask first on pages that look like an account area, an intranet, or a page hidden from search engines; these checks catch the usual shapes, not every one. At install you choose whether Osso reads every page as it loads or only when you click its icon. Nothing is sent to the developer or to anyone else; there is no account, no server and no analytics. Off by default on a list of well-known mail, document, chat, code, search, video and social sites (editable; other sites are not recognised by name), and one switch turns it off on any site. Where the text itself is private, choose "only when I click".
+> To judge a page, Osso sends its title, its language and the words the page displays to api.typesafe.ai over HTTPS, with your key. Never the page's address, and never what you type into a page. Nothing is sent before you agree to it, with the button that saves your key. It does not read pages showing a password or card field, and holds back to ask first on pages that look like an account area, an intranet, or a page hidden from search engines; these checks catch the usual shapes, not every one. At install you choose whether Osso reads every page as it loads or only when you click its icon. Nothing is sent to the developer or to anyone else; there is no account, no server and no analytics. Off by default on a list of well-known mail, document, chat, code, search, video and social sites (editable; other sites are not recognised by name), and one switch turns it off on any site. Where the text itself is private, choose "only when I click".
 >
 > Source code and privacy statement: https://github.com/Fars29/osso
 >
@@ -82,7 +80,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 
 ## Test instructions (for the reviewer)
 
-> 1. After install, a welcome page opens. Paste this key and press "Save key" (it is tested first): `<the reviewers' key>`. Leave "Every page, as it loads" selected.
+> 1. After install, a welcome page opens. Paste this key and press "Agree and save key" (it is tested first): `<the reviewers' key>`. Leave "Every page, as it loads" selected.
 > 2. Open any long article, recipe or terms-of-service page (for example a Wikipedia article). Within a second or two the filler sentences turn grey and are struck through.
 > 3. Hold Shift to see everything in ink again; click the toolbar icon for the counts, the strictness slider and the per-site switch.
 > The key is a limited one made for this review.
@@ -93,8 +91,8 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 |---|---|
 | Single purpose, minimum functionality | One narrow purpose; works on any page of prose. |
 | Privacy policy | `PRIVACY.md`, linked in the dashboard and from Options → About. Names the one party data is shared with (TypeSafe). |
-| Limited Use | Page text goes only to TypeSafe and only to provide the feature. No ads, no brokers, no analytics, no human reads it on our side: we never receive it. |
-| Web browsing activity | Used only for the user-facing feature, which is described in the listing and in the UI: the welcome page says what is sent next to the Save button, and asks the user to choose between reading every page and reading only on a click. Nothing is sent before the user saves a key; in click mode nothing is sent before the user opens Osso on that page. |
+| Limited Use | Page text goes only to TypeSafe and only to provide the feature. No ads, no brokers, no analytics, no human reads it on our side: we never receive it. PRIVACY.md says so, with the Limited Use statement, one click from the repository's page. |
+| Web browsing activity | Used only for the user-facing feature, which is described in the listing and in the UI. Consent comes first: the welcome page (and Options) says what is sent above the key field, and the only button that saves the key reads "Agree and save key"; Enter in the field does not save. Nothing is sent before that button is pressed. The welcome then asks the user to choose between reading every page and reading only on a click; in click mode nothing is sent before the user opens Osso on that page. |
 | Sensitive pages | Does not run on a page showing a password, card or one-time-code field. Held back, with the reason shown and a one-time override, on pages that look like an account area (private path segment, personal-details form, a host only reachable inside a network, `noindex`, several validated account numbers). Sentences carrying a validated IBAN or card number, a tax code or an SSN are left out of what is sent. Form values are never read at all (`input`, `textarea`, `select` are skipped by the segmenter), and the URL is never transmitted. The listing and the extension both state that the page checks are heuristics rather than guarantees. |
 | Secure handling | HTTPS only; the key lives in `chrome.storage.local` and only the background worker reads it; the script inside pages never sees it. |
 | Narrowest permissions | `storage`, `activeTab`, one API host. No `tabs`, no `scripting`, no `<all_urls>` host permission, no `unlimitedStorage`. |

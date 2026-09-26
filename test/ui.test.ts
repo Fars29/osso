@@ -21,6 +21,8 @@ const html = readFileSync(resolve(__dirname, "../src/ui/popup/index.html"), "utf
 const popupBody = html.slice(html.indexOf("<body>") + 6, html.indexOf("<script"));
 const optionsHtml = readFileSync(resolve(__dirname, "../src/ui/options/index.html"), "utf8");
 const optionsBody = optionsHtml.slice(optionsHtml.indexOf("<body>") + 6, optionsHtml.indexOf("<script"));
+const welcomeHtml = readFileSync(resolve(__dirname, "../src/ui/welcome/index.html"), "utf8");
+const welcomeBody = welcomeHtml.slice(welcomeHtml.indexOf("<body>") + 6, welcomeHtml.indexOf("<script"));
 
 const done: TabState = {
   host: "example.com",
@@ -68,6 +70,17 @@ async function openOptions() {
   for (let i = 0; i < 10; i++) await Promise.resolve();
   await new Promise((r) => setTimeout(r, 0));
 }
+
+async function openWelcome() {
+  document.body.innerHTML = welcomeBody;
+  vi.resetModules();
+  await import("../src/ui/welcome/index.ts");
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 0));
+}
+
+/** Whether `a` comes before `b` in the document: what a reader passes first. */
+const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
 
 const text = (id: string) => document.getElementById(id)?.textContent?.trim();
 /** The chips as the reader sees them: "prices · 3", one per rule, in order; a count on its way (a turning wheel) reads "…". */
@@ -256,6 +269,20 @@ describe("options", () => {
     expect(document.getElementById("key-result")?.className).toBe("key-result ok");
   });
 
+  it("says what is sent before the key field, and only the button that says Agree saves", async () => {
+    scriptBackground(DEFAULT_SETTINGS, null);
+    await openOptions();
+    const consent = document.getElementById("consent")!;
+    expect(before(consent, input("key"))).toBe(true);
+    expect(consent.textContent).toContain("api.typesafe.ai");
+    expect(text("key-save")).toBe("Agree and save");
+    input("key").value = "ts-new";
+    keydown(input("key"), "Enter");
+    await settle();
+    expect(patches()).toEqual([]);
+    expect(document.activeElement?.id).toBe("key-save");
+  });
+
   it("re-reads settings only when the settings record changes, not on every cache or stats write", async () => {
     const added = vi.spyOn(chrome.storage.onChanged, "addListener");
     scriptBackground({ ...DEFAULT_SETTINGS, apiKey: "ts-x" }, null);
@@ -272,6 +299,36 @@ describe("options", () => {
     await settle();
     expect(getSettingsCalls()).toBe(before + 1);
     added.mockRestore();
+  });
+});
+
+describe("welcome", () => {
+  it("says what is sent above the key, and saves only when Agree is pressed, once the key works", async () => {
+    runtimeSend().mockImplementation(async (...args: unknown[]) => {
+      const msg = args[0] as ToBackground;
+      if (msg.type === "getSettings") return { type: "settings", settings: DEFAULT_SETTINGS };
+      if (msg.type === "testKey") return { type: "keyTest", ok: true, ms: 900 };
+      return { type: "ok" };
+    });
+    await openWelcome();
+    const consent = document.getElementById("consent")!;
+    const save = document.getElementById("saveKey") as HTMLButtonElement;
+    expect(before(consent, input("apiKey"))).toBe(true);
+    expect(consent.textContent).toContain("api.typesafe.ai");
+    expect(save.textContent).toBe("Agree and save key");
+
+    input("apiKey").value = "ts-new";
+    keydown(input("apiKey"), "Enter");
+    await settle();
+    expect(runtimeSend().mock.calls.some(([m]) => (m as ToBackground).type === "testKey")).toBe(false);
+    expect(patches()).toEqual([]);
+    expect(document.activeElement).toBe(save);
+
+    save.click();
+    await settle();
+    expect(runtimeSend()).toHaveBeenCalledWith({ type: "testKey", apiKey: "ts-new" });
+    expect(patches()).toEqual([{ type: "setSettings", patch: { apiKey: "ts-new" } }]);
+    expect(text("key-feedback")).toMatch(/^Works/);
   });
 });
 

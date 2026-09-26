@@ -14,13 +14,15 @@ Two things are never sent, whatever the page, because Osso has no code that coul
 
 What TypeSafe does with a request is set by its own [terms](https://typesafe.ai/legal/mca) and [privacy policy](https://typesafe.ai/legal/privacy-policy), under your account with them. As we read them on 2026-09-21: requests are processed in the United States, customer data is not used for training without consent, and no retention period is stated. Check them yourself.
 
+Page text is used for one thing only: judging the page for you. It is not sold, not used for advertising or for credit or lending decisions, and nobody on our side reads it, since it never reaches us. This complies with the [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/policies), including the Limited Use requirements.
+
 ## What stays on your computer
 
 In the browser's storage, on this device only: your key (the script that runs inside web pages never receives it), your settings, a cache of past answers (a score per sentence, filed under a fingerprint of the text, without the text or the address), and usage counters. Options clears the cache and the counters; removing the extension removes all of it.
 
 ## When Osso reads a page
 
-You choose at the welcome, and can change it any time in Options:
+Never before you agree. The welcome, and Options, say what is sent above the key field, and only the button that says *Agree* saves the key. Then you choose, at the welcome or any time in Options:
 
 - **Every page, as it loads.** Pages arrive already stripped. This relies on the checks below to leave private pages alone.
 - **Only when I click.** Nothing is sent until you open Osso on a page, except on sites you have marked *always*.

@@ -199,7 +199,12 @@ body {
   color: var(--accent);
 }
 
-.privacy {
+/* What is sent, said before the button that agrees to it: pressing that button is the consent, so the
+   words come first, in ink, where nobody reaches the key field without passing them. */
+.consent {
+  margin: 16px 0 0 !important;
+  padding: 1px 0 1px 14px;
+  border-left: 2px solid var(--line);
   font-size: 13px;
   line-height: 1.6;
 }

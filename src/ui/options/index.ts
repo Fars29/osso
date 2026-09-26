@@ -321,8 +321,12 @@ function wire() {
   ui.keyEye.addEventListener("click", toggleEye);
   ui.keyTest.addEventListener("click", () => void testKey());
   ui.keySave.addEventListener("click", () => void saveKey());
+  // Saving is agreeing to what the words above the field say is sent: Enter takes the reader to the
+  // button that says so, and only pressing it saves.
   ui.key.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") void saveKey();
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    ui.keySave.focus();
   });
 
   ui.enabled.addEventListener("change", () => void save({ enabled: ui.enabled.checked }, ui.behaviourSaved));
