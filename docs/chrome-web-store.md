@@ -8,6 +8,8 @@ What to paste into the Developer Dashboard, and the reasoning behind each answer
 - A **TypeSafe key for the reviewers**, made for that purpose, with a spending limit. Osso does nothing without a key, and an extension the reviewer cannot make work is rejected as broken functionality. It goes in the dashboard's *Test instructions*, never in the package.
 - The zip: `npm run build && npm run zip` → `release/osso-<version>.zip`. It is minified, not obfuscated (the policy allows minification), contains no remote code, and the source is public.
 - Screenshots of **invented pages only** (the e2e fixtures), never of someone else's site or brand.
+- **Consent in the extension**, before the first request: since 2026-08-01 the user must take an action that clearly agrees to the disclosure of what is sent, inside the extension's own interface. Saving a key is not that action: the welcome page needs its own "I agree" step.
+- A **Limited Use** sentence in PRIVACY.md (one click from the repository's page), saying that Osso's use of page text complies with the Chrome Web Store User Data Policy, including the Limited Use requirements.
 
 ## Store listing
 
@@ -67,7 +69,8 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 **Data usage: what to tick**
 
 - ☑ **Website content** (the text of the page being read is transmitted to TypeSafe to be judged).
-- ☐ Personally identifiable information, health, financial, authentication, personal communications, location, web history, user activity: not collected. Osso never sends the URL, and keeps no history: the cache is keyed by a hash of the text.
+- ☑ **Web history** (the title of each page read goes with its text, and the form counts a visited page's title as web history; the address is never sent, and Osso keeps no history: the cache is keyed by a hash of the text).
+- ☐ Personally identifiable information, health, financial, authentication, personal communications, location, user activity: not collected.
 
 **The three certifications** all hold:
 
@@ -75,7 +78,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 - does not use or transfer user data for purposes unrelated to the single purpose;
 - does not use or transfer user data to determine creditworthiness or for lending.
 
-**Privacy policy URL** https://github.com/Fars29/osso/blob/main/PRIVACY.md (while the repository is still private, reviewers get a 404 there: paste PRIVACY.md into a public Gist and give its link until the repository is public)
+**Privacy policy URL** https://github.com/Fars29/osso/blob/main/PRIVACY.md
 
 ## Test instructions (for the reviewer)
 
