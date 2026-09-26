@@ -1,11 +1,16 @@
 {
   "name": "osso",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Just the bone. Every page arrives with its filler faded and its substance left in the author's own words. Powered by Jev, with your own key.",
   "private": true,
   "homepage": "https://github.com/Fars29/osso#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/Fars29/osso.git" },
-  "bugs": { "url": "https://github.com/Fars29/osso/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fars29/osso.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Fars29/osso/issues"
+  },
   "type": "module",
   "license": "GPL-3.0-only",
   "author": "Fars29 (https://github.com/Fars29)",
