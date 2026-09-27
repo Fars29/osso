@@ -19,27 +19,23 @@ Just the bone. Strikes the filler out of every page you read and leaves what you
 
 **Description**
 
-> Most of what you read online is filler. Osso strikes it out, on every page, as you read, and leaves what you came for.
+> Most of what you read online is filler. Osso strikes it out as you read and leaves what you came for.
 >
 > • The life story fades; the recipe stays.
 > • "We value your trust" fades; "prices go up 20% on Monday" stays.
-> • Forty paragraphs of legalese fade; "renews automatically, no refunds" stays.
+> • Forty paragraphs of terms fade; "renews automatically, no refunds" stays.
 >
-> Nothing is hidden, rewritten or summarised: the filler is still there, greyed and struck through, in the author's own words. Hold Shift and it all comes back.
+> Nothing is hidden or rewritten. The filler stays on the page, greyed and struck through. Hold Shift and it all comes back.
 >
-> KEEP AND HIGHLIGHT
-> Type what you always want kept (prices, deadlines, allergens) and it stays in ink on every page. Type what you want marked (candidate names, ingredients, consequences) and Osso highlights it, like a marker drawn as you read.
+> You can also tell Osso what to always keep (prices, deadlines, allergens) or what to highlight (red flags, candidate names).
 >
-> HOW IT WORKS
-> Osso splits the main text of the page into sentences and asks Jev, a model by TypeSafe, one question about each: is this what the reader came for? Sentences that are not are faded.
+> How it works: Osso asks Jev, an AI model by TypeSafe, one question about each sentence: is this what the reader came for?
 >
-> YOU NEED A TYPESAFE API KEY
-> Osso is free and open source, and it runs on your own TypeSafe key (typesafe.ai). TypeSafe bills usage to your account: a typical page costs about $0.001, a page you have read recently costs nothing. Osso does nothing until you have saved a key.
+> You need your own TypeSafe API key (typesafe.ai), which is paid: about $0.001 a page. Osso itself is free and open source.
 >
-> WHAT IS SENT, AND WHERE
-> To judge a page, Osso sends its title, its language and the words the page displays, with any words you ask it to keep or highlight, to api.typesafe.ai over HTTPS, with your key. Your key is kept in your browser and sent only to TypeSafe, with each request. Never the page's address, and never what you type into a page. Nothing is sent before you agree to it, with the button that saves your key. It does not read pages showing a password or card field, and holds back to ask first on pages that look like an account area, an intranet, or a page hidden from search engines; these checks catch the usual shapes, not every one. When you add your key, you choose whether Osso reads every page as it loads or only when you click its icon. Nothing is sent to the developer or to anyone else; there is no account with us, no server and no analytics. Off by default on a list of well-known mail, document, chat, code, search, video and social sites (editable; other sites are not recognised by name), and one switch turns it off on any site. Where the text itself is private, choose "only when I click".
+> What is sent: the page's title, language and text, and any words you ask it to keep or highlight, to TypeSafe only, with your key. Never the page's address, and never what you type into a page. Nothing is sent until you agree, and you choose whether Osso reads every page or only when you click. It skips pages with a password or card field and asks before reading pages that look private. These checks can miss, so for private text choose "only when I click".
 >
-> Source code and privacy statement: https://github.com/Fars29/osso
+> Source code and privacy policy: https://github.com/Fars29/osso
 >
 > Osso is an independent project, not affiliated with TypeSafe.
 
