@@ -69,7 +69,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 - ☑ **Website content** (the text of the page being read is transmitted to TypeSafe to be judged).
 - ☑ **Web history** (the title of each page read goes with its text, and the form counts a visited page's title as web history; the address is never sent, and Osso keeps no history: the cache is keyed by a hash of the text).
 - ☑ **Authentication information** (the user's TypeSafe API key: kept in the browser, sent only to TypeSafe, with each request).
-- ☑ **Personal communications** and ☑ **Financial and payment information**: Osso stays off well-known mail sites, leaves card numbers and IBANs out and holds back pages that look like the inside of an account, but PRIVACY.md says plainly that a page these checks miss is read like any other. The form should not say less than the privacy policy.
+- ☐ **Personal communications**, **financial and payment information**: not collected. The form asks what the extension intends to collect, and Osso is built to stay away from these: well-known mail and chat sites are off, card numbers and IBANs are left out, pages that look like the inside of an account are held back. The text of a page these checks miss is website content, declared above, as PRIVACY.md says; page-reading extensions such as Google Translate declare it the same way.
 - ☐ Personally identifiable information, health, location, user activity: not collected (clicks, hovers and the reveal key are handled on the page, never stored or sent).
 
 **The three certifications** all hold:
