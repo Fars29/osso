@@ -45,24 +45,34 @@
             <label class="choice">
               <input type="radio" name="mode" value="auto" checked />
               <span class="choice-title">Every page, as it loads <em class="tag">recommended</em></span>
-              <span class="choice-sub muted">Pages arrive already stripped. About $0.001 a page on your key; a page you have read recently is free.</span>
+              <span class="choice-sub muted">
+                <span>Pages arrive already stripped.</span>
+                <span>About $0.001 a page; a page read recently is free.</span>
+              </span>
             </label>
             <label class="choice">
               <input type="radio" name="mode" value="click" />
               <span class="choice-title">Only when I click</span>
-              <span class="choice-sub muted">Nothing is read or sent until you open Osso on a page. From there you can mark a site <em>always</em>.</span>
+              <span class="choice-sub muted">
+                <span>Nothing is read until you open Osso on a page.</span>
+                <span>Sites you mark <em>always</em> are read as they load.</span>
+              </span>
             </label>
           </div>
-          <ul class="never muted">
-            <li><strong>Never sent:</strong> the page's address, and anything you type into a page. Osso reads the words a page displays, never the values in its fields.</li>
-            <li><strong>Not read:</strong> a page showing a password, card or one-time-code field.</li>
-            <li><strong>Held back:</strong> pages that look private: an account area, an intranet, a page its site hides from search engines. Osso asks before reading those, and goes by how a page is built, never by what it talks about: an article about banks is an article.</li>
-            <li><strong>Off</strong> on a list of well-known mail, document, chat, code, search, video and social sites. A site not on it is read like any other. <a href="#" id="edit-sites">Edit the list</a></li>
-          </ul>
+          <dl class="facts">
+            <dt>Never sent</dt>
+            <dd>The page's address, and anything you type into it.</dd>
+            <dt>Never read</dt>
+            <dd>A page showing a password, card or one-time-code field.</dd>
+            <dt>Asked first</dt>
+            <dd>A page that looks private: an account area, an intranet, a page hidden from search engines.</dd>
+            <dt>Off by default</dt>
+            <dd>Well-known mail, document, chat, code, search, video and social sites. <a href="#" id="edit-sites">Edit the list</a></dd>
+          </dl>
           <p class="caveat">
-            Those checks catch the shapes private pages usually have, not every one. A site built
-            differently can slip through, and then that page's text is sent like any other. Where the
-            text itself is private, choose <em>only when I click</em>, or switch Osso off for that site.
+            These checks go by how a page is built, never by what it is about. They catch the usual shapes, not
+            every one, and a site not on the list is read like any other. Where the text itself is private, choose
+            <em>Only when I click</em>, or switch Osso off for that site.
           </p>
         </li>
 

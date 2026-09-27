@@ -294,24 +294,43 @@ body {
   text-transform: uppercase;
 }
 
+/* Each choice says two things, one per line. */
 .choice-sub {
+  display: grid;
+  gap: 1px;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.never {
+/* What Osso never sends, never reads, asks about first and leaves off: a label and one line each. */
+.facts {
   display: grid;
-  gap: 6px;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 18px;
   margin: 0;
-  padding: 0;
-  list-style: none;
   font-size: 13px;
   line-height: 1.55;
 }
 
-.never strong {
+.facts dt {
   color: var(--ink);
   font-weight: 600;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (max-width: 480px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .facts dd {
+    margin-bottom: 10px;
+  }
 }
 
 /* The limit of the checks above, said plainly and not tucked away: a reader deciding "every page" is owed it. */
