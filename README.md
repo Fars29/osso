@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="icons/128.png" width="80" height="80" alt="">
+  <img src="icons/128.png" width="70" height="70" alt="">
 </p>
 
 <h1 align="center">Osso</h1>
 
-<p align="center"><b>Just the bone.</b></p>
+<p align="center"><b>Just the bone.</b>
 
 <p align="center">
   <a href="https://github.com/Fars29/osso/releases/latest">Download</a>
