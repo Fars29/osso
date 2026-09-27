@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Osso",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Just the bone. Strikes the filler out of every page you read and leaves what you came for. Needs your own paid TypeSafe API key.",
   "icons": {
     "16": "icons/16.png",
