@@ -2,9 +2,12 @@
   <img src="icons/128.png" width="70" height="70" alt="">
 </p>
 
-<h1 align="center">Osso</h1>
-
-<p align="center"><b>Just the bone.</b>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-dark.png">
+    <img src="docs/brand/wordmark-light.png" width="198" alt="Osso. Just the bone.">
+  </picture>
+</p>
 
 <p align="center">
   <a href="https://github.com/Fars29/osso/releases/latest">Download</a>
