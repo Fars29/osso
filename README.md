@@ -23,7 +23,7 @@
   <img src="docs/demo.gif" alt="Osso striking the filler out of a recipe, a company statement and a terms page, then marking the red flags in the terms">
 </p>
 
-Most of what you read online is filler. Osso is a browser extension that strikes it out, on every page, as you read, and leaves what you came for.
+Most of what you read online is filler. Osso is a browser extension that uses Jev to strike it out, on every page, as you read, and leaves what you came for.
 
 - ~~The life story~~ fades; **the recipe stays**.
 - ~~"We value your trust"~~ fades; **"prices go up 20% on Monday" stays**.
@@ -39,7 +39,7 @@ So Osso asks, sentence by sentence, and strikes out the rest.
 
 ## Install
 
-Coming to the Chrome Web Store (in review). Until then, two minutes by hand:
+Coming to the Chrome Web Store (in review). Until then, you can install it manually in 2 minutes:
 
 1. Download the [latest release](https://github.com/Fars29/osso/releases/latest) and unpack it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, pick the folder.
@@ -47,7 +47,7 @@ Coming to the Chrome Web Store (in review). Until then, two minutes by hand:
 
 Built and tested for Chrome. Other Chromium browsers (Edge, Brave) should work too.
 
-Free and open source, and it runs on a key of your own: no account with us, no server, no tracking. A page costs about $0.001, and one you have read recently is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
+Free and open source, and it runs on a TypeSafe API key of your own. A page costs about $0.001, and one you have read recently is free. What is sent and what never is: [PRIVACY.md](PRIVACY.md).
 
 ## Using it
 
