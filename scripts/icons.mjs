@@ -8,7 +8,10 @@
  * the paper halo is what keeps an ink silhouette visible on a dark toolbar; on a light one it
  * vanishes into the toolbar. Margins after the halo are 4/128 a side: the toolbar crops nothing.
  *
- * Run: node scripts/icons.mjs   →  icons/icon.svg, icons/{16,32,48,128}.png
+ * The Chrome Web Store shows its own 128 px icon, and asks for the art inside 96 px with 16 px of
+ * transparent margin a side: the same bone, scaled to 0.8, goes to docs/store/icon-128.png.
+ *
+ * Run: node scripts/icons.mjs   →  icons/icon.svg, icons/{16,32,48,128}.png, docs/store/icon-128.png
  */
 import sharp from "sharp";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -56,3 +59,21 @@ for (const size of SIZES) {
   console.log(`[osso] icons/${size}.png`);
 }
 console.log(`[osso] icons/icon.svg`);
+
+// The store's icon: the bone at 0.8 about the centre, 96 px wide, 16 px of margin a side.
+const store = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Osso</title>
+  <g transform="translate(64 64) scale(0.8) translate(-64 -64)">
+    <g fill="none" stroke="${PAPER}" stroke-width="${HALO}" stroke-linejoin="round">
+${BONE}
+    </g>
+    <g fill="${INK}">
+${BONE}
+    </g>
+  </g>
+</svg>
+`;
+const storeOut = join(root, "docs", "store");
+mkdirSync(storeOut, { recursive: true });
+await sharp(Buffer.from(store)).resize(128, 128).png({ compressionLevel: 9 }).toFile(join(storeOut, "icon-128.png"));
+console.log(`[osso] docs/store/icon-128.png`);
