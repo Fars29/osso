@@ -60,8 +60,7 @@ Osso fades and strikes through the filler sentences of the web page the user is 
 |---|---|
 | `storage` | Stores the user's settings, their API key, and a cache of past judgments so a page already read is not judged (or billed) again. |
 | `activeTab` | When the user opens the popup or presses the shortcut (Alt+Shift+O), Osso reads which site the current tab is on, to show and switch its state for that site. The address is never sent. |
-| host permission `https://api.typesafe.ai/*` | The one endpoint Osso calls: it sends the page's sentences there and receives a judgment for each. |
-| content script on `http://*/*`, `https://*/*` | The single purpose applies to any page the user reads: the script splits the page's main text into sentences and changes the colour of the ones judged filler. On the sites in the default deny list, on pages showing a password or card field and on app-like pages it reads nothing and changes nothing; with no key saved, it reads nothing anywhere. |
+| host permission (one field for `https://api.typesafe.ai/*` and the content script on `http://*/*`, `https://*/*`) | Osso needs two kinds of host access. First, https://api.typesafe.ai/*: the one endpoint Osso calls. It sends the sentences of the page being read there, with the user's own API key, and receives a judgment for each. Second, the content script on http://*/* and https://*/*: the single purpose applies to any page the user reads, so the script splits the page's main text into sentences and changes the colour of the ones judged filler. With no key saved it reads nothing anywhere; on the sites in the default deny list, on pages showing a password or card field and on app-like pages it reads nothing and changes nothing. The page's address is never sent. |
 
 **Remote code** No. All logic is in the package; the API returns JSON data (probabilities), never code.
 
