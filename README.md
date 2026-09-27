@@ -54,7 +54,6 @@ Free and open source, and it runs on a key of your own: no account with us, no s
 | What&nbsp;you&nbsp;do | What happens |
 |---|---|
 | Hold <kbd>Shift</kbd> | Everything comes back to ink. |
-| Hover&nbsp;a&nbsp;struck&nbsp;sentence | One word says why: *story*, *promo*, *opinion*, *boilerplate*, *aside*. |
 | Click&nbsp;a&nbsp;struck&nbsp;sentence | It comes back to ink for this visit. |
 | Move&nbsp;the&nbsp;slider | How strict, from gentle to bare. Instant, no new request. |
 | Type&nbsp;after&nbsp;**keep** | Sentences about it always stay in ink: *prices*, *deadlines*, *allergens*. |
