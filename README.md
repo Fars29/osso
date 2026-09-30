@@ -38,9 +38,9 @@ Nothing is hidden, rewritten or summarised: the filler is still there, greyed an
 So Osso asks, sentence by sentence, and strikes out the rest.
 
 ## Install
-
-Coming to the Chrome Web Store (in review). Until then, you can install it manually in 2 minutes:
-
+From the [Chrome Web Store](https://chromewebstore.google.com/detail/mgcdfgghooledbgijbkpbffgbkejejce)
+or
+Manual installation:
 1. Download the [latest release](https://github.com/Fars29/osso/releases/latest) and unpack it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, pick the folder.
 3. On the welcome page, read what Osso sends, paste your [TypeSafe key](https://typesafe.ai) and press **Agree and save key**. Then choose when it reads: **every page as it loads**, or **only when you click**.
